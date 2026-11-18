@@ -20,7 +20,7 @@
 2. Read `manifest.json` or `MODULE-INDEX.md`.
 3. Identify the task category and load only that module plus its declared transitive dependencies.
 4. Use `node tools/resolve-task.mjs --task <task-key>` to print exact module paths. If the tool cannot run, resolve dependencies from the manifest manually. Run USS tools only from a pinned, reviewed copy (see `CONSUMING.md`), never from an unpinned download.
-   If no task key fits, use `code-change` and widen by trigger; when unsure, choose the broader task. `--keywords` is module-level only and warns on unmatched words; it is not a substitute for a task key.
+   If no task key fits, use `code-change` as the general secure-coding baseline and widen it with `--keywords`, for example `node tools/resolve-task.mjs --task code-change --keywords "payment webhook"`. Task and keyword selections are additive. Review every unmatched-keyword warning and widen routing manually if it identifies another security boundary.
 5. For a complete audit, production release or release-readiness claim, use `full-audit` (or `production-release`) and assess all 13 assurance layers. Never select a subset for these.
 6. Do not load the entire original directive for an ordinary task. The original sources are preserved for traceability and disputes.
 
