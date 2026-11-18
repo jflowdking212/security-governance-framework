@@ -16,8 +16,24 @@ function isObject(value){
 function nonEmpty(value){
  return typeof value==='string'&&value.trim().length>0;
 }
+// Strict ISO 8601 (date or date-time with explicit zone). Date.parse alone accepts values such as "1" or "May 1".
+const ISO_DATE=/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 function validDate(value){
- return nonEmpty(value)&&!Number.isNaN(Date.parse(value));
+ if(!nonEmpty(value))return false;
+ const match=ISO_DATE.exec(value);
+ if(!match||Number.isNaN(Date.parse(value)))return false;
+ const [year,month,day]=[Number(match[1]),Number(match[2]),Number(match[3])];
+ const calendar=new Date(Date.UTC(year,month-1,day));
+ return calendar.getUTCFullYear()===year&&calendar.getUTCMonth()===month-1&&calendar.getUTCDate()===day&&(match[4]===undefined||Number(match[4])<24)&&(match[5]===undefined||Number(match[5])<60);
+}
+const EVIDENCE_KINDS=['test','code-review','configuration','infrastructure','log','external-attestation','build-artifact'];
+// Shared by control evidence and finding verification_evidence so a VERIFIED finding cannot rest on free text.
+function checkEvidenceItem(label,evidence){
+ if(!isObject(evidence)){addError(label+' contains a non-object evidence item.');return;}
+ if(!EVIDENCE_KINDS.includes(evidence.kind))addError(label+' has invalid evidence kind '+String(evidence.kind));
+ if(!nonEmpty(evidence.reference))addError(label+' evidence reference must be non-empty.');
+ if(!validDate(evidence.observed_at))addError(label+' evidence observed_at must be a valid ISO 8601 date/time.');
+ if(!nonEmpty(evidence.result))addError(label+' evidence result must be non-empty.');
 }
 function addError(message){
  errors.push(message);
@@ -121,13 +137,7 @@ for(const control of controlEntries){
  if(!['PASS','FAIL','UNKNOWN','NOT_APPLICABLE'].includes(control.status))addError('Control '+id+' has invalid status '+String(control.status));
  if(!Array.isArray(control.evidence))addError('Control '+id+' evidence must be an array.');
  else{
-  for(const evidence of control.evidence){
-   if(!isObject(evidence)){addError('Control '+id+' contains a non-object evidence item.');continue;}
-   if(!['test','code-review','configuration','infrastructure','log','external-attestation','build-artifact'].includes(evidence.kind))addError('Control '+id+' has invalid evidence kind '+String(evidence.kind));
-   if(!nonEmpty(evidence.reference))addError('Control '+id+' evidence reference must be non-empty.');
-   if(!validDate(evidence.observed_at))addError('Control '+id+' evidence observed_at must be a valid ISO date/time.');
-   if(!nonEmpty(evidence.result))addError('Control '+id+' evidence result must be non-empty.');
-  }
+  for(const evidence of control.evidence)checkEvidenceItem('Control '+id,evidence);
  }
  if(control.status==='PASS'&&(!Array.isArray(control.evidence)||control.evidence.length===0))addError('PASS control '+id+' requires at least one evidence item.');
  if(control.status==='NOT_APPLICABLE'){
@@ -150,16 +160,30 @@ for(const finding of findingEntries){
  if(!nonEmpty(finding.title))addError('Finding '+finding.id+' requires a title.');
  if(!Array.isArray(finding.control_ids)||finding.control_ids.length===0)addError('Finding '+finding.id+' must reference control_ids.');
  else for(const id of finding.control_ids)if(!scopeIds.includes(id))addError('Finding '+finding.id+' references out-of-scope control '+id);
- if(finding.status==='VERIFIED'&&(!Array.isArray(finding.verification_evidence)||finding.verification_evidence.length===0))addError('VERIFIED finding '+finding.id+' requires verification_evidence.');
+ if(!nonEmpty(finding.severity_rationale))addError('Finding '+finding.id+' requires a severity_rationale (impact, reachability, blast radius and confidence; see assurance/severity-classification.md).');
+ if(finding.status==='VERIFIED'){
+  if(!Array.isArray(finding.verification_evidence)||finding.verification_evidence.length===0)addError('VERIFIED finding '+finding.id+' requires verification_evidence.');
+  else for(const evidence of finding.verification_evidence)checkEvidenceItem('Finding '+finding.id+' verification',evidence);
+ }
  if(finding.status==='ACCEPTED'){
   if(['P0','P1'].includes(finding.severity))addError('P0/P1 finding '+finding.id+' cannot be risk-accepted.');
   const approval=finding.risk_acceptance;
   if(!isObject(approval)||!nonEmpty(approval.approved_by)||!nonEmpty(approval.rationale)||!validDate(approval.approved_at)||!validDate(approval.expires_at))addError('Accepted finding '+finding.id+' requires approved_by, rationale, approved_at and expires_at.');
   else if(Date.parse(approval.expires_at)<=Date.parse(project?.assessed_at??''))addError('Risk acceptance for '+finding.id+' must expire after the assessment date.');
+  else if(Date.parse(approval.expires_at)<=Date.parse(approval.approved_at))addError('Risk acceptance for '+finding.id+' must expire after it was approved.');
+  else if(release&&Date.parse(approval.expires_at)<=Date.now())addError('Risk acceptance for '+finding.id+' has expired; a release assessment cannot rely on an expired acceptance.');
  }
 }
 for(const control of controlEntries){
  for(const findingId of control.finding_ids??[])if(!findingMap.has(findingId))addError('Control '+control.control_id+' references missing finding '+findingId);
+ const linkedFindings=(control.finding_ids??[]).map(id=>findingMap.get(id)).filter(Boolean);
+ if(control.status==='FAIL'&&linkedFindings.length&&linkedFindings.every(f=>f.status==='VERIFIED'))addError('Control '+control.control_id+' is FAIL but every linked finding is VERIFIED; re-assess the control and record evidence for its new status.');
+}
+if(release){
+ if(/^0+$/.test(project?.commit??''))addError('Release assessment project.commit is a placeholder (all zeros).');
+ if(/^example\//i.test(project?.repository??''))addError('Release assessment project.repository is still the template placeholder.');
+ if(/^unassigned$/i.test(String(project?.reviewer??'').trim()))addError('Release assessment project.reviewer is UNASSIGNED.');
+ if(assessmentType==='routine')addError('A release assessment must be full-audit or production-release, not routine.');
 }
 const p0p1Open=[...findingMap.values()].filter(f=>['P0','P1'].includes(f.severity)&&f.status!=='VERIFIED');
 const unresolvedFindings=[...findingMap.values()].filter(f=>['OPEN','REMEDIATED'].includes(f.status));

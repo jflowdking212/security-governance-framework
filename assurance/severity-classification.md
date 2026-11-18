@@ -64,7 +64,7 @@ These examples are illustrative, not automatic mappings. A defect's actual impac
 For each finding, retain:
 
 - Finding ID and affected USS control-family ID.
-- Severity and rationale.
+- Severity and rationale (the evidence validator requires a non-empty `severity_rationale` on every finding and structured evidence, including ISO 8601 dates, for every VERIFIED finding).
 - Asset, environment, route and affected tenant/data classes.
 - Attack preconditions and reproducible steps or evidence reference.
 - Impact and blast radius.
