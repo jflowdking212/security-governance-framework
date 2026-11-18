@@ -53,6 +53,7 @@
 - [x] Node test suite runs in GitHub Actions.
 
 ## Remaining before final v1.0.0 release
+- [x] GitHub Actions CI passed on Node.js 20, including source generation, index drift checks, validation and 32 automated tests.
 - [x] Claude independent review completed (`REVIEW-CLAUDE.md`, 2026-11-18).
 - [x] Claude findings resolved or explicitly documented in the correction series and review report.
 - [ ] Owner approves final release after GitHub CI and remaining substantive review.
@@ -60,4 +61,4 @@
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
-**Current status:** Claude's correction series has been applied to the PR branch. GitHub Node 20 CI and final owner approval remain.
+**Current status:** Claude's correction series has been applied to the PR branch. GitHub Node 20 CI passed (32 tests); final owner approval and remaining substantive review remain.
