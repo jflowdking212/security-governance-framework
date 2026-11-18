@@ -1,0 +1,266 @@
+{
+  "standard": "Universal Security Standard",
+  "version": "1.0.0",
+  "status": "release-candidate",
+  "kernel": "KERNEL.md",
+  "agent_entrypoint": "AGENTS.md",
+  "modules": [
+    {
+      "id": "M01",
+      "slug": "engineering-workflow",
+      "path": "modules/m01-engineering-workflow.md",
+      "triggers": [
+        "workflow",
+        "development",
+        "review"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "M02",
+      "slug": "authentication-sessions",
+      "path": "modules/m02-authentication-sessions.md",
+      "triggers": [
+        "authentication",
+        "login",
+        "mfa",
+        "session",
+        "recovery"
+      ],
+      "dependencies": [
+        "M01"
+      ]
+    },
+    {
+      "id": "M03",
+      "slug": "authorization-tenancy",
+      "path": "modules/m03-authorization-tenancy.md",
+      "triggers": [
+        "authorization",
+        "tenant",
+        "saas",
+        "ownership",
+        "hierarchy"
+      ],
+      "dependencies": [
+        "M01",
+        "M02"
+      ]
+    },
+    {
+      "id": "M04",
+      "slug": "input-injection-web",
+      "path": "modules/m04-input-injection-web.md",
+      "triggers": [
+        "input",
+        "validation",
+        "injection",
+        "xss",
+        "csrf",
+        "cors"
+      ],
+      "dependencies": [
+        "M01",
+        "M03"
+      ]
+    },
+    {
+      "id": "M05",
+      "slug": "api-network-transport",
+      "path": "modules/m05-api-network-transport.md",
+      "triggers": [
+        "api",
+        "network",
+        "tls",
+        "websocket",
+        "rate-limit"
+      ],
+      "dependencies": [
+        "M01",
+        "M03",
+        "M04"
+      ]
+    },
+    {
+      "id": "M06",
+      "slug": "payments-webhooks",
+      "path": "modules/m06-payments-webhooks.md",
+      "triggers": [
+        "payment",
+        "webhook",
+        "billing",
+        "subscription",
+        "refund"
+      ],
+      "dependencies": [
+        "M01",
+        "M03",
+        "M08",
+        "M09",
+        "M10"
+      ]
+    },
+    {
+      "id": "M07",
+      "slug": "tax-compliance",
+      "path": "modules/m07-tax-compliance.md",
+      "triggers": [
+        "tax",
+        "vat",
+        "gst",
+        "filing",
+        "remittance"
+      ],
+      "dependencies": [
+        "M01",
+        "M06",
+        "M09"
+      ]
+    },
+    {
+      "id": "M08",
+      "slug": "secrets",
+      "path": "modules/m08-secrets.md",
+      "triggers": [
+        "secrets",
+        "credentials",
+        "keys",
+        "rotation"
+      ],
+      "dependencies": [
+        "M01"
+      ]
+    },
+    {
+      "id": "M09",
+      "slug": "data-protection",
+      "path": "modules/m09-data-protection.md",
+      "triggers": [
+        "data",
+        "privacy",
+        "database",
+        "storage",
+        "backup"
+      ],
+      "dependencies": [
+        "M01",
+        "M03",
+        "M08"
+      ]
+    },
+    {
+      "id": "M10",
+      "slug": "operations-audit-ir",
+      "path": "modules/m10-operations-audit-ir.md",
+      "triggers": [
+        "errors",
+        "logging",
+        "monitoring",
+        "incident",
+        "recovery"
+      ],
+      "dependencies": [
+        "M01",
+        "M08",
+        "M09"
+      ]
+    },
+    {
+      "id": "M11",
+      "slug": "ai-llm-security",
+      "path": "modules/m11-ai-llm-security.md",
+      "triggers": [
+        "ai",
+        "llm",
+        "prompt-injection",
+        "agents",
+        "retrieval"
+      ],
+      "dependencies": [
+        "M01",
+        "M03",
+        "M08",
+        "M09",
+        "M10"
+      ]
+    },
+    {
+      "id": "M12",
+      "slug": "supply-chain-cicd-infra",
+      "path": "modules/m12-supply-chain-cicd-infra.md",
+      "triggers": [
+        "dependencies",
+        "cicd",
+        "infrastructure",
+        "deployment",
+        "release"
+      ],
+      "dependencies": [
+        "M01",
+        "M08",
+        "M09",
+        "M10"
+      ]
+    }
+  ],
+  "assurance_paths": [
+    "assurance/13-layer-security-assurance-model.md",
+    "assurance/severity-and-release-gates.md",
+    "assurance/penetration-testing.md",
+    "assurance/evidence-reporting.md",
+    "assurance/audit-first-remediation.md",
+    "assurance/control-id-registry.md"
+  ],
+  "bundles": {
+    "authentication": [
+      "M02"
+    ],
+    "payments": [
+      "M06",
+      "M07"
+    ],
+    "saas-tenancy": [
+      "M03",
+      "M02"
+    ],
+    "api-security": [
+      "M04",
+      "M05",
+      "M03"
+    ],
+    "full-audit": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "ASSURANCE"
+    ]
+  },
+  "bundle_paths": {
+    "authentication": "bundles/authentication.md",
+    "payments": "bundles/payments.md",
+    "saas-tenancy": "bundles/saas-tenancy.md",
+    "api-security": "bundles/api-security.md",
+    "full-audit": "bundles/full-audit.md"
+  },
+  "sources": [
+    "source/original-directives/ANTIGRAVITY_IDE_GLOBAL_SECURITY_DIRECTIVE_v4.md",
+    "source/original-directives/GLOBAL_DIRECTIVE_APPLICATION_SECURITY_UPDATED_2026-10-02_v4.md",
+    "source/original-directives/global_payment_webhook_tax_security_directive.md"
+  ],
+  "rules": {
+    "p0_release": "BLOCK",
+    "p1_release": "BLOCK",
+    "agent_may_waive_p0_p1": false,
+    "assurance_name": "13-Layer Security Assurance Model",
+    "unknown_is_pass": false
+  }
+}
