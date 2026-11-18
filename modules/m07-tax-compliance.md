@@ -1,9 +1,17 @@
 # M07 Revenue tax and indirect-tax compliance
 
-**Source sections:** GLOBAL:15, PAYMENT:B1-B12, PAYMENT:AI-TAX-SAFETY, PAYMENT:TAX-VERIFICATION  
+**Source sections:** GLOBAL:15, PAYMENT:PREAMBLE, PAYMENT:B1-B12, PAYMENT:AI-TAX-SAFETY, PAYMENT:TAX-VERIFICATION
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
+
+**Scope:** Applies to all repositories, services, agents, IDE workflows, APIs, payment integrations, subscription systems, SaaS products, marketplaces, and webhook consumers.
+
+**Priority:** Mandatory global engineering guardrail.
+
+**Operating rule:** FAIL CLOSED & PROVE.
+
+Do not treat a working payment integration as a secure payment integration. Do not treat a configured tax provider as proof of legal compliance.
 
 **## 15. Revenue Tax & Indirect Tax Compliance Guardrail**
 
