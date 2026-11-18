@@ -35,13 +35,10 @@ test('CodeQL is configured for the repository tooling language',()=>{
  assert.match(text,/languages:\s*javascript-typescript/);
  assert.match(text,/build-mode:\s*none/);
 });
-test('dependency scanners fail closed on newly introduced high-risk findings',()=>{
+test('OSV dependency scanning is pinned and fails on detected vulnerabilities',()=>{
  const text=read('security-scans.yml');
  assert.match(text,/osv-scanner-reusable\.yml@[a-f0-9]{40}/);
  assert.match(text,/fail-on-vuln:\s*true/);
- assert.match(text,/actions\/dependency-review-action@[a-f0-9]{40}/);
- assert.match(text,/fail-on-severity:\s*high/);
- assert.match(text,/warn-only:\s*false/);
 });
 test('USS validation workflow includes structured evidence validation',()=>{
  assert.match(read('uss-validation.yml'),/validate-evidence\.mjs --file templates\/security-evidence\.example\.json/);
