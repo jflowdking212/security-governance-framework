@@ -1,6 +1,6 @@
 # M06 Payments, webhooks and external event integrity
 
-**Source sections:** GLOBAL:1.E, PAYMENT:PREAMBLE, PAYMENT:A1-A16, PAYMENT:WEBHOOK-NEGATIVE-TESTS, GLOBAL:3:Layer6
+**Source sections:** GLOBAL:1.E, PAYMENT:PREAMBLE, PAYMENT:A1-A16, PAYMENT:WEBHOOK-NEGATIVE-TESTS, GLOBAL:3:Layer6  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
