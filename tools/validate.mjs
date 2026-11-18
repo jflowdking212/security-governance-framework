@@ -57,7 +57,7 @@ expectCount('M06 payment controls A1-A16',count(await read('M06'),/^## A\d+\./gm
 expectCount('M07 tax controls B1-B12',count(await read('M07'),/^## B\d+\./gm),12);
 expectCount('M22 execution contract items',count(await read('M22'),/^\d+\. /gm),15);
 for(const x of m.modules){const c=await fs.readFile(x.path,'utf8'),h=(c.match(/\*\*Source sections:\*\* (.*?)\s*$/m)||[])[1]??'';if(h!==x.source_sections.join(', '))errors.push('Manifest source_sections differ from module header for '+x.id)}
-const rows=matrix.trim().split(/\r?\n/).slice(1).map(l=>l.split(','));
+const rows=matrix.split(/\r?\n/).filter(l=>l.trim()).slice(1).map(l=>l.split(','));
 for(const [src,ref,,dest] of rows)for(const d of dest.split(';')){if(d==='adapters')continue;const x=map.get(d);if(!x)errors.push('Matrix row '+ref+' names unknown module '+d);else if(!x.source_sections.includes(ref))errors.push('Matrix row '+ref+' not declared by '+d)}
 for(const x of m.modules)for(const ref of x.source_sections)if(!rows.some(r=>r[1]===ref&&r[3].split(';').includes(x.id)))errors.push('Module '+x.id+' ref '+ref+' has no matrix row');
 const closureOf=ids=>{const seen=new Set(),out=[];const visit=id=>{if(seen.has(id))return;seen.add(id);for(const d of map.get(id).dependencies)visit(d);out.push(id)};ids.forEach(visit);return out};
