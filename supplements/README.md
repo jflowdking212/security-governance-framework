@@ -26,6 +26,7 @@ Supplements are not yet part of the task resolver output. Agents must select the
 | [Cryptography and key management](cryptography-key-management.md) | Data encryption, signing keys, key rotation, envelope encryption or cryptographic storage is designed | M08, M09, M12 |
 | [Data lifecycle and privacy](data-lifecycle-privacy.md) | Personal, sensitive or regulated data is collected, processed, shared, retained or deleted | M09, M10, M11 |
 | [Container and cloud runtime](container-cloud-runtime.md) | Docker, Kubernetes, cloud workload identity, IAM or container deployment is used | M08, M10, M12 |
+| [AI agent, tool and retrieval security](ai-agent-security.md) | LLM tools, coding agents, MCP, browser/computer-use agents, RAG, memory or autonomous actions are used | M03, M04, M08, M09, M10, M11, M12, M22 |
 
 ## Stack reference profiles
 
