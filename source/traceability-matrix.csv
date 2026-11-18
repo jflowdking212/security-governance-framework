@@ -51,3 +51,4 @@ GLOBAL,GLOBAL:3:Layer10,Layer 10 Logging Monitoring Detection and Auditability,M
 GLOBAL,GLOBAL:3:Layer11,Layer 11 Availability Performance and Resilience,M10,Domain-local verification checklist
 GLOBAL,GLOBAL:3:Layer12,Layer 12 Backup Disaster Recovery and Incident Response,M10,Domain-local verification checklist
 GLOBAL,GLOBAL:19.8-superseded-in-part,Source 19.8 P0/P1 exception superseded in module,M20,Canonical source preserved verbatim and annotated by owner policy
+GLOBAL,GLOBAL:3:Layer1,Layer 1 Identity and Session Security,M02,Domain-local verification checklist
