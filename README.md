@@ -35,6 +35,8 @@ The 13-Layer Security Assurance Model is an internal framework, not an external 
 ## Validate
 Requires Node.js 20 or later, no third-party packages:
 ```sh
+node tools/build-modules.mjs
+git diff --exit-code -- modules/
 node tools/build-bundles.mjs
 node tools/validate.mjs
 node --test tests/*.test.mjs
