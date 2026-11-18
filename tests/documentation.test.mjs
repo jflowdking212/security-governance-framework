@@ -20,8 +20,9 @@ test('security and contribution guidance are present',()=>{
  const contributing=fs.readFileSync('CONTRIBUTING.md','utf8');
  assert.ok(contributing.includes('source/traceability-matrix.csv'));
 });
-test('no license is implied when no license file is published',()=>{
- assert.ok(!fs.existsSync('LICENSE'));
+test('README license notice matches whether a license file exists',()=>{
+ const hasLicense=fs.existsSync('LICENSE');
  const text=fs.readFileSync('README.md','utf8');
- assert.ok(text.includes('No license has been added'));
+ if(hasLicense)assert.ok(!text.includes('No license has been added'));
+ else assert.ok(text.includes('No license has been added'));
 });
