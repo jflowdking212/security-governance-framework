@@ -46,7 +46,7 @@
 - [ ] Claude independent review completed.
 - [ ] Claude findings resolved or explicitly documented.
 - [ ] Owner accepts final review.
-- [ ] Main branch protection configured with required USS validation checks and review.
+- [ ] Main branch protection configured with required USS validation checks and review. The repository rulesets query returned no rulesets; classic branch-protection status could not be verified because the connected GitHub integration returned HTTP 403. Owner must confirm in GitHub Settings.
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
