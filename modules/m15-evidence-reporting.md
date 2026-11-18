@@ -61,7 +61,7 @@ Where evidence is unavailable, say:
 
 
 
-\> **\*\*Not verified from the available repository/configuration.\*\***
+\> **Not verified from the available repository/configuration.**
 
 
 

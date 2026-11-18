@@ -17,17 +17,17 @@ For every layer, report:
 
 
 
-- **\*\*Status:\*\*** `PASS`, `PARTIAL`, `FAIL`, `UNKNOWN`, or `NOT APPLICABLE`
+- **Status:** `PASS`, `PARTIAL`, `FAIL`, `UNKNOWN`, or `NOT APPLICABLE`
 
-- **\*\*Verified Evidence\*\***
+- **Verified Evidence**
 
-- **\*\*Risks / Findings\*\***
+- **Risks / Findings**
 
-- **\*\*Required Remediation\*\***
+- **Required Remediation**
 
-- **\*\*Verification Performed\*\***
+- **Verification Performed**
 
-- **\*\*Residual Risk / Known Limitation\*\***
+- **Residual Risk / Known Limitation**
 
 
 

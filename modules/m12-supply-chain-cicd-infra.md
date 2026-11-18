@@ -117,7 +117,7 @@ Rollback if postconditions fail
 
 - Do not automatically deploy security-critical systems directly from an unreviewed branch.
 
-- Prefer **\*\*Continuous Delivery\*\*** with production approval before enabling fully automatic **\*\*Continuous Deployment\*\***.
+- Prefer **Continuous Delivery** with production approval before enabling fully automatic **Continuous Deployment**.
 
 - Deploy the exact reviewed artifact/commit.
 
@@ -151,13 +151,13 @@ A dependency tree that currently builds successfully is not evidence that it is 
 
 
 
-- **\*\*Transitive Dependencies Count:\*\*** Treat dependencies pulled in indirectly by frameworks, SDKs, plugins, build tools, package managers, and other libraries as part of the application's supply-chain risk.
+- **Transitive Dependencies Count:** Treat dependencies pulled in indirectly by frameworks, SDKs, plugins, build tools, package managers, and other libraries as part of the application's supply-chain risk.
 
-- **\*\*Inventory the Actual Tree:\*\*** Security review MUST consider the resolved dependency tree, not only the small set of packages explicitly listed by developers.
+- **Inventory the Actual Tree:** Security review MUST consider the resolved dependency tree, not only the small set of packages explicitly listed by developers.
 
-- **\*\*No "We Didn't Install It" Exception:\*\*** A vulnerable transitive package remains relevant when it is included in the deployed/runtime/build artifact or affects the software supply chain.
+- **No "We Didn't Install It" Exception:** A vulnerable transitive package remains relevant when it is included in the deployed/runtime/build artifact or affects the software supply chain.
 
-- **\*\*Runtime vs. Build/Development Context:\*\*** Distinguish runtime, production, development, build, test, and tooling dependencies when assessing impact. Do not automatically dismiss development/build dependencies if they can execute in CI, access secrets, alter build output, or compromise release artifacts.
+- **Runtime vs. Build/Development Context:** Distinguish runtime, production, development, build, test, and tooling dependencies when assessing impact. Do not automatically dismiss development/build dependencies if they can execute in CI, access secrets, alter build output, or compromise release artifacts.
 
 
 
@@ -165,19 +165,19 @@ A dependency tree that currently builds successfully is not evidence that it is 
 
 
 
-- **\*\*Commit the Canonical Lockfile:\*\*** For application repositories using an ecosystem that supports lockfiles, commit the package manager's canonical lockfile unless there is a documented architecture-specific reason not to.
+- **Commit the Canonical Lockfile:** For application repositories using an ecosystem that supports lockfiles, commit the package manager's canonical lockfile unless there is a documented architecture-specific reason not to.
 
-- **\*\*Do Not Delete Lockfiles to "Fix" Dependency Problems:\*\*** Do not routinely delete/regenerate a lockfile merely to clear install errors or vulnerability reports. Understand and review the resulting dependency changes.
+- **Do Not Delete Lockfiles to "Fix" Dependency Problems:** Do not routinely delete/regenerate a lockfile merely to clear install errors or vulnerability reports. Understand and review the resulting dependency changes.
 
-- **\*\*Deterministic/Frozen Installs:\*\*** CI, release, and production builds SHOULD use the package manager's deterministic/frozen install mode where available so the build fails when manifest and lockfile state are inconsistent rather than silently resolving an unexpected dependency tree.
+- **Deterministic/Frozen Installs:** CI, release, and production builds SHOULD use the package manager's deterministic/frozen install mode where available so the build fails when manifest and lockfile state are inconsistent rather than silently resolving an unexpected dependency tree.
 
 Examples include ecosystem-appropriate commands/modes such as `npm ci`, frozen/immutable lockfile installs, or equivalent package-manager functionality.
 
-- **\*\*Lockfile Review:\*\*** Treat meaningful lockfile changes as code/supply-chain changes. Review unexpectedly large dependency-tree changes, new registries/sources, git/tarball dependencies, lifecycle scripts, and newly introduced packages.
+- **Lockfile Review:** Treat meaningful lockfile changes as code/supply-chain changes. Review unexpectedly large dependency-tree changes, new registries/sources, git/tarball dependencies, lifecycle scripts, and newly introduced packages.
 
-- **\*\*One Authoritative Package Manager Per Workspace Where Practical:\*\*** Avoid conflicting lockfiles from multiple package managers unless the repository intentionally contains independently managed workspaces. Do not allow CI and local/production builds to resolve through different accidental package-manager states.
+- **One Authoritative Package Manager Per Workspace Where Practical:** Avoid conflicting lockfiles from multiple package managers unless the repository intentionally contains independently managed workspaces. Do not allow CI and local/production builds to resolve through different accidental package-manager states.
 
-- **\*\*Lockfile Is Reproducibility, Not Security Proof:\*\*** A committed lockfile helps reproduce a known dependency tree; it does NOT prove the locked versions are vulnerability-free, authentic, maintained, or safe.
+- **Lockfile Is Reproducibility, Not Security Proof:** A committed lockfile helps reproduce a known dependency tree; it does NOT prove the locked versions are vulnerability-free, authentic, maintained, or safe.
 
 
 
@@ -185,17 +185,17 @@ Examples include ecosystem-appropriate commands/modes such as `npm ci`, frozen/i
 
 
 
-- **\*\*Use Ecosystem-Appropriate Scanning:\*\*** Run the package manager or SCA scanner appropriate to the technology in use. Examples may include `npm audit`, `composer audit`, `pip-audit`, `cargo audit`, OSV/SCA tooling, or equivalent mechanisms.
+- **Use Ecosystem-Appropriate Scanning:** Run the package manager or SCA scanner appropriate to the technology in use. Examples may include `npm audit`, `composer audit`, `pip-audit`, `cargo audit`, OSV/SCA tooling, or equivalent mechanisms.
 
-- **\*\*Do Not Apply an npm-Only Rule Globally:\*\*** `npm audit` applies to npm dependency trees. Non-Node repositories require their ecosystem-appropriate audit/scanning mechanism.
+- **Do Not Apply an npm-Only Rule Globally:** `npm audit` applies to npm dependency trees. Non-Node repositories require their ecosystem-appropriate audit/scanning mechanism.
 
-- **\*\*CI/PR/Release Integration:\*\*** Dependency vulnerability scanning SHOULD run automatically in CI or an equivalent gated workflow for security-sensitive repositories and before production releases. A monthly manual audit is a useful fallback/maintenance cadence, not a substitute for automated checks.
+- **CI/PR/Release Integration:** Dependency vulnerability scanning SHOULD run automatically in CI or an equivalent gated workflow for security-sensitive repositories and before production releases. A monthly manual audit is a useful fallback/maintenance cadence, not a substitute for automated checks.
 
-- **\*\*Continuous Advisory Monitoring:\*\*** Where supported, enable dependency/advisory monitoring or update tooling so newly disclosed vulnerabilities can be surfaced after code has already been deployed.
+- **Continuous Advisory Monitoring:** Where supported, enable dependency/advisory monitoring or update tooling so newly disclosed vulnerabilities can be surfaced after code has already been deployed.
 
-- **\*\*SBOM/SCA Alignment:\*\*** For serious production/enterprise systems, maintain or generate an SBOM/dependency inventory where practical and align vulnerability findings to the actual deployed version/artifact.
+- **SBOM/SCA Alignment:** For serious production/enterprise systems, maintain or generate an SBOM/dependency inventory where practical and align vulnerability findings to the actual deployed version/artifact.
 
-- **\*\*Audit Tool Limitations:\*\*** A clean package-manager audit means no matching known advisories were reported under that tool's data and configuration at that time. It does NOT prove the dependency tree contains no vulnerabilities, malicious packages, compromised maintainers, unsafe install scripts, unmaintained libraries, or unknown/zero-day defects.
+- **Audit Tool Limitations:** A clean package-manager audit means no matching known advisories were reported under that tool's data and configuration at that time. It does NOT prove the dependency tree contains no vulnerabilities, malicious packages, compromised maintainers, unsafe install scripts, unmaintained libraries, or unknown/zero-day defects.
 
 
 
@@ -203,15 +203,15 @@ Examples include ecosystem-appropriate commands/modes such as `npm ci`, frozen/i
 
 
 
-- **\*\*Do Not Count Only Severity:\*\*** Record severity, affected versions, dependency path, runtime/build reachability, exposure, exploit prerequisites, available remediation, and whether the vulnerable component/functionality is actually present in the deployed context.
+- **Do Not Count Only Severity:** Record severity, affected versions, dependency path, runtime/build reachability, exposure, exploit prerequisites, available remediation, and whether the vulnerable component/functionality is actually present in the deployed context.
 
-- **\*\*Do Not Ignore High/Critical Findings Because They Are Transitive:\*\*** Trace which direct dependency introduces the vulnerable package and determine the correct upgrade/replacement/override path.
+- **Do Not Ignore High/Critical Findings Because They Are Transitive:** Trace which direct dependency introduces the vulnerable package and determine the correct upgrade/replacement/override path.
 
-- **\*\*Do Not Blindly Block on Irrelevant Noise:\*\*** When an advisory is demonstrably not applicable to the deployed context, document evidence and residual risk rather than repeatedly suppressing it without explanation.
+- **Do Not Blindly Block on Irrelevant Noise:** When an advisory is demonstrably not applicable to the deployed context, document evidence and residual risk rather than repeatedly suppressing it without explanation.
 
-- **\*\*Known Exploited / High-Impact Issues:\*\*** Give elevated priority to reachable vulnerabilities with known exploitation, remote compromise potential, authentication/authorization bypass, data exposure, build-pipeline compromise, or other material impact.
+- **Known Exploited / High-Impact Issues:** Give elevated priority to reachable vulnerabilities with known exploitation, remote compromise potential, authentication/authorization bypass, data exposure, build-pipeline compromise, or other material impact.
 
-- **\*\*Abandoned/Unmaintained Dependencies:\*\*** A dependency with no viable security maintenance path may require replacement even when no current advisory exists. Track maintenance health for high-impact packages.
+- **Abandoned/Unmaintained Dependencies:** A dependency with no viable security maintenance path may require replacement even when no current advisory exists. Track maintenance health for high-impact packages.
 
 
 
@@ -219,17 +219,17 @@ Examples include ecosystem-appropriate commands/modes such as `npm ci`, frozen/i
 
 
 
-- **\*\*Prefer Minimal Compatible Remediation:\*\*** Upgrade to the smallest safe supported version that resolves the issue when practical, then run the full relevant verification suite.
+- **Prefer Minimal Compatible Remediation:** Upgrade to the smallest safe supported version that resolves the issue when practical, then run the full relevant verification suite.
 
-- **\*\*Do Not Blindly Run Force-Upgrades:\*\*** Commands that permit major-version or otherwise breaking dependency changes, including force-style audit remediation, MUST NOT be applied automatically to production-sensitive repositories without reviewing the proposed dependency delta and compatibility impact.
+- **Do Not Blindly Run Force-Upgrades:** Commands that permit major-version or otherwise breaking dependency changes, including force-style audit remediation, MUST NOT be applied automatically to production-sensitive repositories without reviewing the proposed dependency delta and compatibility impact.
 
-- **\*\*Automated Fixes Still Require Verification:\*\*** `audit fix`, dependency bots, automated pull requests, overrides/resolutions, or equivalent tooling may propose or apply updates, but the resulting build, tests, security checks, migrations, integrations, and runtime behavior must still be verified.
+- **Automated Fixes Still Require Verification:** `audit fix`, dependency bots, automated pull requests, overrides/resolutions, or equivalent tooling may propose or apply updates, but the resulting build, tests, security checks, migrations, integrations, and runtime behavior must still be verified.
 
-- **\*\*Overrides/Resolutions Are Controlled Exceptions:\*\*** Package overrides/resolutions may be used to force a safe transitive version only when compatibility is understood and verified. Do not silently pin an incompatible transitive dependency.
+- **Overrides/Resolutions Are Controlled Exceptions:** Package overrides/resolutions may be used to force a safe transitive version only when compatibility is understood and verified. Do not silently pin an incompatible transitive dependency.
 
-- **\*\*Replacement May Be Safer Than Patching:\*\*** When a direct dependency is abandoned, repeatedly vulnerable, or prevents remediation of critical transitive issues, evaluate removal or replacement rather than indefinitely stacking exceptions.
+- **Replacement May Be Safer Than Patching:** When a direct dependency is abandoned, repeatedly vulnerable, or prevents remediation of critical transitive issues, evaluate removal or replacement rather than indefinitely stacking exceptions.
 
-- **\*\*No Unreviewed Production Updates:\*\*** Do not automatically deploy dependency updates directly to production merely because an audit tool or bot generated them. Follow the directive's CI/CD, review, staging, approval, and rollback controls.
+- **No Unreviewed Production Updates:** Do not automatically deploy dependency updates directly to production merely because an audit tool or bot generated them. Follow the directive's CI/CD, review, staging, approval, and rollback controls.
 
 
 
@@ -237,13 +237,13 @@ Examples include ecosystem-appropriate commands/modes such as `npm ci`, frozen/i
 
 
 
-- **\*\*Maintenance Is Recurring:\*\*** Dependency security is an ongoing lifecycle, not a one-time pre-launch task.
+- **Maintenance Is Recurring:** Dependency security is an ongoing lifecycle, not a one-time pre-launch task.
 
-- **\*\*Cadence Based on Risk:\*\*** Establish a recurring review cadence appropriate to the system's exposure and criticality. Monthly review may be reasonable for ordinary maintenance, but high-risk production systems SHOULD also rely on automated advisory monitoring/CI rather than waiting for the next calendar review.
+- **Cadence Based on Risk:** Establish a recurring review cadence appropriate to the system's exposure and criticality. Monthly review may be reasonable for ordinary maintenance, but high-risk production systems SHOULD also rely on automated advisory monitoring/CI rather than waiting for the next calendar review.
 
-- **\*\*Emergency Updates:\*\*** A known actively exploited or materially reachable Critical/High vulnerability may require out-of-cycle remediation. Do not wait for a scheduled maintenance date.
+- **Emergency Updates:** A known actively exploited or materially reachable Critical/High vulnerability may require out-of-cycle remediation. Do not wait for a scheduled maintenance date.
 
-- **\*\*Update in Managed Batches:\*\*** Avoid allowing dependencies to remain untouched for so long that upgrades become a large, untestable jump. Prefer regular, reviewable update batches with regression testing.
+- **Update in Managed Batches:** Avoid allowing dependencies to remain untouched for so long that upgrades become a large, untestable jump. Prefer regular, reviewable update batches with regression testing.
 
 
 
@@ -251,15 +251,15 @@ Examples include ecosystem-appropriate commands/modes such as `npm ci`, frozen/i
 
 
 
-- **\*\*Approved Sources:\*\*** Review dependency registry/source configuration. Avoid unknown registries, unreviewed git URLs, remote tarballs, or package sources that bypass normal integrity/provenance controls without a documented reason.
+- **Approved Sources:** Review dependency registry/source configuration. Avoid unknown registries, unreviewed git URLs, remote tarballs, or package sources that bypass normal integrity/provenance controls without a documented reason.
 
-- **\*\*Lifecycle Scripts Are Code Execution:\*\*** Treat package install/postinstall/build scripts as executable code with supply-chain implications, particularly in CI systems that possess secrets or deployment credentials.
+- **Lifecycle Scripts Are Code Execution:** Treat package install/postinstall/build scripts as executable code with supply-chain implications, particularly in CI systems that possess secrets or deployment credentials.
 
-- **\*\*Typosquatting/Confusion Review:\*\*** For newly introduced dependencies, verify package identity, publisher/source, expected repository, and naming. Be alert for typosquatting, dependency-confusion, and similarly named malicious packages.
+- **Typosquatting/Confusion Review:** For newly introduced dependencies, verify package identity, publisher/source, expected repository, and naming. Be alert for typosquatting, dependency-confusion, and similarly named malicious packages.
 
-- **\*\*Integrity/Provenance Where Available:\*\*** Use package-manager integrity verification, registry signatures/provenance, pinned sources, or equivalent ecosystem controls where supported and operationally appropriate.
+- **Integrity/Provenance Where Available:** Use package-manager integrity verification, registry signatures/provenance, pinned sources, or equivalent ecosystem controls where supported and operationally appropriate.
 
-- **\*\*Least-Privilege CI:\*\*** Dependency installation/build jobs should not automatically receive powerful production secrets or deployment permissions they do not require.
+- **Least-Privilege CI:** Dependency installation/build jobs should not automatically receive powerful production secrets or deployment permissions they do not require.
 
 
 

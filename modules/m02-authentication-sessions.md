@@ -7,10 +7,10 @@
 
 **### B. Authentication, Authorization & Session Management**
 
-- **\*\*Cryptographic Storage:\*\*** Passwords must be hashed using modern password hashing/KDFs such as Argon2id or bcrypt with an appropriate work factor. Never store plain-text or reversibly encrypted passwords.
+- **Cryptographic Storage:** Passwords must be hashed using modern password hashing/KDFs such as Argon2id or bcrypt with an appropriate work factor. Never store plain-text or reversibly encrypted passwords.
 
 
-- **\*\*Session Tokens & Cookies:\*\***
+- **Session Tokens & Cookies:**
 
   - Enforce `HttpOnly`, `Secure`, and an appropriate `SameSite` policy on authentication/session cookies.
 
@@ -21,7 +21,7 @@
   - Rotate or invalidate sessions when privilege, password, or critical account state changes.
 
 
-- **\*\*Authentication Abuse Controls:\*\*** Apply rate limiting, lockout/backoff, replay protection, and monitoring to login, reset, OTP, MFA, invite, and token-exchange endpoints.
+- **Authentication Abuse Controls:** Apply rate limiting, lockout/backoff, replay protection, and monitoring to login, reset, OTP, MFA, invite, and token-exchange endpoints.
 
 **### Layer 1 — Identity & Session Security**
 
