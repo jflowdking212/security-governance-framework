@@ -108,7 +108,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `modules/` | 22 source-derived security modules |
 | `bundles/` | Compact task indexes showing which modules to load |
 | `tools/` | Module generator, task resolver, bundle builder, repository validator and structured evidence validator |
-| `assurance/` | Assurance model, audit lifecycle, machine-readable control catalog, deterministic enforcement guidance, registry and reporting |
+| `assurance/` | Assurance model, audit lifecycle, machine-readable control catalog, severity rubric, deterministic enforcement guidance, registry and reporting |
 | `source/original-directives/` | Preserved canonical source documents |
 | `source/traceability-matrix.csv` | Source-section to module mapping |
 | `adapters/` | Gemini, Claude and ChatGPT entrypoints |
@@ -165,7 +165,7 @@ GitHub Actions runs the module generator, checks for stale generated modules, co
 - Security claims must be supported by relevant evidence.
 - Formal release-readiness evidence must use the control catalog and pass `node tools/validate-evidence.mjs --file <assessment.json> --release`; this validator does not replace human owner approval.
 
-See [M17](modules/m17-severity-release-gates.md), [M20](modules/m20-audit-first-remediation.md) and [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md).
+See [M17](modules/m17-severity-release-gates.md), the [severity classification rubric](assurance/severity-classification.md), [M20](modules/m20-audit-first-remediation.md) and [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md).
 
 ## Source integrity and policy changes
 
