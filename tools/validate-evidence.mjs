@@ -103,7 +103,7 @@ const scopeIds=Array.isArray(scope?.control_ids)?scope.control_ids:[];
 if(!scopeIds.length)addError('scope.control_ids must list at least one control family.');
 if(new Set(scopeIds).size!==scopeIds.length)addError('scope.control_ids contains duplicate control IDs.');
 for(const id of scopeIds)if(!catalogIds.has(id))addError('Scope references unknown control ID '+id);
-const requiresFull= requireFullAudit||assessmentType==='full-audit'||assessmentType==='production-release';
+const requiresFull=requireFullAudit||release||assessmentType==='full-audit'||assessmentType==='production-release';
 if(requiresFull){
  if(scopeIds.length!==catalogIds.size||[...catalogIds].some(id=>!scopeIds.includes(id)))addError('Full audit/production-release assessments must include every control family in the catalog.');
 }
@@ -163,7 +163,12 @@ for(const control of controlEntries){
 }
 const p0p1Open=[...findingMap.values()].filter(f=>['P0','P1'].includes(f.severity)&&f.status!=='VERIFIED');
 const unresolvedFindings=[...findingMap.values()].filter(f=>['OPEN','REMEDIATED'].includes(f.status));
-const nonPassingControls=controlEntries.filter(c=>['FAIL','UNKNOWN'].includes(c.status));
+const nonPassingControls=controlEntries.filter(control=>{
+ if(control.status==='UNKNOWN')return true;
+ if(control.status!=='FAIL')return false;
+ const linked=(control.finding_ids??[]).map(id=>findingMap.get(id));
+ return !linked.length||linked.some(f=>!f||['OPEN','REMEDIATED'].includes(f.status));
+});
 const passCount=controlEntries.filter(c=>c.status==='PASS').length;
 const naCount=controlEntries.filter(c=>c.status==='NOT_APPLICABLE').length;
 const unknownCount=controlEntries.filter(c=>c.status==='UNKNOWN').length;
