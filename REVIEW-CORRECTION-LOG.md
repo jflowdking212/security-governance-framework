@@ -36,3 +36,13 @@ See [OWNER-ACTIONS.md](OWNER-ACTIONS.md) for:
 ## Verification rule
 
 A finding is not closed because a document was added. Closure requires the independent reviewer to confirm the implementation, the evidence and any remaining limitations against the original finding. P0/P1 findings remain release blockers until resolved and verified.
+
+## Line-by-line review of M06, M07, M08, M10, M12, M21 (2026-11-18)
+
+Method: read the generated modules, resolved each with `tools/resolve-task.mjs --module`, and searched for waiver, risk-acceptance, override and optionality language.
+
+- Each module resolves with M13 and M01 and the dependencies declared in `manifest.json`; the payments task still loads M07.
+- The only risk-acceptance pathways in these six modules are in M12, which carries the OWNER POLICY OVERRIDE restricting acceptance to P2/P3. No contradiction with the absolute P0/P1 policy was found.
+- M08 (secrets) and M21 (CORS) are consistent with each other and with M05's strict-CORS rule; M06/M07 introduce no conflicting requirements.
+- Observation (no change made): M12 speaks of scanner "Critical/High" findings while the policy uses P0/P1. `assurance/severity-classification.md` is the mapping authority. Source text was not edited, to preserve traceability.
+- No defects requiring a code or module change were found, so no regression test was added. This is a reading-based review, not proof of completeness.
