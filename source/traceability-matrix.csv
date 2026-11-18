@@ -38,3 +38,16 @@ PAYMENT,PAYMENT:TAX-VERIFICATION,Required Tax Revenue Verification,M07,Tax and r
 PAYMENT,PAYMENT:GLOBAL-FINANCIAL-RELEASE-GATE,Global Financial Release Gate,M19,Specialist financial release gate preserved
 ANTIGRAVITY,ANTIGRAVITY:EXECUTION-CONTRACT,Execution Contract 1-15,M22;adapters,Agent execution contract retained and adapted
 OWNER,OWNER:RELEASE-POLICY,Non-waivable P0/P1 release policy,M17;M20,Owner-approved clarification; P2/P3 risk acceptance only
+
+PAYMENT,PAYMENT:PREAMBLE,Payment directive preamble,M06;M07,Scope priority fail-closed operating rule and working-integration-is-not-secure principle
+GLOBAL,GLOBAL:3:Layer2,Layer 2 Authorization and Tenant Isolation,M03,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer3,Layer 3 Application API and Client Security,M04,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer5,Layer 5 Database Financial and Transaction Integrity,M09,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer6,Layer 6 Integrations Webhooks and External APIs,M06,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer7,Layer 7 Dependencies and Software Supply Chain,M12,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer8,Layer 8 Infrastructure Hosting and Network Security,M12,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer9,Layer 9 CI/CD and Release Security,M12,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer10,Layer 10 Logging Monitoring Detection and Auditability,M10,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer11,Layer 11 Availability Performance and Resilience,M10,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer12,Layer 12 Backup Disaster Recovery and Incident Response,M10,Domain-local verification checklist
+GLOBAL,GLOBAL:19.8-superseded-in-part,Source 19.8 P0/P1 exception superseded in module,M20,Canonical source preserved verbatim and annotated by owner policy
