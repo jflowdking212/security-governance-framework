@@ -54,11 +54,11 @@
 
 ## Main branch publication
 - [x] PR #1 squash-merged into `main` after successful CI and substantive review.
-- [x] Post-merge GitHub Actions passed on Node.js 20.20.2, including all 33 tests.
+- [x] Post-merge GitHub Actions passed on Node.js 20.20.2, including all 34 tests.
 
 ## Remaining before final v1.0.0 release
 - [x] Additional substantive review of M06, M07, M08, M10, M12 and M21 completed; no further internal policy contradictions identified.
-- [x] GitHub Actions CI passed on Node.js 20, including source generation, index drift checks, validation and 33 automated tests.
+- [x] GitHub Actions CI passed on Node.js 20, including source generation, index drift checks, validation and 34 automated tests.
 - [x] Claude independent review completed (`REVIEW-CLAUDE.md`, 2026-11-18).
 - [x] Claude findings resolved or explicitly documented in the correction series and review report.
 - [ ] Owner approves final release after GitHub CI and remaining substantive review.
@@ -66,4 +66,4 @@
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
-**Current status:** Corrections are merged into `main` at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. GitHub Actions passed on Node.js 20.20.2 with 33 tests. No formal v1.0.0 tag/release has been created. Branch protection and owner approval for the formal release remain outstanding.
+**Current status:** Corrections are merged into `main` at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. GitHub Actions passed on Node.js 20.20.2 with 34 tests. No formal v1.0.0 tag/release has been created. Branch protection and owner approval for the formal release remain outstanding.

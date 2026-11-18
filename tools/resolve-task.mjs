@@ -1,4 +1,9 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const CALLER_CWD=process.cwd();
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+process.chdir(ROOT);
 const manifest=JSON.parse(await fs.readFile('manifest.json','utf8'));
 const args=process.argv.slice(2);
 function value(flag){const i=args.indexOf(flag);return i<0?null:args[i+1]??null;}
@@ -26,4 +31,5 @@ const map=new Map(manifest.modules.map(m=>[m.id,m])),state=new Map(),out=[];
 function visit(id,trail=[]){if(state.get(id)==='done')return;if(state.get(id)==='visiting')throw new Error('Dependency cycle: '+[...trail,id].join(' -> '));const m=map.get(id);if(!m)throw new Error('Unknown module '+id);state.set(id,'visiting');for(const d of m.dependencies)visit(d,[...trail,id]);state.set(id,'done');out.push(m)}
 for(const id of ids)visit(id);
 console.log('USS '+manifest.version+' | modules '+out.map(m=>m.id).join(', '));
-for(const m of out)console.log(m.id+' '+m.path+' | sources: '+m.source_sections.join(', '));
+const callerRelativePath=m=>path.relative(CALLER_CWD,path.resolve(ROOT,m.path)).split(path.sep).join('/')||'.';
+for(const m of out)console.log(m.id+' '+callerRelativePath(m)+' | sources: '+m.source_sections.join(', '));

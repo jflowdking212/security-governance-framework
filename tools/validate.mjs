@@ -1,5 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+process.chdir(ROOT);
 const m=JSON.parse(await fs.readFile('manifest.json','utf8')),errors=[];
 const exists=async p=>{try{await fs.access(p);return true}catch{return false}};
 const ids=m.modules.map(x=>x.id),idSet=new Set(ids);

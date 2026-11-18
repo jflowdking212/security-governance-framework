@@ -1,5 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const CALLER_CWD=process.cwd();
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+process.chdir(ROOT);
 const manifest=JSON.parse(await fs.readFile('manifest.json','utf8'));
 const modules=new Map(manifest.modules.map(m=>[m.id,m]));
 function resolve(ids){
@@ -28,5 +32,5 @@ for(const [name,ids] of Object.entries(targets)){
  for(const item of resolved){parts.push('\n---\n\n'+(await fs.readFile(item.path,'utf8')));}
  const output=path.join(outDir,name+'.md');
  await fs.writeFile(output,parts.join('\n\n')+'\n');
- console.log(name+': '+resolved.map(m=>m.id).join(', ')+' -> '+path.relative(process.cwd(),output));
+ console.log(name+': '+resolved.map(m=>m.id).join(', ')+' -> '+path.relative(CALLER_CWD,output));
 }

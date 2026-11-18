@@ -1,4 +1,8 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+process.chdir(ROOT);
 const source={
  global:'source/original-directives/GLOBAL_DIRECTIVE_APPLICATION_SECURITY_UPDATED_2026-10-02_v4.md',
  payment:'source/original-directives/global_payment_webhook_tax_security_directive.md',
