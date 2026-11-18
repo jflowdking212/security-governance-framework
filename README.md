@@ -1,7 +1,7 @@
 # Universal Security Standard (USS)
 
 **Current version:** 1.0.0  
-**Release status:** Independent review completed with required fixes applied; GitHub Actions CI passes on Node.js 20 (34 tests); final owner release approval remains.  
+**Release status:** Independent review completed with required fixes applied; GitHub Actions CI is used to validate the candidate; final owner release approval remains.  
 **Security posture:** FAIL CLOSED & PROVE  
 **Runtime requirement:** Node.js 20 or later for the repository validation tools. No third-party Node packages are required.
 
@@ -20,6 +20,7 @@ USS is a modular, source-traceable security engineering standard for human devel
 - A 13-Layer Security Assurance Model for structured security assessment.
 - A source-to-module traceability matrix and preserved canonical source documents.
 - Task resolution and on-demand bundle generation.
+- A machine-readable control-family catalog and structured evidence validator with non-waivable P0/P1 release gates.
 - Automated checks for source preservation, module consistency, dependency integrity, release-policy invariants and tests.
 - Short adapters for Gemini, Claude and ChatGPT.
 
@@ -36,7 +37,7 @@ For an AI agent or developer entering a repository that uses USS:
 5. Resolve the task and its transitive dependencies.
 6. Read the returned modules before changing security-relevant code.
 7. Read relevant implementation supplements from [supplements/README.md](supplements/README.md) when the application uses the technology or boundary they cover.
-7. Verify controls against the actual application and report evidence. Do not mark an unknown control as passed.
+8. Verify controls against the actual application and report evidence. Do not mark an unknown control as passed.
 
 ### Resolve a task
 
@@ -104,15 +105,15 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `manifest.json`, `MODULE-INDEX.md` | Module metadata, triggers, tasks and dependency graph |
 | `modules/` | 22 source-derived security modules |
 | `bundles/` | Compact task indexes showing which modules to load |
-| `tools/` | Module generator, task resolver, bundle builder and validator |
-| `assurance/` | Assurance model, audit lifecycle, control registry and reporting guidance |
+| `tools/` | Module generator, task resolver, bundle builder, repository validator and structured evidence validator |
+| `assurance/` | Assurance model, audit lifecycle, machine-readable control catalog, registry and reporting guidance |
 | `source/original-directives/` | Preserved canonical source documents |
 | `source/traceability-matrix.csv` | Source-section to module mapping |
 | `adapters/` | Gemini, Claude and ChatGPT entrypoints |
 | `supplements/` | Supplemental implementation guidance for identity, SSRF, API protocols, cryptography, data lifecycle, AI agents/RAG and runtime hardening |
 | `stacks/` | Node.js/Express and Python/FastAPI reference profiles; neither is verified against a consuming application |
-| `templates/` | Audit and remediation templates |
-| `tests/` | Automated manifest and task-resolver tests |
+| `templates/` | Audit, remediation and structured security-evidence templates |
+| `tests/` | Automated manifest, routing, documentation and evidence-validator tests |
 | `.github/workflows/` | Continuous validation workflow |
 
 ## Build and validate
@@ -133,6 +134,9 @@ node tools/build-bundles.mjs
 
 # Run source, manifest, dependency and policy validation
 node tools/validate.mjs
+
+# Validate the control catalog and example evidence report
+node tools/validate-evidence.mjs --file templates/security-evidence.example.json
 
 # Run the automated test suite
 node --test tests/*.test.mjs
@@ -157,6 +161,7 @@ GitHub Actions runs the module generator, checks for stale generated modules, co
 - A passing build, scanner, test suite or AI review alone does not prove production security.
 - Destructive changes, production migrations, credential revocation/rotation and production deployment require explicit human authorisation.
 - Security claims must be supported by relevant evidence.
+- Formal release-readiness evidence must use the control catalog and pass `node tools/validate-evidence.mjs --file <assessment.json> --release`; this validator does not replace human owner approval.
 
 See [M17](modules/m17-severity-release-gates.md), [M20](modules/m20-audit-first-remediation.md) and [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md).
 
