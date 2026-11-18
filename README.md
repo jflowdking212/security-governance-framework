@@ -181,6 +181,7 @@ The v1.0.0 candidate is under independent review. The review instructions and re
 
 - [Claude review instructions](REVIEW-PROMPT-FOR-CLAUDE.md)
 - [Claude review report](REVIEW-CLAUDE.md)
+- [Current correction log](REVIEW-CORRECTION-LOG.md)
 - [Release checklist](RELEASE-CHECKLIST.md)
 - [Owner actions required before release](OWNER-ACTIONS.md)
 - [Changelog](CHANGELOG.md)
