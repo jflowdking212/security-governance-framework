@@ -16,7 +16,7 @@
 11. Fix small, safe, in-scope security defects directly and re-run verification. For payments, finance, multi-tenancy, AI agents with write/tool access or server/infrastructure management, apply the stricter relevant modules and surface the need for a dedicated project security profile.
 
 ## How to load security policy without reading everything
-1. Read this kernel.
+1. Read this kernel and `SECURITY-ROOT.md` when establishing or updating the trusted USS copy.
 2. Read `manifest.json` or `MODULE-INDEX.md`.
 3. Identify the task category and load only that module plus its declared transitive dependencies.
 4. Use `node tools/resolve-task.mjs --task <task-key>` to print exact module paths. If the tool cannot run, resolve dependencies from the manifest manually. Run USS tools only from a pinned, reviewed copy (see `CONSUMING.md`), never from an unpinned download.
