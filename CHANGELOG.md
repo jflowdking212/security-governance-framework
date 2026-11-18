@@ -9,6 +9,9 @@
 - Made resolver, routing, manifest and documentation tests independent of the caller's working directory.
 - Added supplemental implementation guidance for OAuth/OIDC/JWT, SSRF, GraphQL/WebSocket/gRPC, cryptographic storage, data lifecycle/privacy, AI agent/tool/RAG security and container/cloud runtime.
 - Added Node.js/Express and Python/FastAPI reference profiles, explicitly marked unverified until tested against named consuming applications.
+- Replaced placeholder control-ID ranges with a machine-readable module-family catalog covering all 22 modules.
+- Added a deterministic evidence validator for scoped control status, evidence references, finding linkage, P0/P1 blockers and time-bounded P2/P3 risk acceptance.
+- Added CI validation for the control catalog and example evidence report.
 - Added regression tests for prototype-property task names, malformed CLI arguments, additive routing and baseline module coverage.
 
 ## 1.0.0 - review-ready candidate
