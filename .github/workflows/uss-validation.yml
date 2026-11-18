@@ -32,5 +32,7 @@ jobs:
         run: node tools/build-bundles.mjs
       - name: Validate source coverage and policy invariants
         run: node tools/validate.mjs
+      - name: Validate the machine-readable control catalog and evidence template
+        run: node tools/validate-evidence.mjs --file templates/security-evidence.example.json
       - name: Run tests
         run: node --test tests/*.test.mjs
