@@ -57,6 +57,7 @@
 - [x] Post-merge GitHub Actions passed on Node.js 20.20.2, including all 34 tests.
 
 ## Trust and evidence correction series
+- [x] Current Claude-review findings and implementation/owner-action status recorded in [REVIEW-CORRECTION-LOG.md](REVIEW-CORRECTION-LOG.md).
 - [x] External trust-root limitations documented; consumers are required to pin a full commit SHA obtained through an independent trusted channel.
 - [x] Machine-readable control-family catalog and structured evidence validator added.
 - [x] Added a severity classification rubric clarifying P0-P3 evidence, reachability, impact and risk acceptance.
