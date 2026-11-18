@@ -34,6 +34,16 @@
 - [x] Pull request template captures traceability, testing and release impact.
 - [x] No license was invented; README explains that reuse permission has not been granted.
 
+## Independent review corrections
+- [x] Mandatory M13 self-audit is reachable from every task through M01.
+- [x] Source 19.8 P0/P1 exception is preserved but explicitly annotated as superseded in M20.
+- [x] Domain modules carry the relevant verbatim Layer 1-12 checks.
+- [x] Payment directive preamble is present in M06 and M07.
+- [x] Routine routing no longer pulls audit-only modules.
+- [x] Authentication, database, frontend and production-release task keys added.
+- [x] Exact keyword resolver, generated indexes and semantic validation added.
+- [x] Consuming guide, pinned-source instructions and CI hardening added.
+
 ## Automated checks
 - [x] Module generator is reproducible in CI.
 - [x] CI rejects stale/hand-edited generated modules.
@@ -43,11 +53,11 @@
 - [x] Node test suite runs in GitHub Actions.
 
 ## Remaining before final v1.0.0 release
-- [ ] Claude independent review completed.
-- [ ] Claude findings resolved or explicitly documented.
-- [ ] Owner accepts final review.
+- [x] Claude independent review completed (`REVIEW-CLAUDE.md`, 2026-11-18).
+- [x] Claude findings resolved or explicitly documented in the correction series and review report.
+- [ ] Owner approves final release after GitHub CI and remaining substantive review.
 - [ ] Main branch protection configured with required USS validation checks and review. The repository rulesets query returned no rulesets; classic branch-protection status could not be verified because the connected GitHub integration returned HTTP 403. Owner must confirm in GitHub Settings.
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
-**Current status:** Implementation and automated validation complete; independent review and owner approval remain.
+**Current status:** Claude's correction series has been applied to the PR branch. GitHub Node 20 CI and final owner approval remain.
