@@ -56,6 +56,14 @@
 - [x] PR #1 squash-merged into `main` after successful CI and substantive review.
 - [x] Post-merge GitHub Actions passed on Node.js 20.20.2, including all 34 tests.
 
+## Trust and evidence correction series
+- [x] External trust-root limitations documented; consumers are required to pin a full commit SHA obtained through an independent trusted channel.
+- [x] Machine-readable control-family catalog and structured evidence validator added.
+- [x] AI, identity, SSRF, API, cryptography, privacy and runtime implementation supplements added.
+- [ ] Signed release tag/artefact created and independently verifiable against an owner-published signer identity.
+- [ ] Repository branch protection and required human review verified by the owner.
+- [ ] Owner selects and approves a software licence, or explicitly retains the no-licence state.
+
 ## Remaining before final v1.0.0 release
 - [x] Additional substantive review of M06, M07, M08, M10, M12 and M21 completed; no further internal policy contradictions identified.
 - [x] GitHub Actions CI passed on Node.js 20, including source generation, index drift checks, validation and 34 automated tests.
@@ -66,4 +74,4 @@
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
-**Current status:** Corrections are merged into `main` at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. GitHub Actions passed on Node.js 20.20.2 with 34 tests. No formal v1.0.0 tag/release has been created. Branch protection and owner approval for the formal release remain outstanding.
+**Current status:** The previous modular-standard correction baseline is merged into `main` at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. The new Claude-review correction series is being developed in draft PR #3 and has not been merged. The latest recorded CI run for the current branch passed after the M1-M4 evidence-validator changes. No formal v1.0.0 tag/release or independently verifiable signature has been created. Branch protection, licence choice and final owner approval remain outstanding.
