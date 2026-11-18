@@ -1,7 +1,7 @@
 # Universal Security Standard (USS)
 
 **Current version:** 1.0.0  
-**Release status:** Review-ready candidate. Not yet approved or released.  
+**Release status:** Independent review completed with required fixes applied; awaiting GitHub CI confirmation and owner release approval.  
 **Security posture:** FAIL CLOSED & PROVE  
 **Runtime requirement:** Node.js 20 or later for the repository validation tools. No third-party Node packages are required.
 
@@ -9,7 +9,7 @@
 
 USS is a modular, source-traceable security engineering standard for human developers and AI coding agents. It turns the project's canonical application-security, payment/webhook/tax and agent-execution directives into focused modules that can be selected by task. The aim is to make the right security requirements available at the point of work without forcing every agent to load the entire policy library.
 
-> **Important:** v1.0.0 is awaiting independent Claude review and owner approval. Do not treat it as a final release or pin it as an approved production standard until that review is closed and a release is published.
+> **Important:** v1.0.0 has received an independent Claude review. The required correction series is being applied and must pass GitHub CI and owner approval before it is treated as an approved production standard.
 
 ## What USS provides
 
@@ -31,9 +31,10 @@ For an AI agent or developer entering a repository that uses USS:
 1. Read [AGENTS.md](AGENTS.md).
 2. Read [KERNEL.md](KERNEL.md).
 3. Find the task in [MODULE-INDEX.md](MODULE-INDEX.md) or `manifest.json`.
-4. Resolve the task and its transitive dependencies.
-5. Read the returned modules before changing security-relevant code.
-6. Verify controls against the actual application and report evidence. Do not mark an unknown control as passed.
+4. Follow [CONSUMING.md](CONSUMING.md) to pin and vendor the exact reviewed USS commit.
+5. Resolve the task and its transitive dependencies.
+6. Read the returned modules before changing security-relevant code.
+7. Verify controls against the actual application and report evidence. Do not mark an unknown control as passed.
 
 ### Resolve a task
 
@@ -78,6 +79,10 @@ The resolver prints the exact module paths and dependency order. Dependencies ar
 | `security-audit` | Assurance, self-audit, testing and remediation |
 | `public-security-communication` | External security statements and disclosures |
 | `agent-execution` | AI agent operating contract |
+| `code-change` | General code changes and review |
+| `frontend` | Browser and frontend security |
+| `database` | Database, schema and transaction integrity |
+| `production-release` | Full 22-module production release assessment |
 | `saas-tenancy` | SaaS tenant boundaries and identity/authorisation |
 | `full-audit` | All 22 modules and all 13 assurance layers |
 
@@ -152,7 +157,7 @@ The original directives are retained at the repository root and under `source/or
 
 Generated modules must be rebuilt with `tools/build-modules.mjs`; do not hand-edit generated module text. A proposed change to universal policy must be reviewed against the canonical sources, traceability matrix, module dependencies, tests and version history. Project-specific profiles may strengthen USS but must not weaken it.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. See [CONSUMING.md](CONSUMING.md) for pinning, vendoring and safe update procedures.
 
 ## Independent review and release status
 
