@@ -114,7 +114,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `adapters/` | Gemini, Claude and ChatGPT entrypoints |
 | `supplements/` | Supplemental implementation guidance for identity, SSRF, API protocols, cryptography, data lifecycle, AI agents/RAG and runtime hardening |
 | `stacks/` | Node.js/Express and Python/FastAPI reference profiles; neither is verified against a consuming application |
-| `templates/` | Audit, remediation and structured security-evidence templates |
+| `templates/` | Audit, remediation, structured security-evidence and consumer CI security workflow templates |
 | `tests/` | Automated manifest, routing, documentation, evidence-validator and workflow-security tests |
 | `.github/workflows/` | USS validation and security-scanning workflows |
 
