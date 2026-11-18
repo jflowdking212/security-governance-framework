@@ -14,7 +14,7 @@ USS is a modular, source-traceable security engineering standard for human devel
 ## What USS provides
 
 - A short mandatory security kernel and agent entrypoint.
-- Technology-specific implementation supplements for identity, SSRF, API protocols, cryptography, data lifecycle and container/cloud runtime.
+- Technology-specific implementation supplements for identity, SSRF, API protocols, cryptography, data lifecycle, AI agents/RAG and container/cloud runtime.
 - 22 focused security modules with declared source references and dependencies.
 - Task routing for authentication, authorisation, input security, APIs, payments, tax, secrets, data protection, operations, AI/LLM, supply chain, audits and other security work.
 - A 13-Layer Security Assurance Model for structured security assessment.
@@ -109,7 +109,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `source/original-directives/` | Preserved canonical source documents |
 | `source/traceability-matrix.csv` | Source-section to module mapping |
 | `adapters/` | Gemini, Claude and ChatGPT entrypoints |
-| `supplements/` | Supplemental implementation guidance for identity, SSRF, API protocols, cryptography, data lifecycle and runtime hardening |
+| `supplements/` | Supplemental implementation guidance for identity, SSRF, API protocols, cryptography, data lifecycle, AI agents/RAG and runtime hardening |
 | `stacks/` | Node.js/Express and Python/FastAPI reference profiles; neither is verified against a consuming application |
 | `templates/` | Audit and remediation templates |
 | `tests/` | Automated manifest and task-resolver tests |
