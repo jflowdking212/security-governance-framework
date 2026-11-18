@@ -33,6 +33,11 @@ test('supplement index links resolve and every implementation supplement is inde
 test('stack profiles remain explicitly unverified until application evidence exists',()=>{
  for(const file of ['stacks/nodejs-express.md','stacks/python-fastapi.md'])assert.match(read(file),/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/);
 });
+test('severity rubric preserves M17 non-waivable release policy',()=>{
+ const rubric=read('assurance/severity-classification.md');
+ assert.match(rubric,/P0\/P1 cannot be accepted, waived, relabelled or silently downgraded/);
+ assert.match(rubric,/CVSS v4.0/);
+});
 test('README license notice matches whether a license file exists',()=>{
  const hasLicense=fs.existsSync(path.join(ROOT,'LICENSE'));
  const text=read('README.md');
