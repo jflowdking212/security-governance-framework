@@ -277,6 +277,8 @@ For applicable repositories verify:
 
 \- unresolved Critical/High findings are reviewed for reachability/applicability and either remediated, mitigated, or explicitly risk-accepted according to the directive;
 
+> **OWNER POLICY OVERRIDE (OWNER:RELEASE-POLICY):** This risk-acceptance pathway applies only to P2/P3 findings. It must never be used to approve, waive, downgrade, relabel, or release with an open P0/P1 finding. Any P0/P1 finding remains a hard production-release blocker until remediated and verified.
+
 \- direct and transitive dependency paths for material findings are understood;
 
 \- no unreviewed `--force`/major-version remediation is applied;

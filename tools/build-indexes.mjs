@@ -1,4 +1,8 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+process.chdir(ROOT);
 // Generates MODULE-INDEX.md and bundles/*.md from manifest.json so routing docs cannot drift.
 const manifest=JSON.parse(await fs.readFile('manifest.json','utf8'));
 const map=new Map(manifest.modules.map(m=>[m.id,m]));

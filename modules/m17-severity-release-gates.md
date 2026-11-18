@@ -50,3 +50,7 @@ Do not downgrade a finding because remediation is inconvenient.
 ## Owner-approved policy clarification
 
 P0 (Critical) and P1 (High) findings are absolute production-release blockers. No AI agent, developer, reviewer, or project operator may waive, downgrade, relabel, or silently accept a P0/P1 finding. A risk-acceptance note does not convert either severity into PASS. The blocker is cleared only after remediation and evidence-based verification, or after the owner changes this global policy through a separately reviewed, versioned amendment.
+
+## CVSS severity mapping
+
+CVSS Critical/High labels are triage signals, not automatic USS P0/P1 classifications. A CVSS Critical/High finding maps to P0/P1 only when the vulnerable code path is reachable or exploitation is demonstrated in the deployed context, and the resulting impact meets the P0/P1 definitions above. If reachability or exploitability is unknown, keep the finding unresolved and assess it; absence of evidence is not evidence of non-reachability. If the vulnerable path is demonstrated not to be reachable or exploitable in the deployed context, document the evidence and classify the residual risk on its actual impact rather than the CVSS label alone.

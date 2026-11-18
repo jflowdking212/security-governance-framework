@@ -1,7 +1,7 @@
 # Universal Security Standard (USS)
 
 **Current version:** 1.0.0  
-**Release status:** Independent review completed with required fixes applied; GitHub Actions CI passes on Node.js 20 (32 tests); final owner release approval remains.  
+**Release status:** Independent review completed with required fixes applied; GitHub Actions CI passes on Node.js 20 (34 tests); final owner release approval remains.  
 **Security posture:** FAIL CLOSED & PROVE  
 **Runtime requirement:** Node.js 20 or later for the repository validation tools. No third-party Node packages are required.
 
