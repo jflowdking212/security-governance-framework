@@ -30,7 +30,7 @@ The scanners run against this repository's own source. They do not scan a consum
 
 ## Consuming application requirements
 
-A consuming project should adapt the security workflow to include the languages and artifacts it actually deploys. Depending on the stack and threat model, this may include:
+A consuming project should start from [the consumer CI security workflow template](../templates/ci/README.md) and adapt the security workflow to include the languages and artifacts it actually deploys. Depending on the stack and threat model, this may include:
 
 - SAST and language-specific CodeQL/Semgrep rules.
 - Secret scanning across the full Git history.
