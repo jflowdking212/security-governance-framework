@@ -1,6 +1,6 @@
 # M20 Audit-first, risk-prioritised engineering and remediation
 
-**Source sections:** GLOBAL:19, GLOBAL:19.8-superseded-in-part, OWNER:RELEASE-POLICY
+**Source sections:** GLOBAL:19, GLOBAL:19.8-superseded-in-part, OWNER:RELEASE-POLICY  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
