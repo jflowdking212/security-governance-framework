@@ -45,6 +45,10 @@ node tools/resolve-task.mjs --task authentication
 node tools/resolve-task.mjs --task payments
 node tools/resolve-task.mjs --task saas-tenancy
 node tools/resolve-task.mjs --task full-audit
+
+# General code changes use a secure baseline plus the relevant domain triggers
+node tools/resolve-task.mjs --task code-change --keywords "database"
+node tools/resolve-task.mjs --task code-change --keywords "payment webhook"
 ```
 
 You can also resolve one module and its dependencies:
@@ -58,6 +62,8 @@ Or search module trigger terms:
 ```sh
 node tools/resolve-task.mjs --keywords "payment webhook"
 ```
+
+Task and keyword routing can be combined. `code-change` loads the general secure-coding baseline (core workflow, input/client security, API hygiene, secrets, data integrity and supply-chain controls). Add `--keywords` to load specialist modules for the actual change. For example, use `--task code-change --keywords "payment webhook"` for payment-related work. Unmatched keywords are reported and must be reviewed rather than ignored.
 
 The resolver prints the exact module paths and dependency order. Dependencies are mandatory, not optional suggestions.
 
