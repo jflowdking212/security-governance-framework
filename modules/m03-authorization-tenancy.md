@@ -21,6 +21,7 @@
 
 \- **\*\*Tenant Isolation:\*\*** Every tenant-scoped read, write, update, delete, export, webhook, background job, cache entry, search, and AI retrieval path must preserve the canonical tenant ownership chain.
 
+
 **### Layer 2 — Authorization & Tenant Isolation**
 
 
