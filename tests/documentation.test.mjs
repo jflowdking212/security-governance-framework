@@ -24,6 +24,15 @@ test('security and contribution guidance are present',()=>{
  const contributing=read('CONTRIBUTING.md');
  assert.ok(contributing.includes('source/traceability-matrix.csv'));
 });
+test('supplement index links resolve and every implementation supplement is indexed',()=>{
+ const index=read('supplements/README.md');
+ const links=[...index.matchAll(/\\]\\(([^)]+)\\)/g)].map(x=>x[1]).filter(x=>!/^https?:|^mailto:|^#/.test(x));
+ for(const link of links)assert.ok(fs.existsSync(path.resolve(ROOT,'supplements',link)),'Broken supplement link: '+link);
+ for(const name of ['authentication-federation.md','ssrf-outbound-requests.md','api-graphql-websocket-grpc.md','cryptography-key-management.md','data-lifecycle-privacy.md','container-cloud-runtime.md','ai-agent-security.md'])assert.ok(index.includes(name),'Supplement index missing '+name);
+});
+test('stack profiles remain explicitly unverified until application evidence exists',()=>{
+ for(const file of ['stacks/nodejs-express.md','stacks/python-fastapi.md'])assert.match(read(file),/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/);
+});
 test('README license notice matches whether a license file exists',()=>{
  const hasLicense=fs.existsSync(path.join(ROOT,'LICENSE'));
  const text=read('README.md');
