@@ -1,6 +1,6 @@
 # M12 CI/CD, infrastructure and software supply chain
 
-**Source sections:** GLOBAL:8, GLOBAL:21  
+**Source sections:** GLOBAL:8, GLOBAL:21, GLOBAL:3:Layer7, GLOBAL:3:Layer8, GLOBAL:3:Layer9
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
@@ -332,3 +332,29 @@ Before production approval, verify as applicable:
 \- ongoing monitoring/maintenance is defined.
 
 A lockfile freezes a dependency decision. It does not prove that decision is safe forever.
+
+**### Layer 7 — Dependencies & Software Supply Chain**
+
+
+
+Review lockfiles, deterministic installs, dependency vulnerabilities, malicious/abandoned packages, transitive risk, SBOM availability, secret scanning, SAST/static scanning, package scripts, CI action pinning, artifact provenance, generated binary artifacts, and source-control history for leaked credentials.
+
+**### Layer 8 — Infrastructure, Hosting & Network Security**
+
+
+
+Review or verify production topology, exposed services/ports, firewall/security groups, reverse proxy configuration, TLS termination, database network exposure, SSH/admin access, host/container hardening, least-privilege service accounts, filesystem permissions, object storage ACLs, secrets injection/retrieval, explicit dev/test/staging/production resource separation, database/account separation, lower-environment access to production, production-data use in non-production, secret-manager/startup outage behavior where applicable, credential scope, and patch/update process.
+
+
+
+Do not infer infrastructure controls from application code alone.
+
+**### Layer 9 — CI/CD & Release Security**
+
+
+
+Review protected branches, mandatory status checks, immutable/pinned workflow dependencies, build/test gates, deployment approvals, environment-scoped secrets, prevention of secret exposure in CI logs/artifacts, prevention of lower-environment jobs/tests/seeders from targeting production, credential rotation/deployment implications, immutable artifact promotion, migration gates, staging validation, production health checks, deployment concurrency locking, rollback, exact commit/release traceability, and prohibition of fail-open deployment.
+
+
+
+A successful \`git push\` only proves the remote received the commit. It does NOT prove CI, security review, deployment, or production health succeeded.
