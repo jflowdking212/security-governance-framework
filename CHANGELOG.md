@@ -14,6 +14,7 @@
 - Added an evidence-based P0-P3 severity classification rubric aligned with M17 and CVSS v4 context.
 - Added CI validation for the control catalog and example evidence report.
 - Documented the external trust-root model, including the limits of self-validation and the need for independently pinned commits and verified signer identity.
+- Added an owner-action register after verifying that main is unprotected, no repository rulesets exist, no licence is published and the dependency-graph comparison API returns HTTP 403.
 - Added pinned Gitleaks, Semgrep, CodeQL and OSV-Scanner workflows for the USS repository. GitHub Dependency Review was tested but is deferred because the dependency-graph compare API returned HTTP 403.
 - Added deterministic workflow tests that reject unpinned GitHub Actions and verify scanner fail-closed settings.
 - Added a consumer CI security workflow template with explicit adaptation and repository-protection requirements.
