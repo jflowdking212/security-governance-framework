@@ -22,7 +22,7 @@ USS is a modular, source-traceable security engineering standard for human devel
 - Task resolution and on-demand bundle generation.
 - A machine-readable control-family catalog and structured evidence validator with non-waivable P0/P1 release gates.
 - An explicit external trust-root model that explains what repository validation can and cannot authenticate.
-- Automated CI scans using Gitleaks, Semgrep, CodeQL, OSV-Scanner and GitHub Dependency Review.
+- Automated CI scans using Gitleaks, Semgrep, CodeQL and OSV-Scanner. GitHub Dependency Review remains optional pending dependency-graph API access.
 - Automated checks for source preservation, module consistency, dependency integrity, release-policy invariants and tests.
 - Short adapters for Gemini, Claude and ChatGPT.
 
