@@ -1,6 +1,6 @@
 # M10 Operations, environment isolation, audit and incident response
 
-**Source sections:** GLOBAL:1.G, GLOBAL:11, GLOBAL:18, GLOBAL:3:Layer10, GLOBAL:3:Layer11, GLOBAL:3:Layer12
+**Source sections:** GLOBAL:1.G, GLOBAL:11, GLOBAL:18, GLOBAL:3:Layer10, GLOBAL:3:Layer11, GLOBAL:3:Layer12  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
