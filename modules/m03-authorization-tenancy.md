@@ -1,6 +1,6 @@
 # M03 Authorisation, roles and tenant isolation
 
-**Source sections:** GLOBAL:1.B authorisation  
+**Source sections:** GLOBAL:1.B authorisation, GLOBAL:3:Layer2
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
@@ -21,3 +21,8 @@
 
 \- **\*\*Tenant Isolation:\*\*** Every tenant-scoped read, write, update, delete, export, webhook, background job, cache entry, search, and AI retrieval path must preserve the canonical tenant ownership chain.
 
+**### Layer 2 — Authorization & Tenant Isolation**
+
+
+
+Review RBAC/ABAC policy, BOLA/IDOR, cross-tenant reads/writes, parent-child ownership, route/service permission consistency, admin privilege escalation, suspended/removed account behavior, demo/test tenant isolation, and tenant boundaries in background jobs/caches.
