@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - Claude review correction series
+
+- Hardened task resolution against inherited JavaScript object properties, malformed arguments and duplicate selectors.
+- Added additive task-plus-keyword routing so the general code-change baseline can be widened to specialist security domains.
+- Expanded the default code-change route to include general input/client, API, secrets, data-integrity and supply-chain controls while remaining below the routine routing budget.
+- Removed the clean-checkout test dependency on generated, untracked full-text bundles; tracked task indexes remain covered by unit tests and generated bundle validation remains in CI.
+- Made resolver, routing, manifest and documentation tests independent of the caller's working directory.
+- Added regression tests for prototype-property task names, malformed CLI arguments, additive routing and baseline module coverage.
+
 ## 1.0.0 - review-ready candidate
 
 - Reorganised the canonical global directive and payment/tax supplement into 22 task-focused modules.
