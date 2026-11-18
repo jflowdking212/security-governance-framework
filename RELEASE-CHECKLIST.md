@@ -37,6 +37,7 @@
 - [ ] Claude independent review completed.
 - [ ] Claude findings resolved or explicitly documented.
 - [ ] Owner accepts final review.
+- [ ] Main branch protection configured with required USS validation checks and review.
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
