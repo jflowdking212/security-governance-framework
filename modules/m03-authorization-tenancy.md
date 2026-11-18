@@ -1,6 +1,6 @@
 # M03 Authorisation, roles and tenant isolation
 
-**Source sections:** GLOBAL:1.B authorisation, GLOBAL:3:Layer2
+**Source sections:** GLOBAL:1.B authorisation, GLOBAL:3:Layer2  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
