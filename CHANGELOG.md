@@ -11,6 +11,7 @@
 - Added Node.js/Express and Python/FastAPI reference profiles, explicitly marked unverified until tested against named consuming applications.
 - Replaced placeholder control-ID ranges with a machine-readable module-family catalog covering all 22 modules.
 - Added a deterministic evidence validator for scoped control status, evidence references, finding linkage, P0/P1 blockers and time-bounded P2/P3 risk acceptance.
+- Added an evidence-based P0-P3 severity classification rubric aligned with M17 and CVSS v4 context.
 - Added CI validation for the control catalog and example evidence report.
 - Documented the external trust-root model, including the limits of self-validation and the need for independently pinned commits and verified signer identity.
 - Added pinned Gitleaks, Semgrep, CodeQL and OSV-Scanner workflows for the USS repository. GitHub Dependency Review was tested but is deferred because the dependency-graph compare API returned HTTP 403.
