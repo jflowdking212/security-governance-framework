@@ -1,6 +1,6 @@
 # M20 Audit-first, risk-prioritised engineering and remediation
 
-**Source sections:** GLOBAL:19, OWNER:RELEASE-POLICY  
+**Source sections:** GLOBAL:19, GLOBAL:19.8-superseded-in-part, OWNER:RELEASE-POLICY
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
@@ -198,6 +198,8 @@ Where a risk is intentionally deferred or accepted:
 \- do not silently relabel the finding as `PASS`;
 
 \- never use risk acceptance to bypass a P0/P1 release block unless the directive explicitly allows that category of human risk acceptance and the accountable owner explicitly accepts it.
+
+> **OWNER POLICY OVERRIDE (OWNER:RELEASE-POLICY):** The exception clause in the bullet above is SUPERSEDED. No category of human risk acceptance exists that permits releasing with an open P0/P1 finding. Read the bullet as: "never use risk acceptance to bypass a P0/P1 release block."
 
 
 
