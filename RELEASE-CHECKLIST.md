@@ -67,7 +67,7 @@
 - [x] Added a consumer CI security workflow template with explicit language, dependency and permission adaptation notes.
 - [x] AI, identity, SSRF, API, cryptography, privacy and runtime implementation supplements added.
 - [ ] Signed release tag/artefact created and independently verifiable against an owner-published signer identity.
-- [ ] Repository branch protection and required human review verified by the owner.
+- [ ] Repository branch protection and required human review configured by the owner. GitHub API verification on 2026-11-18 confirmed main is unprotected, enforcement is disabled and no rulesets exist.
 - [ ] Owner selects and approves a software licence, or explicitly retains the no-licence state.
 
 ## Remaining before final v1.0.0 release
@@ -76,7 +76,7 @@
 - [x] Claude independent review completed (`REVIEW-CLAUDE.md`, 2026-11-18).
 - [ ] All findings from the latest Claude review resolved or explicitly documented with an owner decision.
 - [ ] Owner approves final release after GitHub CI and remaining substantive review.
-- [ ] Main branch protection configured with required USS validation checks and review. The repository rulesets query returned no rulesets; classic branch-protection status could not be verified because the connected GitHub integration returned HTTP 403. Owner must confirm in GitHub Settings.
+- [ ] Main branch protection configured with required USS validation checks and review. The GitHub API reports main is unprotected and branch-protection enforcement is disabled. Owner must configure this in GitHub Settings.
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
