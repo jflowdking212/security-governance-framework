@@ -12,4 +12,5 @@
 - Expanded the root README with project overview, quick start, task catalogue, validation and release guidance.
 - Added private vulnerability reporting guidance, contribution standards, repository ignore rules and a pull-request template.
 - Added README link validation and documentation tests.
+- Independent review corrections: mandatory M13 self-audit reachable from every task; P0/P1 source 19.8 exception explicitly superseded in M20; domain-local 13-layer checks; payment preamble; leaner task routing; exact keyword matching; generated indexes; line-level source coverage and structural/routing checks; pinned consuming guidance; CI hardening.
 - This candidate remains subject to independent Claude review before final release/tagging.
