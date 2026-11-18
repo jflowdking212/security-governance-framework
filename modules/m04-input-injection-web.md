@@ -1,20 +1,52 @@
-# M04 Input validation, injection and browser security
+# M04 Injection, input validation and client security
 
-## Controls
-- Validate all untrusted input server-side using explicit schemas, types, lengths, ranges, enums, nested constraints, file limits, and allow-lists. Reject ambiguous, conflicting, unexpected, and duplicate fields where practical.
-- Use parameterised queries, prepared statements, or safe ORM query builders. Never concatenate untrusted values into SQL, NoSQL filters, shell commands, or dynamic query strings.
-- Avoid shell execution. If essential, use fixed executable paths, argument arrays, strict allow-lists, least privilege, bounded time/output, and no untrusted interpolation.
-- Map request DTOs explicitly to writable model fields. Never mass-assign privileged fields.
-- Contextually encode output. Avoid raw HTML and unsafe DOM/template injection; use a maintained sanitizer only where explicitly needed.
-- Assess CSRF for cookie-authenticated state-changing requests. CORS is not CSRF protection.
-- Assess SSRF, path traversal, unsafe deserialisation, open redirects, insecure file/object access, prototype pollution, and request smuggling where relevant.
-- Bound request body, upload, query complexity, pagination, recursion, CPU, memory, and processing time.
-- CORS is not authentication or authorisation. Private/credentialed APIs require explicit trusted origins; never use wildcard origins for private credentialed responses. Do not trust Origin as identity.
-- Verify middleware ordering and actual browser behaviour. SameSite, credentials mode, cookie scope, preflight, cache variation, and CSRF controls interact.
-- Do not mechanically restrict intentionally public, non-credentialed resources without understanding their contract.
+**Source sections:** GLOBAL:1.A, GLOBAL:1.C  
+**Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
-## Negative tests
-SQL/NoSQL/command injection, XSS contexts, CSRF, SSRF, path traversal, oversized/deep payloads, type confusion, duplicate fields, mass assignment, hostile Origin, wildcard credentialed CORS, and cache poisoning.
+---
 
-## Source basis
-Global directive Sections 1.A, 1.C and 20; APES Layer 3; Self-audit vectors 2, 3, 8, 9, 14.
+**### A. Injection & Data Layer (SQLi, NoSQLi, Command Injection)**
+
+
+
+\- **\*\*Zero Unsafe Raw Queries:\*\*** Strictly require parameterized queries, prepared statements, or ORM/ODM-safe query builders across all data layers. Never concatenate untrusted variables directly into SQL, shell commands, database filters, or dynamic query strings.
+
+\- **\*\*System Command Execution:\*\*** Avoid invoking shell commands (\`exec\`, \`spawn\`, \`system\`). If mandatory, use strict allow-list validation, separate arguments, least privilege, bounded execution time, and no direct interpolation of untrusted input.
+
+\- **\*\*ORM Mass Assignment:\*\*** Block auto-binding of raw request bodies to database models. Enforce explicit attribute allow-listing/DTO mapping to prevent mass-updating security-sensitive fields such as \`role\`, \`is_admin\`, \`balance\`, \`tenantId\`, \`companyId\`, \`status\`, permissions, billing state, or ownership.
+
+\- **\*\*Transaction Safety:\*\*** Financial, inventory, quota, entitlement, idempotency, reconciliation, and other state-sensitive updates MUST use appropriate transactions, locking, uniqueness constraints, or compare-and-set semantics.
+
+\- **\*\*Precision:\*\*** Financial values MUST use decimal/fixed-precision types or integer minor units, never floating-point arithmetic where rounding can alter money or balances.
+
+**### C. Input Validation, Output Encoding & Client Security**
+
+
+
+\- **\*\*Strict Server-Side Validation:\*\*** Validate types, lengths, ranges, schemas, enum values, nested objects, file metadata, and allowed character sets before processing. Never rely solely on front-end validation.
+
+\- **\*\*Reject Ambiguous Input:\*\*** Reject unexpected fields where practical, especially on privileged operations. Avoid silently coercing arrays/objects into strings or accepting duplicate/conflicting identifiers.
+
+\- **\*\*Cross-Site Scripting (XSS):\*\***
+
+  - Contextually encode dynamic content before rendering it to the DOM.
+
+  - Forbid \`dangerouslySetInnerHTML\`, raw HTML injection, or unescaped template interpolation unless passed through a dedicated, well-maintained sanitizer with a documented reason.
+
+\- **\*\*CSRF:\*\*** Where cookie-authenticated state-changing browser requests are possible, assess and implement CSRF protection appropriate to the framework and request model.
+
+\- **\*\*File Upload Security:\*\***
+
+  - Validate uploads using signature/magic-byte checks where feasible, not only MIME type or extension.
+
+  - Enforce strict file size, row count, decompression, parser, and processing limits.
+
+  - Generate randomized server-side filenames.
+
+  - Store uploads outside directly executable/public paths or in isolated private object storage.
+
+  - Deny script execution in upload directories.
+
+  - Scan or safely parse risky formats and protect against ZIP bombs, path traversal, formula injection, and parser abuse.
+
+\- **\*\*Downloads/Exports:\*\*** Apply authorization checks to generated reports, temporary URLs, object storage links, exports, and archived files.
