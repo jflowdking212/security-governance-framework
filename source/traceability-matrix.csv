@@ -1,0 +1,54 @@
+source,source_ref,source_section,destination_module,notes
+GLOBAL,GLOBAL:Core,Core Persona & Operating Constraints,M01,Global operating policy and authorised scope
+GLOBAL,GLOBAL:1.A,Injection & Data Layer,M04,Injection database transaction and precision requirements
+GLOBAL,GLOBAL:1.B authentication,Authentication cryptographic storage sessions abuse controls,M02,Identity authentication and session controls
+GLOBAL,GLOBAL:1.B authorisation,BOLA IDOR RBAC tenant isolation,M03,Object authorisation and tenant ownership controls
+GLOBAL,GLOBAL:1.C,Input Validation Output Encoding Client Security,M04,Validation encoding CSRF file uploads and downloads
+GLOBAL,GLOBAL:1.D,Network Transport API Hygiene,M05,API transport TLS rate limits secrets and webhook cross-reference
+GLOBAL,GLOBAL:1.E,Payment Webhook External Event Integrity,M06,Payment and webhook control baseline
+GLOBAL,GLOBAL:1.F,Secret Lifecycle Rotation Centralized Secret Management Maturity,M08,Credential lifecycle and maturity controls
+GLOBAL,GLOBAL:1.G,Error Handling Environment Isolation Security Audit Trails,M10,Error handling environment separation and authoritative audit trails
+GLOBAL,GLOBAL:2,Mandatory In-Line Penetration Check,M13,All source self-audit vectors retained
+GLOBAL,GLOBAL:3,13-Layer Production Security Assurance,M14,All thirteen assurance layers retained
+GLOBAL,GLOBAL:3:Layer4,Layer 4 Data Protection Privacy Residency,M09,Focused data protection module
+GLOBAL,GLOBAL:3:Layer13,Layer 13 AI LLM Security Governance,M11,Focused AI security module
+GLOBAL,GLOBAL:4,Production-Readiness Evidence Rule,M15,Evidence and production-readiness requirements
+GLOBAL,GLOBAL:5,Audit Remediate Penetration Test Re-Audit Lifecycle,M16,Audit lifecycle and retest
+GLOBAL,GLOBAL:6,Authorized Penetration Testing Boundary,M16,Authorised testing boundary
+GLOBAL,GLOBAL:7,Security Finding Severity Release Gating,M17,Severity and release blockers with owner clarification
+GLOBAL,GLOBAL:8,CI/CD Security Standard,M12,CI/CD pipeline and deployment controls
+GLOBAL,GLOBAL:9,Enterprise Security Evidence Pack,M15,Procurement and assurance evidence
+GLOBAL,GLOBAL:10,Public Security Communication,M18,Substantiated public security claims
+GLOBAL,GLOBAL:11,Monitoring Incident Response Vulnerability Management,M10,Monitoring response and vulnerability management
+GLOBAL,GLOBAL:12,Required Final Security Reporting Contract,M15,Final report contract
+GLOBAL,GLOBAL:13,Global Security Decision Principles,M01,Core policy principles
+GLOBAL,GLOBAL:14,Definition of Secure Engineering Done,M01,Secure engineering completion criteria
+GLOBAL,GLOBAL:15,Revenue Tax Indirect Tax Compliance Guardrail,M07,Tax compliance guardrails
+GLOBAL,GLOBAL:16,Financial Integration Revenue Compliance Release Gate,M19,Financial release gate
+GLOBAL,GLOBAL:17,Secret Management Rotation Release Gate,M08,Secret management release gate
+GLOBAL,GLOBAL:18,Error Handling Environment Isolation Audit Trail Release Gate,M10,Operational release gate
+GLOBAL,GLOBAL:19,Audit-First Risk-Prioritized Engineering Remediation Control,M20,Audit-first remediation and risk acceptance clarification
+GLOBAL,GLOBAL:20,CORS Browser Cross-Origin Trust Boundary,M21,CORS policy and negative verification
+GLOBAL,GLOBAL:21,Dependency Lockfile Software Supply-Chain Maintenance,M12,Dependency and supply-chain controls
+PAYMENT,PAYMENT:A1-A16,Part A A1-A16,M06,Full specialist webhook requirements preserved
+PAYMENT,PAYMENT:WEBHOOK-NEGATIVE-TESTS,Required Webhook Negative Tests,M06,Negative test set preserved
+PAYMENT,PAYMENT:B1-B12,Part B B1-B12,M07,Full tax and indirect-tax requirements preserved
+PAYMENT,PAYMENT:AI-TAX-SAFETY,AI Agent Tax Safety Rule,M07;M11,Tax AI safeguards retained in both domain and AI module
+PAYMENT,PAYMENT:TAX-VERIFICATION,Required Tax Revenue Verification,M07,Tax and revenue verification requirements preserved
+PAYMENT,PAYMENT:GLOBAL-FINANCIAL-RELEASE-GATE,Global Financial Release Gate,M19,Specialist financial release gate preserved
+ANTIGRAVITY,ANTIGRAVITY:EXECUTION-CONTRACT,Execution Contract 1-15,M22;adapters,Agent execution contract retained and adapted
+OWNER,OWNER:RELEASE-POLICY,Non-waivable P0/P1 release policy,M17;M20,Owner-approved clarification; P2/P3 risk acceptance only
+
+PAYMENT,PAYMENT:PREAMBLE,Payment directive preamble,M06;M07,Scope priority fail-closed operating rule and working-integration-is-not-secure principle
+GLOBAL,GLOBAL:3:Layer2,Layer 2 Authorization and Tenant Isolation,M03,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer3,Layer 3 Application API and Client Security,M04,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer5,Layer 5 Database Financial and Transaction Integrity,M09,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer6,Layer 6 Integrations Webhooks and External APIs,M06,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer7,Layer 7 Dependencies and Software Supply Chain,M12,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer8,Layer 8 Infrastructure Hosting and Network Security,M12,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer9,Layer 9 CI/CD and Release Security,M12,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer10,Layer 10 Logging Monitoring Detection and Auditability,M10,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer11,Layer 11 Availability Performance and Resilience,M10,Domain-local verification checklist
+GLOBAL,GLOBAL:3:Layer12,Layer 12 Backup Disaster Recovery and Incident Response,M10,Domain-local verification checklist
+GLOBAL,GLOBAL:19.8-superseded-in-part,Source 19.8 P0/P1 exception superseded in module,M20,Canonical source preserved verbatim and annotated by owner policy
+GLOBAL,GLOBAL:3:Layer1,Layer 1 Identity and Session Security,M02,Domain-local verification checklist

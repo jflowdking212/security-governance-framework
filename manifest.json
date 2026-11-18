@@ -1,0 +1,818 @@
+{
+  "standard": "Universal Security Standard",
+  "version": "1.0.0",
+  "status": "review-ready",
+  "description": "Modular, source-traceable security engineering policy for AI agents and human engineering teams.",
+  "kernel": "KERNEL.md",
+  "agent_entrypoint": "AGENTS.md",
+  "module_index": "MODULE-INDEX.md",
+  "sources": {
+    "global": {
+      "root": "GLOBAL_DIRECTIVE_APPLICATION_SECURITY_UPDATED_2026-10-02_v4.md",
+      "archive": "source/original-directives/GLOBAL_DIRECTIVE_APPLICATION_SECURITY_UPDATED_2026-10-02_v4.md"
+    },
+    "antigravity": {
+      "root": "ANTIGRAVITY_IDE_GLOBAL_SECURITY_DIRECTIVE_v4.md",
+      "archive": "source/original-directives/ANTIGRAVITY_IDE_GLOBAL_SECURITY_DIRECTIVE_v4.md"
+    },
+    "payment": {
+      "root": "global_payment_webhook_tax_security_directive.md",
+      "archive": "source/original-directives/global_payment_webhook_tax_security_directive.md"
+    }
+  },
+  "modules": [
+    {
+      "id": "M01",
+      "slug": "engineering-workflow",
+      "title": "Core operating policy and secure engineering",
+      "path": "modules/m01-engineering-workflow.md",
+      "triggers": [
+        "core",
+        "secure-engineering",
+        "development",
+        "code-change",
+        "review"
+      ],
+      "dependencies": [
+        "M13"
+      ],
+      "source_sections": [
+        "GLOBAL:Core",
+        "GLOBAL:13",
+        "GLOBAL:14"
+      ]
+    },
+    {
+      "id": "M02",
+      "slug": "authentication-sessions",
+      "title": "Authentication, identity and sessions",
+      "path": "modules/m02-authentication-sessions.md",
+      "triggers": [
+        "authentication",
+        "login",
+        "password",
+        "mfa",
+        "otp",
+        "session",
+        "recovery",
+        "invite"
+      ],
+      "dependencies": [
+        "M01",
+        "M08"
+      ],
+      "source_sections": [
+        "GLOBAL:1.B authentication",
+        "GLOBAL:3:Layer1"
+      ]
+    },
+    {
+      "id": "M03",
+      "slug": "authorization-tenancy",
+      "title": "Authorisation, roles and tenant isolation",
+      "path": "modules/m03-authorization-tenancy.md",
+      "triggers": [
+        "authorization",
+        "authorisation",
+        "rbac",
+        "abac",
+        "tenant",
+        "tenancy",
+        "saas",
+        "ownership",
+        "hierarchy",
+        "bola",
+        "idor"
+      ],
+      "dependencies": [
+        "M01",
+        "M02"
+      ],
+      "source_sections": [
+        "GLOBAL:1.B authorisation",
+        "GLOBAL:3:Layer2"
+      ]
+    },
+    {
+      "id": "M04",
+      "slug": "input-injection-web",
+      "title": "Injection, input validation and client security",
+      "path": "modules/m04-input-injection-web.md",
+      "triggers": [
+        "input",
+        "validation",
+        "injection",
+        "sql",
+        "nosql",
+        "command",
+        "xss",
+        "csrf",
+        "ssrf",
+        "file-upload",
+        "browser",
+        "upload",
+        "uploads",
+        "file",
+        "files",
+        "frontend"
+      ],
+      "dependencies": [
+        "M01",
+        "M03"
+      ],
+      "source_sections": [
+        "GLOBAL:1.A",
+        "GLOBAL:1.C",
+        "GLOBAL:3:Layer3"
+      ]
+    },
+    {
+      "id": "M05",
+      "slug": "api-network-transport",
+      "title": "Network, transport and API hygiene",
+      "path": "modules/m05-api-network-transport.md",
+      "triggers": [
+        "api",
+        "network",
+        "transport",
+        "tls",
+        "http",
+        "websocket",
+        "rate-limit",
+        "cors"
+      ],
+      "dependencies": [
+        "M01",
+        "M04"
+      ],
+      "source_sections": [
+        "GLOBAL:1.D"
+      ]
+    },
+    {
+      "id": "M06",
+      "slug": "payments-webhooks",
+      "title": "Payments, webhooks and external event integrity",
+      "path": "modules/m06-payments-webhooks.md",
+      "triggers": [
+        "payment",
+        "payments",
+        "webhook",
+        "billing",
+        "subscription",
+        "invoice",
+        "refund",
+        "financial",
+        "provider-event"
+      ],
+      "dependencies": [
+        "M01",
+        "M03",
+        "M04",
+        "M05",
+        "M08",
+        "M10"
+      ],
+      "source_sections": [
+        "GLOBAL:1.E",
+        "PAYMENT:PREAMBLE",
+        "PAYMENT:A1-A16",
+        "PAYMENT:WEBHOOK-NEGATIVE-TESTS",
+        "GLOBAL:3:Layer6"
+      ]
+    },
+    {
+      "id": "M07",
+      "slug": "tax-compliance",
+      "title": "Revenue tax and indirect-tax compliance",
+      "path": "modules/m07-tax-compliance.md",
+      "triggers": [
+        "tax",
+        "vat",
+        "gst",
+        "sales-tax",
+        "nexus",
+        "tax-compliance",
+        "filing",
+        "remittance"
+      ],
+      "dependencies": [
+        "M01",
+        "M06",
+        "M09"
+      ],
+      "source_sections": [
+        "GLOBAL:15",
+        "PAYMENT:PREAMBLE",
+        "PAYMENT:B1-B12",
+        "PAYMENT:AI-TAX-SAFETY",
+        "PAYMENT:TAX-VERIFICATION"
+      ]
+    },
+    {
+      "id": "M08",
+      "slug": "secrets",
+      "title": "Secrets, credentials and lifecycle management",
+      "path": "modules/m08-secrets.md",
+      "triggers": [
+        "secrets",
+        "credentials",
+        "keys",
+        "tokens",
+        "rotation",
+        "environment",
+        "secret-manager"
+      ],
+      "dependencies": [
+        "M01"
+      ],
+      "source_sections": [
+        "GLOBAL:1.F",
+        "GLOBAL:17"
+      ]
+    },
+    {
+      "id": "M09",
+      "slug": "data-protection",
+      "title": "Data protection, privacy and residency",
+      "path": "modules/m09-data-protection.md",
+      "triggers": [
+        "data",
+        "privacy",
+        "database",
+        "storage",
+        "retention",
+        "encryption",
+        "backup",
+        "export",
+        "integrity",
+        "migration",
+        "migrations",
+        "schema",
+        "transaction",
+        "transactions",
+        "ledger"
+      ],
+      "dependencies": [
+        "M01",
+        "M03",
+        "M04",
+        "M08"
+      ],
+      "source_sections": [
+        "GLOBAL:3:Layer4",
+        "GLOBAL:3:Layer5"
+      ]
+    },
+    {
+      "id": "M10",
+      "slug": "operations-audit-ir",
+      "title": "Operations, environment isolation, audit and incident response",
+      "path": "modules/m10-operations-audit-ir.md",
+      "triggers": [
+        "errors",
+        "logging",
+        "monitoring",
+        "audit",
+        "incident",
+        "response",
+        "availability",
+        "resilience",
+        "recovery",
+        "environment"
+      ],
+      "dependencies": [
+        "M01",
+        "M08",
+        "M09"
+      ],
+      "source_sections": [
+        "GLOBAL:1.G",
+        "GLOBAL:11",
+        "GLOBAL:18",
+        "GLOBAL:3:Layer10",
+        "GLOBAL:3:Layer11",
+        "GLOBAL:3:Layer12"
+      ]
+    },
+    {
+      "id": "M11",
+      "slug": "ai-llm-security",
+      "title": "AI/LLM security and governance",
+      "path": "modules/m11-ai-llm-security.md",
+      "triggers": [
+        "ai",
+        "llm",
+        "prompt-injection",
+        "agents",
+        "tools",
+        "retrieval",
+        "embeddings",
+        "model"
+      ],
+      "dependencies": [
+        "M01",
+        "M03",
+        "M08",
+        "M09",
+        "M10"
+      ],
+      "source_sections": [
+        "GLOBAL:3:Layer13",
+        "PAYMENT:AI-TAX-SAFETY"
+      ]
+    },
+    {
+      "id": "M12",
+      "slug": "supply-chain-cicd-infra",
+      "title": "CI/CD, infrastructure and software supply chain",
+      "path": "modules/m12-supply-chain-cicd-infra.md",
+      "triggers": [
+        "dependencies",
+        "supply-chain",
+        "cicd",
+        "ci",
+        "cd",
+        "infrastructure",
+        "hosting",
+        "deployment",
+        "build",
+        "release",
+        "sbom",
+        "deploy"
+      ],
+      "dependencies": [
+        "M01",
+        "M08",
+        "M10"
+      ],
+      "source_sections": [
+        "GLOBAL:8",
+        "GLOBAL:21",
+        "GLOBAL:3:Layer7",
+        "GLOBAL:3:Layer8",
+        "GLOBAL:3:Layer9"
+      ]
+    },
+    {
+      "id": "M13",
+      "slug": "self-audit",
+      "title": "Mandatory in-line penetration self-audit",
+      "path": "modules/m13-self-audit.md",
+      "triggers": [
+        "self-audit",
+        "negative-tests",
+        "fuzzing",
+        "security-checklist",
+        "adversarial-tests",
+        "code-change",
+        "pre-merge"
+      ],
+      "dependencies": [],
+      "source_sections": [
+        "GLOBAL:2"
+      ]
+    },
+    {
+      "id": "M14",
+      "slug": "assurance-model",
+      "title": "13-layer production security assurance model",
+      "path": "modules/m14-assurance-model.md",
+      "triggers": [
+        "assurance",
+        "security-audit",
+        "production-readiness",
+        "13-layer",
+        "apes"
+      ],
+      "dependencies": [
+        "M01"
+      ],
+      "source_sections": [
+        "GLOBAL:3"
+      ]
+    },
+    {
+      "id": "M15",
+      "slug": "evidence-reporting",
+      "title": "Production evidence, assurance pack and reporting",
+      "path": "modules/m15-evidence-reporting.md",
+      "triggers": [
+        "evidence",
+        "reporting",
+        "audit-pack",
+        "security-questionnaire",
+        "procurement"
+      ],
+      "dependencies": [
+        "M01"
+      ],
+      "source_sections": [
+        "GLOBAL:4",
+        "GLOBAL:9",
+        "GLOBAL:12"
+      ]
+    },
+    {
+      "id": "M16",
+      "slug": "audit-penetration-testing",
+      "title": "Audit, remediation and authorised penetration testing",
+      "path": "modules/m16-audit-penetration-testing.md",
+      "triggers": [
+        "penetration-test",
+        "pentest",
+        "audit-lifecycle",
+        "remediation",
+        "retest"
+      ],
+      "dependencies": [
+        "M13",
+        "M14",
+        "M15",
+        "M17"
+      ],
+      "source_sections": [
+        "GLOBAL:5",
+        "GLOBAL:6"
+      ]
+    },
+    {
+      "id": "M17",
+      "slug": "severity-release-gates",
+      "title": "Security finding severity and release gates",
+      "path": "modules/m17-severity-release-gates.md",
+      "triggers": [
+        "severity",
+        "p0",
+        "p1",
+        "release-gate",
+        "risk-acceptance"
+      ],
+      "dependencies": [
+        "M01"
+      ],
+      "source_sections": [
+        "GLOBAL:7",
+        "OWNER:RELEASE-POLICY"
+      ]
+    },
+    {
+      "id": "M18",
+      "slug": "public-security-communication",
+      "title": "Public security communication",
+      "path": "modules/m18-public-security-communication.md",
+      "triggers": [
+        "security-disclosure",
+        "public-security",
+        "security-claims",
+        "incident-communications"
+      ],
+      "dependencies": [
+        "M10",
+        "M15",
+        "M17"
+      ],
+      "source_sections": [
+        "GLOBAL:10"
+      ]
+    },
+    {
+      "id": "M19",
+      "slug": "financial-release-gate",
+      "title": "Financial integration and revenue compliance release gate",
+      "path": "modules/m19-financial-release-gate.md",
+      "triggers": [
+        "financial-release",
+        "payment-release",
+        "reconciliation-gate"
+      ],
+      "dependencies": [
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M15",
+        "M17"
+      ],
+      "source_sections": [
+        "GLOBAL:16",
+        "PAYMENT:GLOBAL-FINANCIAL-RELEASE-GATE"
+      ]
+    },
+    {
+      "id": "M20",
+      "slug": "audit-first-remediation",
+      "title": "Audit-first, risk-prioritised engineering and remediation",
+      "path": "modules/m20-audit-first-remediation.md",
+      "triggers": [
+        "risk-prioritization",
+        "remediation-register",
+        "root-cause",
+        "risk-acceptance-process"
+      ],
+      "dependencies": [
+        "M01"
+      ],
+      "source_sections": [
+        "GLOBAL:19",
+        "GLOBAL:19.8-superseded-in-part",
+        "OWNER:RELEASE-POLICY"
+      ]
+    },
+    {
+      "id": "M21",
+      "slug": "cors-browser-boundary",
+      "title": "CORS and browser cross-origin trust boundary",
+      "path": "modules/m21-cors-browser-boundary.md",
+      "triggers": [
+        "cors",
+        "origin",
+        "preflight",
+        "cross-origin",
+        "browser-security"
+      ],
+      "dependencies": [
+        "M04",
+        "M05"
+      ],
+      "source_sections": [
+        "GLOBAL:20"
+      ]
+    },
+    {
+      "id": "M22",
+      "slug": "agent-execution-contract",
+      "title": "Agent execution contract and policy adherence",
+      "path": "modules/m22-agent-execution-contract.md",
+      "triggers": [
+        "agent-policy",
+        "agent-instructions",
+        "gemini",
+        "claude",
+        "chatgpt",
+        "antigravity"
+      ],
+      "dependencies": [
+        "M01"
+      ],
+      "source_sections": [
+        "ANTIGRAVITY:EXECUTION-CONTRACT"
+      ]
+    }
+  ],
+  "tasks": {
+    "authentication": [
+      "M02",
+      "M04",
+      "M05"
+    ],
+    "authorization": [
+      "M03"
+    ],
+    "input-security": [
+      "M04"
+    ],
+    "api-security": [
+      "M05",
+      "M21"
+    ],
+    "payments": [
+      "M06",
+      "M19"
+    ],
+    "tax-compliance": [
+      "M07",
+      "M19"
+    ],
+    "secrets": [
+      "M08"
+    ],
+    "data-protection": [
+      "M09",
+      "M04"
+    ],
+    "operations": [
+      "M10"
+    ],
+    "ai-security": [
+      "M11",
+      "M04"
+    ],
+    "supply-chain-cicd": [
+      "M12"
+    ],
+    "security-audit": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "M13",
+      "M14",
+      "M15",
+      "M16",
+      "M17",
+      "M20",
+      "M21"
+    ],
+    "public-security-communication": [
+      "M18"
+    ],
+    "agent-execution": [
+      "M22"
+    ],
+    "saas-tenancy": [
+      "M03",
+      "M02",
+      "M04",
+      "M05",
+      "M09"
+    ],
+    "full-audit": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "M13",
+      "M14",
+      "M15",
+      "M16",
+      "M17",
+      "M18",
+      "M19",
+      "M20",
+      "M21",
+      "M22"
+    ],
+    "code-change": [
+      "M01"
+    ],
+    "frontend": [
+      "M04",
+      "M21"
+    ],
+    "database": [
+      "M09",
+      "M04"
+    ],
+    "production-release": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "M13",
+      "M14",
+      "M15",
+      "M16",
+      "M17",
+      "M18",
+      "M19",
+      "M20",
+      "M21",
+      "M22"
+    ]
+  },
+  "bundles": {
+    "authentication": [
+      "M02",
+      "M04",
+      "M05"
+    ],
+    "payments": [
+      "M06",
+      "M19"
+    ],
+    "saas-tenancy": [
+      "M03",
+      "M02",
+      "M04",
+      "M05",
+      "M09"
+    ],
+    "api-security": [
+      "M05",
+      "M21"
+    ],
+    "full-audit": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "M13",
+      "M14",
+      "M15",
+      "M16",
+      "M17",
+      "M18",
+      "M19",
+      "M20",
+      "M21",
+      "M22"
+    ]
+  },
+  "bundle_paths": {
+    "authentication": "bundles/authentication.md",
+    "payments": "bundles/payments.md",
+    "saas-tenancy": "bundles/saas-tenancy.md",
+    "api-security": "bundles/api-security.md",
+    "full-audit": "bundles/full-audit.md"
+  },
+  "required_source_sections": [
+    "GLOBAL:Core",
+    "GLOBAL:1.A",
+    "GLOBAL:1.B authentication",
+    "GLOBAL:1.B authorisation",
+    "GLOBAL:1.C",
+    "GLOBAL:1.D",
+    "GLOBAL:1.E",
+    "GLOBAL:1.F",
+    "GLOBAL:1.G",
+    "GLOBAL:2",
+    "GLOBAL:3",
+    "GLOBAL:4",
+    "GLOBAL:5",
+    "GLOBAL:6",
+    "GLOBAL:7",
+    "GLOBAL:8",
+    "GLOBAL:9",
+    "GLOBAL:10",
+    "GLOBAL:11",
+    "GLOBAL:12",
+    "GLOBAL:13",
+    "GLOBAL:14",
+    "GLOBAL:15",
+    "GLOBAL:16",
+    "GLOBAL:17",
+    "GLOBAL:18",
+    "GLOBAL:19",
+    "GLOBAL:20",
+    "GLOBAL:21",
+    "PAYMENT:A1-A16",
+    "PAYMENT:WEBHOOK-NEGATIVE-TESTS",
+    "PAYMENT:B1-B12",
+    "PAYMENT:AI-TAX-SAFETY",
+    "PAYMENT:TAX-VERIFICATION",
+    "PAYMENT:GLOBAL-FINANCIAL-RELEASE-GATE",
+    "ANTIGRAVITY:EXECUTION-CONTRACT",
+    "OWNER:RELEASE-POLICY",
+    "PAYMENT:PREAMBLE",
+    "GLOBAL:3:Layer1",
+    "GLOBAL:3:Layer2",
+    "GLOBAL:3:Layer3",
+    "GLOBAL:3:Layer4",
+    "GLOBAL:3:Layer5",
+    "GLOBAL:3:Layer6",
+    "GLOBAL:3:Layer7",
+    "GLOBAL:3:Layer8",
+    "GLOBAL:3:Layer9",
+    "GLOBAL:3:Layer10",
+    "GLOBAL:3:Layer11",
+    "GLOBAL:3:Layer12",
+    "GLOBAL:3:Layer13",
+    "GLOBAL:19.8-superseded-in-part"
+  ],
+  "rules": {
+    "operating_mode": "FAIL CLOSED & PROVE",
+    "p0_release": "BLOCK",
+    "p1_release": "BLOCK",
+    "agent_may_waive_p0_p1": false,
+    "risk_acceptance_applies_to": [
+      "P2",
+      "P3"
+    ],
+    "unknown_is_pass": false,
+    "assurance_name": "13-Layer Security Assurance Model"
+  },
+  "bundle_format": "Task indexes (bundles/*.md) and MODULE-INDEX.md are generated by tools/build-indexes.mjs. Compiled full-text bundles are generated on demand into dist/bundles/ by tools/build-bundles.mjs. Dependencies are runtime requirements; audit-only modules (M14, M16, M20) are never pulled by routine tasks."
+}

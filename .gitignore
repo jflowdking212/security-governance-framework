@@ -1,0 +1,30 @@
+# Node.js / local tooling
+node_modules/
+dist/
+coverage/
+.nyc_output/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.secret
+secrets/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Operating system / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
