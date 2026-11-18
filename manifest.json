@@ -366,7 +366,7 @@
         "security-audit",
         "production-readiness",
         "13-layer",
-        "ap es"
+        "apes"
       ],
       "dependencies": [
         "M01",
@@ -609,6 +609,10 @@
     "agent-execution": [
       "M22"
     ],
+    "saas-tenancy": [
+      "M03",
+      "M02"
+    ],
     "full-audit": [
       "M01",
       "M02",
@@ -638,52 +642,17 @@
     "authentication": [
       "M02"
     ],
-    "authorization": [
-      "M03"
-    ],
-    "input-security": [
-      "M04"
-    ],
-    "api-security": [
-      "M05",
-      "M21"
-    ],
     "payments": [
       "M06",
       "M19"
     ],
-    "tax-compliance": [
-      "M07",
-      "M19"
+    "saas-tenancy": [
+      "M03",
+      "M02"
     ],
-    "secrets": [
-      "M08"
-    ],
-    "data-protection": [
-      "M09"
-    ],
-    "operations": [
-      "M10"
-    ],
-    "ai-security": [
-      "M11"
-    ],
-    "supply-chain-cicd": [
-      "M12"
-    ],
-    "security-audit": [
-      "M13",
-      "M14",
-      "M15",
-      "M16",
-      "M17",
-      "M20"
-    ],
-    "public-security-communication": [
-      "M18"
-    ],
-    "agent-execution": [
-      "M22"
+    "api-security": [
+      "M05",
+      "M21"
     ],
     "full-audit": [
       "M01",
@@ -712,19 +681,9 @@
   },
   "bundle_paths": {
     "authentication": "bundles/authentication.md",
-    "authorization": "bundles/authorization.md",
-    "input-security": "bundles/input-security.md",
-    "api-security": "bundles/api-security.md",
     "payments": "bundles/payments.md",
-    "tax-compliance": "bundles/tax-compliance.md",
-    "secrets": "bundles/secrets.md",
-    "data-protection": "bundles/data-protection.md",
-    "operations": "bundles/operations.md",
-    "ai-security": "bundles/ai-security.md",
-    "supply-chain-cicd": "bundles/supply-chain-cicd.md",
-    "security-audit": "bundles/security-audit.md",
-    "public-security-communication": "bundles/public-security-communication.md",
-    "agent-execution": "bundles/agent-execution.md",
+    "saas-tenancy": "bundles/saas-tenancy.md",
+    "api-security": "bundles/api-security.md",
     "full-audit": "bundles/full-audit.md"
   },
   "required_source_sections": [
