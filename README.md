@@ -1,64 +1,42 @@
 # Universal Security Standard (USS)
 
-USS is a modular, agent-readable security and secure-engineering standard derived from the preserved source directives in `source/original-directives/`.
+**Version:** 1.0.0  
+**Status:** Review-ready candidate, pending independent Claude review and owner approval.  
+**Operating rule:** FAIL CLOSED & PROVE.
 
-**Current version:** 1.0.0  
-**Status:** Initial release candidate, pending independent review and validation in consuming projects.  
-**Policy:** FAIL CLOSED & PROVE.
+USS converts the preserved global application-security, Anti-Gravity execution and payment/tax directives into small, source-traceable modules. Agents should load the kernel plus only the task module(s) and their dependencies, not the entire source archive.
 
 ## Start here
+1. Read `AGENTS.md` and `KERNEL.md`.
+2. Find the task key in `MODULE-INDEX.md` / `manifest.json`.
+3. Run `node tools/resolve-task.mjs --task <task-key>`.
+4. Read the returned module paths and all declared dependencies.
+5. For full audits, resolve `full-audit`.
 
-1. Read [AGENTS.md](AGENTS.md).
-2. Read [KERNEL.md](KERNEL.md).
-3. Identify the task type and load its generated bundle from `bundles/`.
-4. Resolve dependencies from [manifest.json](manifest.json).
-5. Apply the relevant module controls and produce evidence.
-
-For a complete security audit, use `bundles/full-audit.md`. Do not select a subset for a full audit.
-
-## Structure
-
-- `KERNEL.md`: mandatory short policy and routing rules.
-- `modules/`: authoritative modular controls.
-- `assurance/`: 13-layer assessment, severity, evidence, testing, and remediation lifecycle.
-- `bundles/`: generated task-specific concatenations.
-- `adapters/`: minimal agent entrypoints.
-- `stacks/`: stack-specific additions, only where verified.
+## Repository layout
+- `KERNEL.md`, `AGENTS.md`: short mandatory entrypoints.
+- `modules/`: 22 task-focused source-derived policy modules.
+- `manifest.json`, `MODULE-INDEX.md`: routing, triggers, dependencies and source references.
+- `bundles/`: compact task indexes, not duplicate copies of the policy.
+- `tools/resolve-task.mjs`: task-to-module resolver.
+- `tools/build-bundles.mjs`: compile full task bundles on demand.
+- `assurance/`: quick-reference summaries.
+- `source/original-directives/`: preserved original documents.
+- `source/traceability-matrix.csv`: source-to-module coverage.
+- `adapters/`: short Gemini, Claude and ChatGPT entrypoints.
 - `templates/`: audit and remediation templates.
-- `source/original-directives/`: verbatim historical source documents.
-- `source/traceability-matrix.csv`: source-to-module mapping.
-- `manifest.json`: module IDs, triggers, dependencies, bundle definitions, and source references.
-- `tools/`: bundle builder and validator.
-- `tests/`: automated structural and policy tests.
 
-## Policy interpretation
+## Release policy
+P0 and P1 findings block production release. No agent may waive, downgrade or silently accept either. Risk acceptance applies only to P2/P3. Unknown is not pass.
 
-The source directives are the authority for inherited controls. The new modular documents reorganize and consolidate those controls. Where a module is more specific, it must not weaken the source directive. If a conflict or ambiguity is found, record it as an issue and fail closed until an accountable human resolves it.
+The 13-Layer Security Assurance Model is an internal framework, not an external certification or claim of compliance.
 
-### Release blockers
-
-P0 and P1 findings block production release. No agent may waive or downgrade them. P2 findings require documented remediation or explicit human risk handling appropriate to the deployment. P3 findings are informational.
-
-### Assurance naming
-
-The source's APES-style 13-layer framework is retained as the **13-Layer Security Assurance Model**. This is an internal assurance model, not a claim of external certification or a universal standard.
-
-## Build and validate
-
-Requires Node.js 18 or later. No third-party packages are required.
-
+## Validate
+Requires Node.js 20 or later, no third-party packages:
 ```sh
 node tools/build-bundles.mjs
 node tools/validate.mjs
 node --test tests/*.test.mjs
 ```
 
-The bundle builder reads `manifest.json`, resolves declared dependencies, and writes deterministic Markdown bundles. Do not edit generated bundles by hand.
-
-## Version pinning
-
-Consuming projects should pin a released tag or commit SHA and retain the pinned version in their repository. Do not rely on a moving branch or a live network fetch during every agent task.
-
-## Scope and limitations
-
-USS is an engineering policy and verification framework. It does not itself prove that a system is secure, compliant, penetration-tested, or production-ready. Controls must be verified against the actual application, configuration, infrastructure, tests, and operational evidence.
+USS is an engineering policy and verification framework. It does not itself prove that an application is secure, compliant, penetration-tested or production-ready. Verify controls against the actual system and retain evidence.
