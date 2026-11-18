@@ -1,6 +1,6 @@
 # M07 Revenue tax and indirect-tax compliance
 
-**Source sections:** GLOBAL:15, PAYMENT:PREAMBLE, PAYMENT:B1-B12, PAYMENT:AI-TAX-SAFETY, PAYMENT:TAX-VERIFICATION
+**Source sections:** GLOBAL:15, PAYMENT:PREAMBLE, PAYMENT:B1-B12, PAYMENT:AI-TAX-SAFETY, PAYMENT:TAX-VERIFICATION  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
