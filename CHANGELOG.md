@@ -13,7 +13,7 @@
 - Added a deterministic evidence validator for scoped control status, evidence references, finding linkage, P0/P1 blockers and time-bounded P2/P3 risk acceptance.
 - Added CI validation for the control catalog and example evidence report.
 - Documented the external trust-root model, including the limits of self-validation and the need for independently pinned commits and verified signer identity.
-- Added pinned Gitleaks, Semgrep, CodeQL, OSV-Scanner and GitHub Dependency Review workflows for the USS repository.
+- Added pinned Gitleaks, Semgrep, CodeQL and OSV-Scanner workflows for the USS repository. GitHub Dependency Review was tested but is deferred because the dependency-graph compare API returned HTTP 403.
 - Added deterministic workflow tests that reject unpinned GitHub Actions and verify scanner fail-closed settings.
 - Added regression tests for prototype-property task names, malformed CLI arguments, additive routing and baseline module coverage.
 
