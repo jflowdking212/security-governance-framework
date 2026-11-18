@@ -25,6 +25,15 @@
 - [x] Unknown is not pass.
 - [x] 13-layer framework named 13-Layer Security Assurance Model.
 
+## Repository documentation and hygiene
+- [x] Root README provides project overview, quick start, task catalogue and validation commands.
+- [x] README local links are checked by the validator.
+- [x] SECURITY.md documents private vulnerability reporting.
+- [x] CONTRIBUTING.md documents source traceability and required checks.
+- [x] .gitignore excludes generated bundles, local environments and common secret/key files.
+- [x] Pull request template captures traceability, testing and release impact.
+- [x] No license was invented; README explains that reuse permission has not been granted.
+
 ## Automated checks
 - [x] Module generator is reproducible in CI.
 - [x] CI rejects stale/hand-edited generated modules.
