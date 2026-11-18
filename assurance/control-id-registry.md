@@ -54,3 +54,11 @@ The validator checks that PASS controls have evidence, NOT_APPLICABLE controls h
 The computed state `READY_FOR_OWNER_REVIEW` is not production approval. It means only that the submitted evidence structure and declared statuses satisfy this validator. A human owner must still review the evidence and authorize release.
 
 Do not invent control implementation status from this registry. Consult the authoritative module and verify application evidence.
+
+## Statement-level requirement IDs (P2.8)
+
+`node tools/requirement-ids.mjs --count | --module <Mxx> | --lookup <ID>` derives a stable ID for every content statement in the generated modules: `<family ID>.<8 hex>` (for example `USS-PAY.3f9a1c2e`), where the hex part is a SHA-256 prefix of the whitespace/markdown-normalised statement text.
+
+- Nothing is hand-assigned and nothing is committed, so the index cannot drift from `modules/`; uniqueness is asserted on every run (`tests/requirement-ids.test.mjs`).
+- An ID survives reformatting and renumbering but changes when the wording changes, so a finding that pins an ID shows when the requirement it cites was edited.
+- Limits: IDs are per statement, not per normative clause; non-normative lines also receive IDs. Pinning an ID gives edit-detection, not human-readable numbering. Family IDs in `assurance/control-catalog.json` remain the unit used by `tools/validate-evidence.mjs`.
