@@ -33,7 +33,9 @@
         "code-change",
         "review"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "M13"
+      ],
       "source_sections": [
         "GLOBAL:Core",
         "GLOBAL:13",
@@ -105,7 +107,12 @@
         "csrf",
         "ssrf",
         "file-upload",
-        "browser"
+        "browser",
+        "upload",
+        "uploads",
+        "file",
+        "files",
+        "frontend"
       ],
       "dependencies": [
         "M01",
@@ -232,15 +239,23 @@
         "encryption",
         "backup",
         "export",
-        "integrity"
+        "integrity",
+        "migration",
+        "migrations",
+        "schema",
+        "transaction",
+        "transactions",
+        "ledger"
       ],
       "dependencies": [
         "M01",
         "M03",
+        "M04",
         "M08"
       ],
       "source_sections": [
-        "GLOBAL:3:Layer4"
+        "GLOBAL:3:Layer4",
+        "GLOBAL:3:Layer5"
       ]
     },
     {
@@ -268,7 +283,10 @@
       "source_sections": [
         "GLOBAL:1.G",
         "GLOBAL:11",
-        "GLOBAL:18"
+        "GLOBAL:18",
+        "GLOBAL:3:Layer10",
+        "GLOBAL:3:Layer11",
+        "GLOBAL:3:Layer12"
       ]
     },
     {
@@ -314,7 +332,8 @@
         "deployment",
         "build",
         "release",
-        "sbom"
+        "sbom",
+        "deploy"
       ],
       "dependencies": [
         "M01",
@@ -323,7 +342,10 @@
       ],
       "source_sections": [
         "GLOBAL:8",
-        "GLOBAL:21"
+        "GLOBAL:21",
+        "GLOBAL:3:Layer7",
+        "GLOBAL:3:Layer8",
+        "GLOBAL:3:Layer9"
       ]
     },
     {
@@ -336,22 +358,11 @@
         "negative-tests",
         "fuzzing",
         "security-checklist",
-        "adversarial-tests"
+        "adversarial-tests",
+        "code-change",
+        "pre-merge"
       ],
-      "dependencies": [
-        "M01",
-        "M02",
-        "M03",
-        "M04",
-        "M05",
-        "M06",
-        "M07",
-        "M08",
-        "M09",
-        "M10",
-        "M11",
-        "M12"
-      ],
+      "dependencies": [],
       "source_sections": [
         "GLOBAL:2"
       ]
@@ -369,18 +380,7 @@
         "apes"
       ],
       "dependencies": [
-        "M01",
-        "M02",
-        "M03",
-        "M04",
-        "M05",
-        "M06",
-        "M07",
-        "M08",
-        "M09",
-        "M10",
-        "M11",
-        "M12"
+        "M01"
       ],
       "source_sections": [
         "GLOBAL:3"
@@ -399,7 +399,7 @@
         "procurement"
       ],
       "dependencies": [
-        "M14"
+        "M01"
       ],
       "source_sections": [
         "GLOBAL:4",
@@ -443,8 +443,7 @@
         "risk-acceptance"
       ],
       "dependencies": [
-        "M14",
-        "M15"
+        "M01"
       ],
       "source_sections": [
         "GLOBAL:7",
@@ -506,14 +505,11 @@
         "risk-acceptance-process"
       ],
       "dependencies": [
-        "M13",
-        "M14",
-        "M15",
-        "M16",
-        "M17"
+        "M01"
       ],
       "source_sections": [
         "GLOBAL:19",
+        "GLOBAL:19.8-superseded-in-part",
         "OWNER:RELEASE-POLICY"
       ]
     },
@@ -560,7 +556,9 @@
   ],
   "tasks": {
     "authentication": [
-      "M02"
+      "M02",
+      "M04",
+      "M05"
     ],
     "authorization": [
       "M03"
@@ -584,24 +582,39 @@
       "M08"
     ],
     "data-protection": [
-      "M09"
+      "M09",
+      "M04"
     ],
     "operations": [
       "M10"
     ],
     "ai-security": [
-      "M11"
+      "M11",
+      "M04"
     ],
     "supply-chain-cicd": [
       "M12"
     ],
     "security-audit": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
       "M13",
       "M14",
       "M15",
       "M16",
       "M17",
-      "M20"
+      "M20",
+      "M21"
     ],
     "public-security-communication": [
       "M18"
@@ -611,9 +624,47 @@
     ],
     "saas-tenancy": [
       "M03",
-      "M02"
+      "M02",
+      "M04",
+      "M05",
+      "M09"
     ],
     "full-audit": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "M13",
+      "M14",
+      "M15",
+      "M16",
+      "M17",
+      "M18",
+      "M19",
+      "M20",
+      "M21",
+      "M22"
+    ],
+    "code-change": [
+      "M01"
+    ],
+    "frontend": [
+      "M04",
+      "M21"
+    ],
+    "database": [
+      "M09",
+      "M04"
+    ],
+    "production-release": [
       "M01",
       "M02",
       "M03",
@@ -640,7 +691,9 @@
   },
   "bundles": {
     "authentication": [
-      "M02"
+      "M02",
+      "M04",
+      "M05"
     ],
     "payments": [
       "M06",
@@ -648,7 +701,10 @@
     ],
     "saas-tenancy": [
       "M03",
-      "M02"
+      "M02",
+      "M04",
+      "M05",
+      "M09"
     ],
     "api-security": [
       "M05",
@@ -723,7 +779,22 @@
     "PAYMENT:TAX-VERIFICATION",
     "PAYMENT:GLOBAL-FINANCIAL-RELEASE-GATE",
     "ANTIGRAVITY:EXECUTION-CONTRACT",
-    "OWNER:RELEASE-POLICY"
+    "OWNER:RELEASE-POLICY",
+    "PAYMENT:PREAMBLE",
+    "GLOBAL:3:Layer1",
+    "GLOBAL:3:Layer2",
+    "GLOBAL:3:Layer3",
+    "GLOBAL:3:Layer4",
+    "GLOBAL:3:Layer5",
+    "GLOBAL:3:Layer6",
+    "GLOBAL:3:Layer7",
+    "GLOBAL:3:Layer8",
+    "GLOBAL:3:Layer9",
+    "GLOBAL:3:Layer10",
+    "GLOBAL:3:Layer11",
+    "GLOBAL:3:Layer12",
+    "GLOBAL:3:Layer13",
+    "GLOBAL:19.8-superseded-in-part"
   ],
   "rules": {
     "operating_mode": "FAIL CLOSED & PROVE",
@@ -737,5 +808,5 @@
     "unknown_is_pass": false,
     "assurance_name": "13-Layer Security Assurance Model"
   },
-  "bundle_format": "Task indexes list only the modules and transitive dependencies required. Use tools/resolve-task.mjs to print exact paths; use tools/build-bundles.mjs to compile full text on demand."
+  "bundle_format": "Task indexes (bundles/*.md) and MODULE-INDEX.md are generated by tools/build-indexes.mjs. Compiled full-text bundles are generated on demand into dist/bundles/ by tools/build-bundles.mjs. Dependencies are runtime requirements; audit-only modules (M14, M16, M20) are never pulled by routine tasks."
 }
