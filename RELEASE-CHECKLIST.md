@@ -59,6 +59,7 @@
 ## Trust and evidence correction series
 - [x] External trust-root limitations documented; consumers are required to pin a full commit SHA obtained through an independent trusted channel.
 - [x] Machine-readable control-family catalog and structured evidence validator added.
+- [x] Added a severity classification rubric clarifying P0-P3 evidence, reachability, impact and risk acceptance.
 - [x] Added full-history Gitleaks, Semgrep, CodeQL and OSV-Scanner workflows.
 - [ ] Confirm dependency-graph API access and enable GitHub Dependency Review if supported.
 - [x] Pinned direct GitHub Actions and reusable workflow references to full commit SHAs.
