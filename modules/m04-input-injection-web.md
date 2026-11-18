@@ -1,6 +1,6 @@
 # M04 Injection, input validation and client security
 
-**Source sections:** GLOBAL:1.A, GLOBAL:1.C  
+**Source sections:** GLOBAL:1.A, GLOBAL:1.C, GLOBAL:3:Layer3
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
@@ -50,3 +50,9 @@
   - Scan or safely parse risky formats and protect against ZIP bombs, path traversal, formula injection, and parser abuse.
 
 \- **\*\*Downloads/Exports:\*\*** Apply authorization checks to generated reports, temporary URLs, object storage links, exports, and archived files.
+
+**### Layer 3 — Application, API & Client Security**
+
+
+
+Review schema validation, SQL/NoSQL/command injection, XSS, CSRF where applicable, SSRF, path traversal, unsafe deserialization, open redirects, mass assignment, insecure direct file/object access, request bounds, rate limits, and websocket authentication/message authorization.
