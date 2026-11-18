@@ -20,7 +20,10 @@ const global=await fs.readFile(m.sources.global.archive,'utf8'),anti=await fs.re
 const marker='# EMBEDDED CANONICAL GLOBAL DIRECTIVE — v4',pos=anti.indexOf(marker);
 if(pos<0)errors.push('Anti-Gravity embedded canonical marker missing');else{const norm=x=>x.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean).join('\n');if(norm(anti.slice(pos+marker.length))!==norm(global))errors.push('Embedded global directive does not match standalone canonical source')}
 if(m.rules.p0_release!=='BLOCK'||m.rules.p1_release!=='BLOCK'||m.rules.agent_may_waive_p0_p1!==false||m.rules.unknown_is_pass!==false)errors.push('Release policy invariant failed');
-for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md'])if(!await exists(p))errors.push('Missing required project file '+p);
+for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md','REVIEW-CLAUDE.md','RELEASE-CHECKLIST.md','CHANGELOG.md','VERSION','SECURITY.md','CONTRIBUTING.md','.gitignore','.github/PULL_REQUEST_TEMPLATE.md'])if(!await exists(p))errors.push('Missing required project file '+p);
+const readme=await fs.readFile('README.md','utf8');
+const readmeLinks=[...readme.matchAll(/\\]\\(([^)]+)\\)/g)].map(x=>x[1]).filter(x=>!/^https?:|^mailto:|^#/.test(x)).map(x=>decodeURIComponent(x.split('#')[0])).filter(Boolean);
+for(const link of new Set(readmeLinks))if(!await exists(link))errors.push('README links to missing local path '+link);
 for(const p of Object.values(m.bundle_paths)){if(!await exists(p))errors.push('Missing task index '+p);else{const c=await fs.readFile(p,'utf8');if(/placeholder|build instructions/i.test(c))errors.push('Placeholder bundle index '+p)}}
 for(const [name,ids] of Object.entries(m.bundle_paths)){const task=name;const idx=await fs.readFile(ids,'utf8');for(const id of m.bundles[task]??[])if(!idx.includes(id))errors.push('Bundle index '+task+' missing module '+id)}
 
