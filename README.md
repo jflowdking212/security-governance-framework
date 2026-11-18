@@ -103,7 +103,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 
 | Path | Purpose |
 |---|---|
-| `AGENTS.md`, `KERNEL.md`, `SECURITY-ROOT.md` | Mandatory agent entrypoint, concise security rules and external trust model |
+| `AGENTS.md`, `KERNEL.md`, `SECURITY-ROOT.md`, `OWNER-ACTIONS.md` | Agent entrypoint, security rules, external trust model and owner-only release decisions |
 | `manifest.json`, `MODULE-INDEX.md` | Module metadata, triggers, tasks and dependency graph |
 | `modules/` | 22 source-derived security modules |
 | `bundles/` | Compact task indexes showing which modules to load |
@@ -182,6 +182,7 @@ The v1.0.0 candidate is under independent review. The review instructions and re
 - [Claude review instructions](REVIEW-PROMPT-FOR-CLAUDE.md)
 - [Claude review report](REVIEW-CLAUDE.md)
 - [Release checklist](RELEASE-CHECKLIST.md)
+- [Owner actions required before release](OWNER-ACTIONS.md)
 - [Changelog](CHANGELOG.md)
 
 The candidate must not be merged or tagged as an approved release until the independent review is complete, required findings are resolved or explicitly documented, and the owner approves the final result.
