@@ -89,5 +89,7 @@ Report:
 
 No unresolved applicable Critical/High vulnerability may be silently approved without mitigation or explicit risk acceptance.
 
+> **OWNER POLICY OVERRIDE (OWNER:RELEASE-POLICY):** This risk-acceptance pathway applies only to P2/P3 findings. It must never be used to approve, waive, downgrade, relabel, or release with an open P0/P1 finding. Any P0/P1 finding remains a hard production-release blocker until remediated and verified.
+
 A working integration is not proof of a secure integration.
 A configured tax engine is not proof of tax compliance.

@@ -19,4 +19,13 @@ test('keyword lookup does not match by substring (email must not select AI, deci
 test('keyword lookup warns about unmatched words instead of silently under-fetching',()=>{const r=run(['--keywords','payment xyzzy']);assert.equal(r.status,0);assert.match(r.stderr,/xyzzy/)});
 test('payment and tax modules carry the directive preamble',()=>{for(const id of ['M06','M07']){const t=fs.readFileSync(map.get(id).path,'utf8');assert.match(t,/Do not treat a working payment integration as a secure payment integration/);assert.match(t,/FAIL CLOSED & PROVE/)}});
 test('source 19.8 P0/P1 exception is annotated as superseded by the owner policy',()=>{const t=fs.readFileSync(map.get('M20').path,'utf8');const i=t.indexOf('unless the directive explicitly allows');assert.ok(i>0);assert.ok(t.slice(i,i+800).includes('SUPERSEDED'))});
+test('P0/P1 risk-acceptance clauses outside M17/M20 carry local owner overrides and CVSS mapping is contextual',()=>{
+ for(const m of manifest.modules){
+  if(['M17','M20'].includes(m.id))continue;
+  const lines=fs.readFileSync(m.path,'utf8').split(/\r?\n/);
+  for(let i=0;i<lines.length;i++)if(/risk[- ]accept/i.test(lines[i]))assert.ok(lines.slice(i,i+4).join('\n').includes('OWNER POLICY OVERRIDE (OWNER:RELEASE-POLICY)'),m.id+' line '+(i+1)+' lacks local override');
+ }
+ const m17=fs.readFileSync(map.get('M17').path,'utf8');
+ assert.match(m17,/CVSS Critical\/High labels are triage signals, not automatic USS P0\/P1 classifications/);
+});
 test('generated indexes are in sync with the manifest',()=>{const idx=fs.readFileSync('MODULE-INDEX.md','utf8');for(const t of Object.keys(manifest.tasks))assert.ok(idx.includes('`'+t+'`'),'MODULE-INDEX missing task '+t);for(const [name,ids] of Object.entries(manifest.bundles)){const b=fs.readFileSync(manifest.bundle_paths[name],'utf8');for(const id of closure(ids))assert.ok(b.includes('| '+id+' '),name+' index missing '+id)}});

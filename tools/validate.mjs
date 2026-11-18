@@ -72,6 +72,15 @@ for(const [task,taskIds] of Object.entries(m.tasks)){
 for(const t of ['full-audit','production-release']){const cl=closureOf(m.tasks[t]);for(const id of ids)if(!cl.includes(id))errors.push(t+' omits module '+id)}
 const secAudit=closureOf(m.tasks['security-audit']);for(const id of ids.filter(i=>!['M18','M19','M22'].includes(i)))if(!secAudit.includes(id))errors.push('security-audit omits applicable module '+id);
 for(const x of m.modules){const c=await fs.readFile(x.path,'utf8');if(/unless the directive explicitly allows/i.test(c)&&!c.includes('SUPERSEDED'))errors.push('Module '+x.id+' contains the 19.8 P0/P1 exception without an owner-policy supersession note')}
+for(const x of m.modules){
+ if(['M17','M20'].includes(x.id))continue;
+ const lines=(await read(x.id)).split(/\r?\n/);
+ for(let i=0;i<lines.length;i++){
+  if(!/risk[- ]accept/i.test(lines[i]))continue;
+  const local=lines.slice(i,i+4).join('\n');
+  if(!local.includes('OWNER POLICY OVERRIDE (OWNER:RELEASE-POLICY)'))errors.push('Module '+x.id+' has a risk-acceptance clause without an adjacent P0/P1 owner-policy override (line '+(i+1)+')');
+ }
+}
 for(const f of ['KERNEL.md','AGENTS.md','adapters/gemini.md','adapters/claude.md','adapters/chatgpt.md','README.md']){const c=await fs.readFile(f,'utf8');if(!/P0\/P1|P0 and P1/.test(c)||!/waive/i.test(c))errors.push(f+' does not state that P0/P1 cannot be waived');if(/risk acceptance[^.]*P[01]/i.test(c)&&!/only to P2\/P3|cannot be waived|non-waivable|never/i.test(c))errors.push(f+' may allow P0/P1 risk acceptance')}
 for(const [name,list] of Object.entries(m.bundles))if(JSON.stringify(list)!==JSON.stringify(m.tasks[name]))errors.push('Bundle '+name+' differs from task '+name+' (bundles must mirror tasks)');
 
