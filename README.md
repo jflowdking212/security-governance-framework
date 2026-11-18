@@ -14,6 +14,7 @@ USS is a modular, source-traceable security engineering standard for human devel
 ## What USS provides
 
 - A short mandatory security kernel and agent entrypoint.
+- Technology-specific implementation supplements for identity, SSRF, API protocols, cryptography, data lifecycle and container/cloud runtime.
 - 22 focused security modules with declared source references and dependencies.
 - Task routing for authentication, authorisation, input security, APIs, payments, tax, secrets, data protection, operations, AI/LLM, supply chain, audits and other security work.
 - A 13-Layer Security Assurance Model for structured security assessment.
@@ -34,6 +35,7 @@ For an AI agent or developer entering a repository that uses USS:
 4. Follow [CONSUMING.md](CONSUMING.md) to pin and vendor the exact reviewed USS commit.
 5. Resolve the task and its transitive dependencies.
 6. Read the returned modules before changing security-relevant code.
+7. Read relevant implementation supplements from [supplements/README.md](supplements/README.md) when the application uses the technology or boundary they cover.
 7. Verify controls against the actual application and report evidence. Do not mark an unknown control as passed.
 
 ### Resolve a task
@@ -107,7 +109,8 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `source/original-directives/` | Preserved canonical source documents |
 | `source/traceability-matrix.csv` | Source-section to module mapping |
 | `adapters/` | Gemini, Claude and ChatGPT entrypoints |
-| `stacks/` | Stack-specific profile guidance; no stack profile is currently claimed as verified |
+| `supplements/` | Supplemental implementation guidance for identity, SSRF, API protocols, cryptography, data lifecycle and runtime hardening |
+| `stacks/` | Node.js/Express and Python/FastAPI reference profiles; neither is verified against a consuming application |
 | `templates/` | Audit and remediation templates |
 | `tests/` | Automated manifest and task-resolver tests |
 | `.github/workflows/` | Continuous validation workflow |
