@@ -59,6 +59,9 @@
 ## Trust and evidence correction series
 - [x] External trust-root limitations documented; consumers are required to pin a full commit SHA obtained through an independent trusted channel.
 - [x] Machine-readable control-family catalog and structured evidence validator added.
+- [x] Added full-history Gitleaks, Semgrep, CodeQL, OSV-Scanner and pull-request dependency-review workflows.
+- [x] Pinned direct GitHub Actions and reusable workflow references to full commit SHAs.
+- [x] Added workflow tests for scanner coverage and action pinning.
 - [x] AI, identity, SSRF, API, cryptography, privacy and runtime implementation supplements added.
 - [ ] Signed release tag/artefact created and independently verifiable against an owner-published signer identity.
 - [ ] Repository branch protection and required human review verified by the owner.
