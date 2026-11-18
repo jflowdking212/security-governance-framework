@@ -7,6 +7,8 @@
 - Expanded the default code-change route to include general input/client, API, secrets, data-integrity and supply-chain controls while remaining below the routine routing budget.
 - Removed the clean-checkout test dependency on generated, untracked full-text bundles; tracked task indexes remain covered by unit tests and generated bundle validation remains in CI.
 - Made resolver, routing, manifest and documentation tests independent of the caller's working directory.
+- Added supplemental implementation guidance for OAuth/OIDC/JWT, SSRF, GraphQL/WebSocket/gRPC, cryptographic storage, data lifecycle/privacy and container/cloud runtime.
+- Added Node.js/Express and Python/FastAPI reference profiles, explicitly marked unverified until tested against named consuming applications.
 - Added regression tests for prototype-property task names, malformed CLI arguments, additive routing and baseline module coverage.
 
 ## 1.0.0 - review-ready candidate
