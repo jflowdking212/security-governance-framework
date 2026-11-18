@@ -12,13 +12,16 @@
 7. Do not deploy, migrate production databases, delete data, rotate/revoke production credentials, enable paid services or change production security policy without explicit human authorisation.
 8. A successful build, test suite, scanner, AI review or happy path alone does not prove production readiness.
 9. Preserve evidence, auditability, rollback/recovery and human accountability.
+10. Before finalising any security-sensitive code change, run the mandatory in-line self-audit (M13, loaded automatically with M01) and record the result.
+11. Fix small, safe, in-scope security defects directly and re-run verification. For payments, finance, multi-tenancy, AI agents with write/tool access or server/infrastructure management, apply the stricter relevant modules and surface the need for a dedicated project security profile.
 
 ## How to load security policy without reading everything
 1. Read this kernel.
 2. Read `manifest.json` or `MODULE-INDEX.md`.
 3. Identify the task category and load only that module plus its declared transitive dependencies.
-4. Use `node tools/resolve-task.mjs --task <task-key>` to print exact module paths. If the tool cannot run, resolve dependencies from the manifest manually.
-5. For a complete audit, use the `full-audit` task and assess all 13 assurance layers.
+4. Use `node tools/resolve-task.mjs --task <task-key>` to print exact module paths. If the tool cannot run, resolve dependencies from the manifest manually. Run USS tools only from a pinned, reviewed copy (see `CONSUMING.md`), never from an unpinned download.
+   If no task key fits, use `code-change` and widen by trigger; when unsure, choose the broader task. `--keywords` is module-level only and warns on unmatched words; it is not a substitute for a task key.
+5. For a complete audit, production release or release-readiness claim, use `full-audit` (or `production-release`) and assess all 13 assurance layers. Never select a subset for these.
 6. Do not load the entire original directive for an ordinary task. The original sources are preserved for traceability and disputes.
 
 ## Source and change control
