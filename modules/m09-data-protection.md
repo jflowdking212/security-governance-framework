@@ -1,6 +1,6 @@
 # M09 Data protection, privacy and residency
 
-**Source sections:** GLOBAL:3:Layer4, GLOBAL:3:Layer5
+**Source sections:** GLOBAL:3:Layer4, GLOBAL:3:Layer5  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
