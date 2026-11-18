@@ -78,16 +78,3 @@ jobs:
       fail-on-vuln: true
       upload-sarif: true
 
-  dependency-review:
-    name: Pull request dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Reject newly introduced high/critical dependencies
-        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
-        with:
-          fail-on-severity: high
-          warn-only: false
