@@ -1,9 +1,17 @@
 # M06 Payments, webhooks and external event integrity
 
-**Source sections:** GLOBAL:1.E, PAYMENT:A1-A16, PAYMENT:WEBHOOK-NEGATIVE-TESTS  
+**Source sections:** GLOBAL:1.E, PAYMENT:PREAMBLE, PAYMENT:A1-A16, PAYMENT:WEBHOOK-NEGATIVE-TESTS, GLOBAL:3:Layer6
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
+
+**Scope:** Applies to all repositories, services, agents, IDE workflows, APIs, payment integrations, subscription systems, SaaS products, marketplaces, and webhook consumers.
+
+**Priority:** Mandatory global engineering guardrail.
+
+**Operating rule:** FAIL CLOSED & PROVE.
+
+Do not treat a working payment integration as a secure payment integration. Do not treat a configured tax provider as proof of legal compliance.
 
 **### E. Payment, Webhook & External Event Integrity**
 
@@ -404,3 +412,9 @@ Where applicable, execute and record results for:
 Do not declare webhook handling secure until applicable negative tests have actually been executed.
 
 ---
+
+**### Layer 6 — Integrations, Webhooks & External APIs**
+
+
+
+Review webhook/provider inventory, provider-specific signature verification, raw-body preservation, behavior when signatures/secrets are missing or invalid, replay/freshness protection, event/delivery identifiers, atomic event idempotency, business-level idempotency, duplicate acknowledgement semantics, out-of-order delivery handling, event allowlisting, tenant/resource mapping, live/test environment separation, amount/currency/customer/order invariants, secret rotation, API credential scope, provider rate limits, retry/backoff, provider outage behavior, schema/version drift, and inbound/outbound data exposure.
