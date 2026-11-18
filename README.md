@@ -19,6 +19,7 @@ USS converts the preserved global application-security, Anti-Gravity execution a
 - `manifest.json`, `MODULE-INDEX.md`: routing, triggers, dependencies and source references.
 - `bundles/`: compact task indexes, not duplicate copies of the policy.
 - `tools/resolve-task.mjs`: task-to-module resolver.
+- `tools/build-modules.mjs`: deterministic regeneration of modules from preserved source directives.
 - `tools/build-bundles.mjs`: compile full task bundles on demand.
 - `assurance/`: quick-reference summaries.
 - `source/original-directives/`: preserved original documents.
