@@ -33,7 +33,7 @@ node tools/validate-evidence.mjs --file templates/security-evidence.example.json
 node --test tests/*.test.mjs
 ```
 
-GitHub Actions also runs full-history secret scanning, Semgrep, CodeQL, OSV-Scanner and pull-request dependency review. Keep third-party actions pinned to full commit SHAs. Review scanner output and false positives; do not suppress findings merely to make CI green.
+GitHub Actions also runs full-history secret scanning, Semgrep, CodeQL and OSV-Scanner. GitHub Dependency Review is optional until dependency-graph API access is confirmed. Keep third-party actions pinned to full commit SHAs. Review scanner output and false positives; do not suppress findings merely to make CI green.
 
 If you intentionally changed generated modules through the approved source process, inspect and commit the resulting module changes. The `git diff` check is intended to detect stale or hand-edited generated output, not to suppress legitimate source-derived changes.
 
