@@ -7,9 +7,17 @@ let ids=[];
 if(task){if(!manifest.tasks[task]){console.error('Unknown task: '+task+'\nAvailable: '+Object.keys(manifest.tasks).join(', '));process.exit(2)}ids=manifest.tasks[task];}
 else if(module){if(!manifest.modules.some(m=>m.id===module))throw new Error('Unknown module '+module);ids=[module];}
 else if(keywords){
+ // Exact (plural-insensitive) token or adjacent-pair matching avoids false positives such as "email" -> "ai" and "decision" -> "ci".
  const words=keywords.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
- ids=manifest.modules.filter(m=>m.triggers.some(t=>words.some(w=>w===t||w.includes(t)||t.includes(w)))).map(m=>m.id);
+ const norm=x=>x.replace(/s$/,'');
+ const candidates=new Set();
+ words.forEach((w,i)=>{candidates.add(norm(w));if(i+1<words.length)candidates.add(norm(w+'-'+words[i+1]))});
+ const matched=new Set();
+ for(const m of manifest.modules)for(const t of m.triggers)if(candidates.has(norm(t)))matched.add(norm(t));
+ ids=manifest.modules.filter(m=>m.triggers.some(t=>candidates.has(norm(t)))).map(m=>m.id);
+ const unmatched=words.filter(w=>![...matched].some(t=>t===norm(w)||t.split('-').includes(norm(w))));
  if(!ids.length){console.error('No trigger match. Choose a task key from: '+Object.keys(manifest.tasks).join(', '));process.exit(2)}
+ if(unmatched.length)console.error('WARNING: keywords not matched to any trigger: '+unmatched.join(', ')+'. Keyword mode is module-level only; prefer --task and widen when unsure.')
 }else{
  console.log('Usage: node tools/resolve-task.mjs --task <key> | --module <Mxx> | --keywords "payment webhook"');
  console.log('Tasks: '+Object.keys(manifest.tasks).join(', '));process.exit(0);
