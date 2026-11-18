@@ -1,7 +1,29 @@
-# USS api-security bundle
+# USS api-security task index
 
-Version: 1.0.0
+**Version:** 1.0.0  
+**Purpose:** This file is a compact routing index, not a substitute for the modules listed below.
 
-This bundle is generated from `manifest.json`. Run `node tools/build-bundles.mjs` to compile the authoritative modules and their declared dependencies. Do not use this placeholder as a completed policy bundle until generated.
+Read `KERNEL.md` first. Then read every module below in the listed dependency order. Do not load unrelated modules. For a task crossing another security boundary, resolve the additional task/module and its dependencies.
 
-Required module IDs: M04, M05, M03
+## Required module order
+
+| Order | Module | Source sections | File |
+|---:|---|---|---|
+| 1 | M01 Core operating policy and secure engineering | GLOBAL:Core; GLOBAL:13; GLOBAL:14 | `modules/m01-engineering-workflow.md` |
+| 2 | M08 Secrets, credentials and lifecycle management | GLOBAL:1.F; GLOBAL:17 | `modules/m08-secrets.md` |
+| 3 | M02 Authentication, identity and sessions | GLOBAL:1.B authentication | `modules/m02-authentication-sessions.md` |
+| 4 | M03 Authorisation, roles and tenant isolation | GLOBAL:1.B authorisation | `modules/m03-authorization-tenancy.md` |
+| 5 | M04 Injection, input validation and client security | GLOBAL:1.A; GLOBAL:1.C | `modules/m04-input-injection-web.md` |
+| 6 | M05 Network, transport and API hygiene | GLOBAL:1.D | `modules/m05-api-network-transport.md` |
+| 7 | M21 CORS and browser cross-origin trust boundary | GLOBAL:20 | `modules/m21-cors-browser-boundary.md` |
+
+**Direct task modules:** M05, M21  
+**Resolved modules including dependencies:** M01, M08, M02, M03, M04, M05, M21
+
+To compile the full text bundle locally, run:
+
+```sh
+node tools/build-bundles.mjs --task api-security
+```
+
+Generated output is written to `dist/bundles/api-security.md`.
