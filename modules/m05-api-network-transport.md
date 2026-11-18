@@ -9,7 +9,7 @@
 
 
 
-- **Strict CORS Policy:** Deny `Access-Control-Allow-Origin: \*` whenever credentials, cookies, authorization headers, or private data are involved. Explicitly configure trusted origins.
+- **Strict CORS Policy:** Deny `Access-Control-Allow-Origin: *` whenever credentials, cookies, authorization headers, or private data are involved. Explicitly configure trusted origins.
 
 - **TLS:** Require TLS for production traffic. Do not disable certificate verification in production integrations.
 
