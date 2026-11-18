@@ -47,7 +47,7 @@ The following controls require repository-owner configuration and cannot be esta
 - Restrict workflow permissions and protect release/tag creation.
 - Enable secret scanning and dependency/security alerts where available.
 
-The connected repository inspection for this correction series did not establish that these settings are enabled. Treat them as NOT VERIFIED until an owner checks the repository settings directly.
+**Verified on 2026-11-18:** the GitHub API reports main as unprotected, branch-protection enforcement disabled and no repository rulesets. These controls are therefore NOT CONFIGURED at the time of inspection. The owner must configure and verify them directly in repository settings.
 
 ## 5. Consumer bootstrap procedure
 
