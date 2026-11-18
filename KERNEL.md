@@ -31,4 +31,4 @@
 - Project profiles may strengthen USS but must not weaken it.
 
 ## Required completion report
-State USS version, task/module IDs used, scope and authority, controls assessed, evidence, commands/tests actually run and outcomes, findings, unknowns, residual risk, and deployment/rollback implications.
+State USS version, task/module/control-family IDs used, scope and authority, controls assessed, evidence, commands/tests actually run and outcomes, findings, unknowns, residual risk, and deployment/rollback implications. For formal full-audit or release-readiness evidence, populate `templates/security-evidence.example.json` and run `tools/validate-evidence.mjs --file <assessment.json> --release`. A successful validator result means READY_FOR_OWNER_REVIEW, not owner approval or production certification.
