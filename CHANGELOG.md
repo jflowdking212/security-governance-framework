@@ -16,6 +16,7 @@
 - Documented the external trust-root model, including the limits of self-validation and the need for independently pinned commits and verified signer identity.
 - Added pinned Gitleaks, Semgrep, CodeQL and OSV-Scanner workflows for the USS repository. GitHub Dependency Review was tested but is deferred because the dependency-graph compare API returned HTTP 403.
 - Added deterministic workflow tests that reject unpinned GitHub Actions and verify scanner fail-closed settings.
+- Added a consumer CI security workflow template with explicit adaptation and repository-protection requirements.
 - Added regression tests for prototype-property task names, malformed CLI arguments, additive routing and baseline module coverage.
 
 ## 1.0.0 - review-ready candidate
