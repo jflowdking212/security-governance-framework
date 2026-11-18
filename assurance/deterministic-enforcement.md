@@ -12,7 +12,7 @@
 | Static analysis | Semgrep open-source rules | Known code patterns and selected security/code-quality findings in repository tooling | Rules have false positives and false negatives; review coverage and exclusions |
 | Semantic analysis | GitHub CodeQL | JavaScript/TypeScript code paths and supported vulnerability patterns | Only configured languages and analyzed code are covered |
 | Dependency analysis | OSV-Scanner | Known vulnerabilities in supported dependency manifests and lockfiles | Unsupported or missing lockfiles reduce coverage; not a general code scanner |
-| Pull-request dependency review | GitHub Dependency Review | Newly introduced dependencies and configured severity/license policy | Only dependency changes represented in the PR diff are assessed |
+| Optional pull-request dependency review | GitHub Dependency Review when the dependency-graph API is available | Newly introduced dependencies and configured severity/license policy | This repository's connected GitHub run returned HTTP 403 from the dependency-graph compare endpoint; this job is not enabled until the owner confirms repository feature access |
 | Evidence integrity | USS evidence validator | Control-family IDs, status/evidence shape, finding linkage, P0/P1 blockers and documented P2/P3 acceptance | Validates the submitted record, not whether the evidence is true or complete |
 
 ## Repository workflow
@@ -20,7 +20,9 @@
 The repository runs the following workflows:
 
 - USS validation: deterministic generation, manifest/traceability validation, task routing, evidence-template validation and automated tests.
-- USS security scans: full-history Gitleaks, Semgrep, CodeQL, OSV-Scanner and pull-request dependency review.
+- USS security scans: full-history Gitleaks, Semgrep, CodeQL and OSV-Scanner.
+
+GitHub Dependency Review was tested but returned HTTP 403 from the dependency-graph compare endpoint for this repository. It is documented as an optional consuming-project control and is not represented as a passing check here. The owner must enable/confirm dependency-graph access before this job can be reintroduced.
 
 External GitHub Actions are pinned to full commit SHAs. Semgrep runs from an exact versioned container tag. Review and update these pins deliberately, not automatically.
 
@@ -50,4 +52,4 @@ A scanner that does not support a file format or language must be reported as NO
 
 ## Current coverage limits
 
-The USS repository itself is a Node.js tooling and documentation repository. The current workflow covers JavaScript/TypeScript tooling, repository secrets, dependency manifests and generic Semgrep rules. It does not claim coverage for a consuming project's Python, PHP, Java, Go, .NET, mobile, Terraform, Kubernetes, container images, cloud IAM, running APIs or production environment. Add and verify the relevant scanners in the consuming application.
+The USS repository itself is a Node.js tooling and documentation repository. The current workflow covers JavaScript/TypeScript tooling, repository secrets and generic Semgrep rules. OSV-Scanner executes, but the repository currently has no supported third-party package manifest/lockfile; a successful empty scan is not evidence that an application's dependencies are covered. It does not claim coverage for a consuming project's Python, PHP, Java, Go, .NET, mobile, Terraform, Kubernetes, container images, cloud IAM, running APIs or production environment. Add and verify the relevant scanners in the consuming application.
