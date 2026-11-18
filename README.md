@@ -22,6 +22,7 @@ USS is a modular, source-traceable security engineering standard for human devel
 - Task resolution and on-demand bundle generation.
 - A machine-readable control-family catalog and structured evidence validator with non-waivable P0/P1 release gates.
 - An explicit external trust-root model that explains what repository validation can and cannot authenticate.
+- Automated CI scans using Gitleaks, Semgrep, CodeQL, OSV-Scanner and GitHub Dependency Review.
 - Automated checks for source preservation, module consistency, dependency integrity, release-policy invariants and tests.
 - Short adapters for Gemini, Claude and ChatGPT.
 
@@ -107,7 +108,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `modules/` | 22 source-derived security modules |
 | `bundles/` | Compact task indexes showing which modules to load |
 | `tools/` | Module generator, task resolver, bundle builder, repository validator and structured evidence validator |
-| `assurance/` | Assurance model, audit lifecycle, machine-readable control catalog, registry and reporting guidance |
+| `assurance/` | Assurance model, audit lifecycle, machine-readable control catalog, deterministic enforcement guidance, registry and reporting |
 | `source/original-directives/` | Preserved canonical source documents |
 | `source/traceability-matrix.csv` | Source-section to module mapping |
 | `adapters/` | Gemini, Claude and ChatGPT entrypoints |
@@ -115,7 +116,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `stacks/` | Node.js/Express and Python/FastAPI reference profiles; neither is verified against a consuming application |
 | `templates/` | Audit, remediation and structured security-evidence templates |
 | `tests/` | Automated manifest, routing, documentation and evidence-validator tests |
-| `.github/workflows/` | Continuous validation workflow |
+| `.github/workflows/` | USS validation and security-scanning workflows |
 
 ## Build and validate
 
@@ -151,7 +152,7 @@ node tools/build-bundles.mjs --task payments
 
 Generated full-text bundles are written to `dist/bundles/` and are local build artefacts. They are not a substitute for reading the source modules.
 
-GitHub Actions runs the module generator, checks for stale generated modules, compiles bundles, runs validation and executes the tests on pushes and pull requests.
+GitHub Actions runs the module generator, checks for stale generated modules, compiles bundles, runs validation and tests, and performs secret, static-analysis, CodeQL and dependency scans. See [deterministic enforcement](assurance/deterministic-enforcement.md) for scope and limitations.
 
 ## Core release rules
 
