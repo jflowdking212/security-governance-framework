@@ -52,6 +52,10 @@
 - [x] Task bundles are compiled and checked for dependency closure.
 - [x] Node test suite runs in GitHub Actions.
 
+## Main branch publication
+- [x] PR #1 squash-merged into `main` after successful CI and substantive review.
+- [x] Post-merge GitHub Actions passed on Node.js 20.20.2, including all 32 tests.
+
 ## Remaining before final v1.0.0 release
 - [x] Additional substantive review of M06, M07, M08, M10, M12 and M21 completed; no further internal policy contradictions identified.
 - [x] GitHub Actions CI passed on Node.js 20, including source generation, index drift checks, validation and 32 automated tests.
@@ -62,4 +66,4 @@
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
-**Current status:** Claude's correction series is applied; the six remaining modules have received a substantive review; GitHub Node 20 CI passed (32 tests). Owner-authorised publication to main is pending; version tagging/release and branch protection remain separate governance steps.
+**Current status:** Corrections are merged into `main` at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. GitHub Actions passed on Node.js 20.20.2 with 32 tests. No formal v1.0.0 tag/release has been created. Branch protection and owner approval for the formal release remain outstanding.
