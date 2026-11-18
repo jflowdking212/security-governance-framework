@@ -1,6 +1,6 @@
 # M10 Operations, environment isolation, audit and incident response
 
-**Source sections:** GLOBAL:1.G, GLOBAL:11, GLOBAL:18  
+**Source sections:** GLOBAL:1.G, GLOBAL:11, GLOBAL:18, GLOBAL:3:Layer10, GLOBAL:3:Layer11, GLOBAL:3:Layer12
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
@@ -203,3 +203,25 @@ A feature that succeeds only on the happy path is not production assurance. A pr
 
 
 \---
+
+**### Layer 10 — Logging, Monitoring, Detection & Auditability**
+
+
+
+Review structured application/security logs, centralized exception/error handling, correlation IDs, authentication events, authorization failures, account-recovery/security-factor changes, privilege/tenant-membership changes, administrator actions, destructive operations, data exports, billing/subscription/refund/manual-financial changes, webhook failures, unusual financial/integration events, secret-access/rotation/revocation events where available, authoritative actor/tenant/target attribution, audit-log tamper resistance and access control where required, alerting, uptime/health monitoring, error monitoring, log/audit retention, time synchronization, log-injection resistance, and sensitive-data redaction.
+
+**### Layer 11 — Availability, Performance & Resilience**
+
+
+
+Review timeouts, retry policy and idempotent retry safety, centralized failure handling, frontend/API fallback states, backpressure, pagination, queue/batch bounds, database indexes, N+1 behavior, memory/CPU/storage bounds, rate limiting, graceful degradation, dependency/provider outage behavior, provider fallback, circuit-breaker/cooldown behavior, partial-failure recovery, denial-of-service paths, and cost-amplification paths.
+
+**### Layer 12 — Backup, Disaster Recovery & Incident Response**
+
+
+
+Verify backup schedule, backup encryption, restore testing, point-in-time recovery where applicable, RPO/RTO, emergency/break-glass access, incident triage, containment, credential compromise identification, emergency rotation/revocation, customer/regulatory notification decision process, evidence preservation, recovery verification, post-incident review, rollback, and disaster runbooks.
+
+
+
+A backup that has never been restore-tested is not sufficient evidence of recoverability.
