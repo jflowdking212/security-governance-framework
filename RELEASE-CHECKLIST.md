@@ -59,7 +59,8 @@
 ## Trust and evidence correction series
 - [x] External trust-root limitations documented; consumers are required to pin a full commit SHA obtained through an independent trusted channel.
 - [x] Machine-readable control-family catalog and structured evidence validator added.
-- [x] Added full-history Gitleaks, Semgrep, CodeQL, OSV-Scanner and pull-request dependency-review workflows.
+- [x] Added full-history Gitleaks, Semgrep, CodeQL and OSV-Scanner workflows.
+- [ ] Confirm dependency-graph API access and enable GitHub Dependency Review if supported.
 - [x] Pinned direct GitHub Actions and reusable workflow references to full commit SHAs.
 - [x] Added workflow tests for scanner coverage and action pinning.
 - [x] AI, identity, SSRF, API, cryptography, privacy and runtime implementation supplements added.
@@ -71,7 +72,7 @@
 - [x] Additional substantive review of M06, M07, M08, M10, M12 and M21 completed; no further internal policy contradictions identified.
 - [x] GitHub Actions CI passed on Node.js 20, including source generation, index drift checks, validation and 34 automated tests.
 - [x] Claude independent review completed (`REVIEW-CLAUDE.md`, 2026-11-18).
-- [x] Claude findings resolved or explicitly documented in the correction series and review report.
+- [ ] All findings from the latest Claude review resolved or explicitly documented with an owner decision.
 - [ ] Owner approves final release after GitHub CI and remaining substantive review.
 - [ ] Main branch protection configured with required USS validation checks and review. The repository rulesets query returned no rulesets; classic branch-protection status could not be verified because the connected GitHub integration returned HTTP 403. Owner must confirm in GitHub Settings.
 - [ ] Final release commit/tag created.
