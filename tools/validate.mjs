@@ -23,5 +23,16 @@ if(m.rules.p0_release!=='BLOCK'||m.rules.p1_release!=='BLOCK'||m.rules.agent_may
 for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md'])if(!await exists(p))errors.push('Missing required project file '+p);
 for(const p of Object.values(m.bundle_paths)){if(!await exists(p))errors.push('Missing task index '+p);else{const c=await fs.readFile(p,'utf8');if(/placeholder|build instructions/i.test(c))errors.push('Placeholder bundle index '+p)}}
 for(const [name,ids] of Object.entries(m.bundle_paths)){const task=name;const idx=await fs.readFile(ids,'utf8');for(const id of m.bundles[task]??[])if(!idx.includes(id))errors.push('Bundle index '+task+' missing module '+id)}
+
+for(const task of Object.keys(m.bundle_paths)){
+ const output='dist/bundles/'+task+'.md';
+ if(!await exists(output)){errors.push('Missing compiled bundle '+output);continue}
+ const text=await fs.readFile(output,'utf8');
+ const visited=new Set(),ordered=[];
+ function collect(id){if(visited.has(id))return;const item=map.get(id);if(!item)return;for(const d of item.dependencies)collect(d);visited.add(id);ordered.push(item)}
+ for(const id of m.bundles[task]??[])collect(id);
+ for(const item of ordered)if(!text.includes('# '+item.id+' '))errors.push('Compiled bundle '+task+' missing '+item.id);
+}
+
 if(errors.length){console.error(errors.join('\n'));process.exit(1)}
 console.log('USS validation passed: '+m.modules.length+' modules, '+m.required_source_sections.length+' source references, dependency graph, archive equality, embedded directive equivalence, release policy, and task indexes.');
