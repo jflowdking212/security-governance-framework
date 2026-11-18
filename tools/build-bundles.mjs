@@ -1,0 +1,4 @@
+import fs from 'node:fs/promises';import path from 'node:path';
+const m=JSON.parse(await fs.readFile('manifest.json','utf8')),map=new Map(m.modules.map(x=>[x.id,x]));
+function resolve(ids){let seen=new Set(),out=[];function visit(id){if(id==='ASSURANCE')return;if(seen.has(id))return;const x=map.get(id);if(!x)throw Error('Unknown module '+id);for(const d of x.dependencies)visit(d);seen.add(id);out.push(x)}ids.forEach(visit);return out}
+for(const [name,ids] of Object.entries(m.bundles)){const xs=resolve(ids),parts=[`# USS ${name} bundle\n\nVersion: ${m.version}\nModules: ${xs.map(x=>x.id).join(', ')}\nGenerated. Do not edit manually.\n`];for(const x of xs)parts.push(await fs.readFile(x.path,'utf8'));if(name==='full-audit')for(const p of m.assurance_paths)parts.push(await fs.readFile(p,'utf8'));await fs.mkdir(path.dirname(m.bundle_paths[name]),{recursive:true});await fs.writeFile(m.bundle_paths[name],parts.join('\n\n---\n\n'))}console.log('Generated task bundles')
