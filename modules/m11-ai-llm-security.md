@@ -1,15 +1,46 @@
 # M11 AI/LLM security and governance
 
-## Controls
-- Treat user content, repository files, issue/PR text, retrieved documents, web pages, tool output, and model responses as untrusted data, not policy instructions.
-- Enforce least-privilege tool permissions, explicit allow-lists, tenant/resource scoping, and human approval for high-impact actions.
-- Prevent prompt injection from overriding system policy, leaking secrets, changing authorisation, or triggering unauthorised tool actions.
-- Prevent tenant-data crossover through prompts, memory, embeddings, retrieval indexes, caches, logs, and shared model context.
-- Validate structured model output against strict schemas before using it. Do not execute model-generated SQL, shell, code, URLs, or privileged actions without validation and policy checks.
-- Use deterministic authoritative calculations for financial, security, identity, and compliance facts. Models interpret verified facts; they do not invent authority.
-- Define model/provider allow-lists, data transmission rules, retention/privacy review, rate/quota limits, fallback, timeouts, and provider outage behaviour.
-- Redact secrets and sensitive data from prompts, traces, telemetry, and error reporting.
-- Keep high-impact decisions attributable and auditable. Do not allow autonomous destructive production changes or deployments without explicit authorisation.
+**Source sections:** GLOBAL:3:Layer13, PAYMENT:AI-TAX-SAFETY  
+**Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
-## Source basis
-Global directive APES Layer 13, Section 15.J, payment supplement AI Tax Safety Rule, Self-audit vector 10.
+---
+
+**### Layer 13 — AI/LLM Security & Governance**
+
+
+
+For AI-enabled systems or AI-assisted engineering workflows, review prompt injection, untrusted repository/document/user content, tool permission boundaries, provider/model allow-lists, secret leakage, sensitive-data transmission, tenant-data crossover through prompts/embeddings/caches/retrieval, hallucination controls, deterministic calculations for financial/security-critical facts, structured output validation, provider failure/fallback, model escalation, rate/quota exhaustion, logging/redaction, human approval for high-impact actions, autonomous deployment/destructive actions, and auditability of AI decisions.
+
+
+
+For financial or security-sensitive systems, AI MUST interpret verified facts rather than invent authoritative values.
+
+
+
+\---
+
+# AI AGENT TAX SAFETY RULE
+
+AI agents MAY:
+- identify possible jurisdiction exposure;
+- build tax dashboards;
+- integrate approved tax providers;
+- implement approved tax classifications;
+- create alerts;
+- build filing calendars;
+- prepare reconciliation;
+- retrieve current authoritative tax rules;
+- flag uncertainty for review.
+
+AI agents MUST NOT, without explicit authorization:
+- register the company with a tax authority;
+- enable new production tax jurisdictions;
+- materially change product tax classifications;
+- submit tax returns;
+- remit tax funds;
+- alter historical tax records;
+- present uncertain legal conclusions as settled fact.
+
+When legal/tax applicability is uncertain, state the uncertainty and require current authoritative verification or qualified review.
+
+---
