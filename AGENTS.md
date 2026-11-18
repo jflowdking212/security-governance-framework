@@ -2,7 +2,7 @@
 
 For every security-relevant task:
 
-1. Read `KERNEL.md`.
+1. Read `SECURITY-ROOT.md` when establishing or updating the pinned USS dependency, then read `KERNEL.md`.
 2. Identify the task key in `manifest.json` / `MODULE-INDEX.md`.
 3. Run `node tools/resolve-task.mjs --task <task-key>` when available, from a pinned, reviewed USS copy only (never an unpinned download); otherwise resolve dependencies from `manifest.json` by hand. Read the listed modules and every declared dependency. Do not read unrelated modules unless the task crosses their boundaries. Consult `supplements/README.md` and read any supplement that matches the technologies or security boundaries in scope; supplements add implementation detail and do not replace universal modules. If no key fits use `code-change` and widen; when unsure choose the broader task.
 4. For full audits, production release or any release-readiness claim, resolve `full-audit` / `production-release` and assess all 13 layers; do not choose a subset. Before finalising security-sensitive code, run the in-line self-audit (M13, loaded with M01).
