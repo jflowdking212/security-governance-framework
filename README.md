@@ -21,6 +21,7 @@ USS is a modular, source-traceable security engineering standard for human devel
 - A source-to-module traceability matrix and preserved canonical source documents.
 - Task resolution and on-demand bundle generation.
 - A machine-readable control-family catalog and structured evidence validator with non-waivable P0/P1 release gates.
+- An explicit external trust-root model that explains what repository validation can and cannot authenticate.
 - Automated checks for source preservation, module consistency, dependency integrity, release-policy invariants and tests.
 - Short adapters for Gemini, Claude and ChatGPT.
 
@@ -101,7 +102,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 
 | Path | Purpose |
 |---|---|
-| `AGENTS.md`, `KERNEL.md` | Mandatory agent entrypoint and concise security rules |
+| `AGENTS.md`, `KERNEL.md`, `SECURITY-ROOT.md` | Mandatory agent entrypoint, concise security rules and external trust model |
 | `manifest.json`, `MODULE-INDEX.md` | Module metadata, triggers, tasks and dependency graph |
 | `modules/` | 22 source-derived security modules |
 | `bundles/` | Compact task indexes showing which modules to load |
@@ -171,7 +172,7 @@ The original directives are retained at the repository root and under `source/or
 
 Generated modules must be rebuilt with `tools/build-modules.mjs`; do not hand-edit generated module text. A proposed change to universal policy must be reviewed against the canonical sources, traceability matrix, module dependencies, tests and version history. Project-specific profiles may strengthen USS but must not weaken it.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. See [CONSUMING.md](CONSUMING.md) for pinning, vendoring and safe update procedures.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. See [CONSUMING.md](CONSUMING.md) and [SECURITY-ROOT.md](SECURITY-ROOT.md) for independent pinning, vendoring, trust and safe update procedures.
 
 ## Independent review and release status
 
