@@ -29,6 +29,10 @@ The authoritative mapping is [control-catalog.json](control-catalog.json). The c
 | M21 | USS-CORS | CORS and browser cross-origin trust boundaries |
 | M22 | USS-AGENT | Agent execution contract |
 
+## Severity classification
+
+Use [severity-classification.md](severity-classification.md) with M17 when assigning P0-P3. CVSS labels are triage inputs, not automatic USS classifications.
+
 ## Evidence report enforcement
 
 Use [security-evidence.example.json](../templates/security-evidence.example.json) as a structural template. Replace its example metadata and assess every control family in scope.
