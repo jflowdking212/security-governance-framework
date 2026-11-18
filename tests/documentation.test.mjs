@@ -33,6 +33,13 @@ test('supplement index links resolve and every implementation supplement is inde
 test('stack profiles remain explicitly unverified until application evidence exists',()=>{
  for(const file of ['stacks/nodejs-express.md','stacks/python-fastapi.md'])assert.match(read(file),/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/);
 });
+test('review correction log records unresolved owner-only release blockers',()=>{
+ const log=read('REVIEW-CORRECTION-LOG.md');
+ assert.match(log,/P1.5 - Repository protection and licensing/);
+ assert.match(log,/P2.8 - Control IDs not implemented/);
+ assert.match(log,/P3.12 - Broken Markdown/);
+ assert.match(log,/Nothing in this correction series has been merged into main/);
+});
 test('severity rubric preserves M17 non-waivable release policy',()=>{
  const rubric=read('assurance/severity-classification.md');
  assert.match(rubric,/P0\/P1 cannot be accepted, waived, relabelled or silently downgraded/);
