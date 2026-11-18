@@ -1,22 +1,140 @@
-# M12 Dependencies, supply chain, infrastructure and CI/CD
+# M12 CI/CD, infrastructure and software supply chain
 
-## Dependency controls
-- Maintain direct/transitive dependency inventory and lockfiles. Use deterministic, least-privilege installs and trusted registries.
-- Run dependency/SCA and secret scanning. Triage findings for reachability, exploitability, exposure, and impact; do not ignore critical reachable vulnerabilities.
-- Review abandoned/malicious packages, install scripts, package source, transitive changes, CI actions, generated binaries, and artifact provenance.
-- Pin workflow actions/dependencies to immutable versions or SHAs where practical. Review updates and lockfile changes.
+**Source sections:** GLOBAL:8, GLOBAL:21  
+**Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
-## Infrastructure controls
-- Verify production topology, exposed ports, firewalls/security groups, TLS termination, database exposure, SSH/admin access, host/container hardening, service accounts, filesystem permissions, storage ACLs, and secrets injection.
-- Separate dev/test/staging/production databases, credentials, queues, storage, payment events, seeders, migrations, and customer data. Do not infer infrastructure controls from application code.
-- Use least privilege and a documented patch/update process. Verify hosting region and provider configuration from authoritative evidence.
+---
 
-## CI/CD and release controls
-- Require locked installs, lint, typecheck/compile, tests, security scans, secret scans, and relevant negative tests before release.
-- Protect branches, require status checks and review where available, scope CI secrets to environments, and prevent secrets leaking through logs/artifacts.
-- Prevent lower-environment jobs/tests/seeders from targeting production. Use deployment approvals, migration gates, concurrency locks, health checks, rollback, immutable artifact promotion, and commit/release traceability.
-- Never use fail-open release gates. A successful push is not proof CI passed or production is healthy.
-- Record exact commands, results, exit codes, unresolved findings, and deployment evidence.
+**## 8. CI/CD Security Standard**
 
-## Source basis
-Global directive Sections 8, 21; APES Layers 7-9; Self-audit vectors 6, 13, 15.
+
+
+A secure engineering workflow should progress toward:
+
+
+
+\`\`\`text
+
+Developer / AI Agent
+
+        ↓
+
+Local validation
+
+        ↓
+
+Git push
+
+        ↓
+
+Pull Request
+
+        ↓
+
+CI
+
+  - locked dependency install
+
+  - type-check / compile
+
+  - tests
+
+  - secret scan
+
+  - dependency audit
+
+  - SAST
+
+  - risk classification
+
+  - AI review
+
+  - security gate
+
+        ↓
+
+Human approval for high-risk changes
+
+        ↓
+
+Merge
+
+        ↓
+
+Immutable build artifact
+
+        ↓
+
+Staging deployment
+
+        ↓
+
+Smoke / integration / DAST checks
+
+        ↓
+
+Production approval
+
+        ↓
+
+Backup / migration gates
+
+        ↓
+
+Production deployment
+
+        ↓
+
+Health verification
+
+        ↓
+
+Rollback if postconditions fail
+
+\`\`\`
+
+
+
+**### CI Rules**
+
+
+
+\- CI must fail closed when required validation is missing, skipped unexpectedly, malformed, or failed.
+
+\- A PR must not be able to weaken the policy evaluating that same PR.
+
+\- Security-sensitive workflow/configuration files require elevated review.
+
+\- Build/review dependencies should be pinned to immutable versions/commit SHAs where possible.
+
+\- Dependency installation must use lockfiles/frozen installs.
+
+
+
+**### CD Rules**
+
+
+
+\- Do not automatically deploy security-critical systems directly from an unreviewed branch.
+
+\- Prefer **\*\*Continuous Delivery\*\*** with production approval before enabling fully automatic **\*\*Continuous Deployment\*\***.
+
+\- Deploy the exact reviewed artifact/commit.
+
+\- Separate staging and production environments/secrets.
+
+\- Migrations require explicit forward/rollback strategy.
+
+\- Production health checks must be machine-verifiable.
+
+\- Failed post-deployment checks must stop rollout and trigger a defined rollback/incident path.
+
+\- Prevent concurrent production deployments.
+
+\- Preserve deployment provenance: actor, commit, artifact, environment, time, migration state, health result, and rollback result.
+
+
+
+\---
+
+**## 21. Dependency, Lockfile & Software Supply-Chain Maintenance Control**
