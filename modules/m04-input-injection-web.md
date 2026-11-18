@@ -1,6 +1,6 @@
 # M04 Injection, input validation and client security
 
-**Source sections:** GLOBAL:1.A, GLOBAL:1.C, GLOBAL:3:Layer3
+**Source sections:** GLOBAL:1.A, GLOBAL:1.C, GLOBAL:3:Layer3  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
