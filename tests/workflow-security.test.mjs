@@ -40,6 +40,12 @@ test('OSV dependency scanning is pinned and fails on detected vulnerabilities',(
  assert.match(text,/osv-scanner-reusable\.yml@[a-f0-9]{40}/);
  assert.match(text,/fail-on-vuln:\s*true/);
 });
+test('consumer workflow template pins actions and documents language adaptation',()=>{
+ const text=fs.readFileSync(path.join(ROOT,'templates/ci/consumer-security-scans.yml'),'utf8');
+ for(const match of text.matchAll(/^\\s*uses:\\s*([^\\s#]+)(?:\\s+#.*)?$/gm))assert.match(match[1].split('@').at(-1),/^[a-f0-9]{40}$/i);
+ assert.match(text,/semgrep scan --config p\\/default --error --metrics=off \\./);
+ assert.match(fs.readFileSync(path.join(ROOT,'templates/ci/README.md'),'utf8'),/Change the CodeQL languages/);
+});
 test('USS validation workflow includes structured evidence validation',()=>{
  assert.match(read('uss-validation.yml'),/validate-evidence\.mjs --file templates\/security-evidence\.example\.json/);
 });
