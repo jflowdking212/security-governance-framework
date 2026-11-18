@@ -1,6 +1,6 @@
 # M12 CI/CD, infrastructure and software supply chain
 
-**Source sections:** GLOBAL:8, GLOBAL:21, GLOBAL:3:Layer7, GLOBAL:3:Layer8, GLOBAL:3:Layer9
+**Source sections:** GLOBAL:8, GLOBAL:21, GLOBAL:3:Layer7, GLOBAL:3:Layer8, GLOBAL:3:Layer9  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
