@@ -19,7 +19,7 @@ function resolve(ids){
 const args=process.argv.slice(2),taskAt=args.indexOf('--task');
 let targets;
 if(taskAt>=0){const name=args[taskAt+1];if(!manifest.tasks[name])throw new Error('Unknown task '+name+'. Available: '+Object.keys(manifest.tasks).join(', '));targets={[name]:manifest.tasks[name]};}
-else targets=manifest.bundle_paths;
+else targets=Object.fromEntries(Object.keys(manifest.bundle_paths).map(name=>[name,manifest.bundles[name]]));
 const outDir=path.resolve('dist/bundles');
 await fs.mkdir(outDir,{recursive:true});
 for(const [name,ids] of Object.entries(targets)){
