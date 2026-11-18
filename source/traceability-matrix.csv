@@ -1,36 +1,40 @@
-source,source_section,destination_module,assurance_or_bundle,notes
-GLOBAL,Core Persona & Operating Constraints,M01,"KERNEL; assurance",Preserve authorisation evidence human approval and fail-closed principles
-GLOBAL,1.A Injection & Data Layer,M04;M09;M06,"api-security;payments;full-audit",Injection database safety mass assignment transactions precision
-GLOBAL,1.B Authentication Authorization Sessions,M02;M03,"authentication;saas-tenancy;full-audit",Split identity/session from object authorisation and tenancy
-GLOBAL,1.C Input Validation Output Encoding Client Security,M04,"api-security;full-audit",Validation XSS CSRF and browser client controls
-GLOBAL,1.D Network Transport API Hygiene,M05;M04,"api-security;full-audit",Transport API and CORS boundaries
-GLOBAL,1.E Payment Webhook External Event Integrity,M06,"payments;full-audit",Supplemented by detailed payment directive
-GLOBAL,1.F Secret Lifecycle,M08;M06,"payments;full-audit",Secret lifecycle and provider-specific webhook handling
-GLOBAL,1.G Error Environment Audit Trails,M10;M09;M08,"full-audit",Error paths environment isolation and sensitive audit trails
-GLOBAL,2 Mandatory In-Line Penetration Check,M01;M02;M03;M04;M06;M08;M09;M10;M11;M12,"full-audit",All 16 self-audit vectors mapped to relevant controls
-GLOBAL,3 APES-style 13-layer assurance,ASSURANCE,"full-audit",Retained as 13-Layer Security Assurance Model
-GLOBAL,4 Production-Readiness Evidence Rule,ASSURANCE,"full-audit",Evidence requirement
-GLOBAL,5 Audit Remediate Penetration Test Re-Audit,M01;ASSURANCE,"full-audit",Lifecycle and retest
-GLOBAL,6 Authorized Penetration Testing,ASSURANCE,"full-audit",Authorised scope
-GLOBAL,7 Severity & Release Gating,ASSURANCE,"full-audit",P0/P1 hard blockers
-GLOBAL,8 CI/CD Security,M12;M10;M08,"full-audit",CI/CD and release controls
-GLOBAL,9 Enterprise Security Evidence Pack,ASSURANCE;M10,"full-audit",Evidence and audit trail
-GLOBAL,10 Public Security Communication,M10,"full-audit",Only publish substantiated security claims
-GLOBAL,11 Monitoring Incident Response Vulnerability Management,M10;M12,"full-audit",Operations and vulnerability management
-GLOBAL,12 Required Final Security Reporting,ASSURANCE,"full-audit",Reporting contract
-GLOBAL,13 Global Security Decision Principles,KERNEL;M01,"all",Non-negotiable principles
-GLOBAL,14 Definition Secure Engineering Done,KERNEL;M01;ASSURANCE,"full-audit",Evidence-based completion
-GLOBAL,15 Revenue Tax & Indirect Tax Compliance,M07;M06,"payments;full-audit",Jurisdiction-specific compliance guardrails
-GLOBAL,16 Financial Integration & Revenue Compliance Release Gate,M06;M07;ASSURANCE,"payments;full-audit",Financial release gate
-GLOBAL,17 Secret Management & Rotation Release Gate,M08;M06,"payments;full-audit",Secret lifecycle gate
-GLOBAL,18 Error Environment Isolation Audit Trail Release Gate,M10;M09;M08,"full-audit",Operations and data protection
-GLOBAL,19 Audit-First Risk-Prioritized Remediation,M01;ASSURANCE,"full-audit",Finding register root cause and batch verification
-GLOBAL,20 CORS & Browser Cross-Origin Trust Boundary,M04;M05,"api-security;full-audit",CORS and CSRF distinction retained
-GLOBAL,21 Dependency Lockfile Supply-Chain Maintenance,M12,"full-audit",Dependency and CI supply-chain controls
-PAYMENT,Part A A1-A16,M06,"payments;full-audit",Specialist webhook controls retained in consolidated module
-PAYMENT,Required Webhook Negative Tests,M06,"payments;full-audit",Negative test catalogue retained
-PAYMENT,Part B B1-B12,M07,"payments;full-audit",Tax guardrails retained
-PAYMENT,AI Agent Tax Safety Rule,M07;M11,"payments;full-audit",AI tax authority and human approval
-PAYMENT,Required Tax Revenue Verification,M07;M06,"payments;full-audit",Tax and revenue verification
-PAYMENT,Global Financial Release Gate,M06;M07;ASSURANCE,"payments;full-audit",Financial release gate
-ANTIGRAVITY,Execution Contract 1-15,adapters/gemini.md;adapters/claude.md;adapters/chatgpt.md;KERNEL.md,"all",Agent-neutral operating rules retained in kernel and concise adapters
+source,source_section,destination_module,notes
+GLOBAL,Core Persona & Operating Constraints,M01,Global operating policy and authorised scope
+GLOBAL,1.A Injection & Data Layer,M04,Injection database transaction and precision requirements
+GLOBAL,1.B Authentication cryptographic storage sessions abuse controls,M02,Identity authentication and session controls
+GLOBAL,1.B BOLA IDOR RBAC tenant isolation,M03,Object authorisation and tenant ownership controls
+GLOBAL,1.C Input Validation Output Encoding Client Security,M04,Validation encoding CSRF file uploads and downloads
+GLOBAL,1.D Network Transport API Hygiene,M05,API transport TLS rate limits secrets and webhook cross-reference
+GLOBAL,1.E Payment Webhook External Event Integrity,M06,Payment and webhook control baseline
+GLOBAL,1.F Secret Lifecycle Rotation Centralized Secret Management Maturity,M08,Credential lifecycle and maturity controls
+GLOBAL,1.G Error Handling Environment Isolation Security Audit Trails,M10,Error handling environment separation and authoritative audit trails
+GLOBAL,2 Mandatory In-Line Penetration Check,M13,All source self-audit vectors retained
+GLOBAL,3 13-Layer Production Security Assurance,M14,All thirteen assurance layers retained
+GLOBAL,3 Layer 4 Data Protection Privacy Residency,M09,Focused data protection module
+GLOBAL,3 Layer 13 AI LLM Security Governance,M11,Focused AI security module
+GLOBAL,4 Production-Readiness Evidence Rule,M15,Evidence and production-readiness requirements
+GLOBAL,5 Audit Remediate Penetration Test Re-Audit Lifecycle,M16,Audit lifecycle and retest
+GLOBAL,6 Authorized Penetration Testing Boundary,M16,Authorised testing boundary
+GLOBAL,7 Security Finding Severity Release Gating,M17,Severity and release blockers with owner clarification
+GLOBAL,8 CI/CD Security Standard,M12,CI/CD pipeline and deployment controls
+GLOBAL,9 Enterprise Security Evidence Pack,M15,Procurement and assurance evidence
+GLOBAL,10 Public Security Communication,M18,Substantiated public security claims
+GLOBAL,11 Monitoring Incident Response Vulnerability Management,M10,Monitoring response and vulnerability management
+GLOBAL,12 Required Final Security Reporting Contract,M15,Final report contract
+GLOBAL,13 Global Security Decision Principles,M01,Core policy principles
+GLOBAL,14 Definition of Secure Engineering Done,M01,Secure engineering completion criteria
+GLOBAL,15 Revenue Tax Indirect Tax Compliance Guardrail,M07,Tax compliance guardrails
+GLOBAL,16 Financial Integration Revenue Compliance Release Gate,M19,Financial release gate
+GLOBAL,17 Secret Management Rotation Release Gate,M08,Secret management release gate
+GLOBAL,18 Error Handling Environment Isolation Audit Trail Release Gate,M10,Operational release gate
+GLOBAL,19 Audit-First Risk-Prioritized Engineering Remediation Control,M20,Audit-first remediation and risk acceptance clarification
+GLOBAL,20 CORS Browser Cross-Origin Trust Boundary,M21,CORS policy and negative verification
+GLOBAL,21 Dependency Lockfile Software Supply-Chain Maintenance,M12,Dependency and supply-chain controls
+PAYMENT,Part A A1-A16,M06,Full specialist webhook requirements preserved
+PAYMENT,Required Webhook Negative Tests,M06,Negative test set preserved
+PAYMENT,Part B B1-B12,M07,Full tax and indirect-tax requirements preserved
+PAYMENT,AI Agent Tax Safety Rule,M07;M11,Tax AI safeguards retained in both domain and AI module
+PAYMENT,Required Tax Revenue Verification,M07,Tax and revenue verification requirements preserved
+PAYMENT,Global Financial Release Gate,M19,Specialist financial release gate preserved
+ANTIGRAVITY,Execution Contract 1-15,M22;adapters,Agent execution contract retained and adapted
+OWNER,Non-waivable P0/P1 release policy,M17;M20,Owner-approved clarification; P2/P3 risk acceptance only
