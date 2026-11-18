@@ -17,17 +17,17 @@ For every layer, report:
 
 
 
-\- **\*\*Status:\*\*** \`PASS\`, \`PARTIAL\`, \`FAIL\`, \`UNKNOWN\`, or \`NOT APPLICABLE\`
+- **\*\*Status:\*\*** `PASS`, `PARTIAL`, `FAIL`, `UNKNOWN`, or `NOT APPLICABLE`
 
-\- **\*\*Verified Evidence\*\***
+- **\*\*Verified Evidence\*\***
 
-\- **\*\*Risks / Findings\*\***
+- **\*\*Risks / Findings\*\***
 
-\- **\*\*Required Remediation\*\***
+- **\*\*Required Remediation\*\***
 
-\- **\*\*Verification Performed\*\***
+- **\*\*Verification Performed\*\***
 
-\- **\*\*Residual Risk / Known Limitation\*\***
+- **\*\*Residual Risk / Known Limitation\*\***
 
 
 
@@ -67,7 +67,7 @@ Verify encryption in transit, encryption at rest where required, secret/key stor
 
 
 
-If hosting region, encryption-at-rest configuration, or retention policy cannot be verified from authoritative configuration, mark it \`UNKNOWN\` rather than assuming.
+If hosting region, encryption-at-rest configuration, or retention policy cannot be verified from authoritative configuration, mark it `UNKNOWN` rather than assuming.
 
 
 
@@ -115,7 +115,7 @@ Review protected branches, mandatory status checks, immutable/pinned workflow de
 
 
 
-A successful \`git push\` only proves the remote received the commit. It does NOT prove CI, security review, deployment, or production health succeeded.
+A successful `git push` only proves the remote received the commit. It does NOT prove CI, security review, deployment, or production health succeeded.
 
 
 
@@ -159,4 +159,4 @@ For financial or security-sensitive systems, AI MUST interpret verified facts ra
 
 
 
-\---
+---

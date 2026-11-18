@@ -9,7 +9,7 @@
 
 
 
-For products intended for enterprise customers, recommend a public \`/security\` page and \`/.well-known/security.txt\`.
+For products intended for enterprise customers, recommend a public `/security` page and `/.well-known/security.txt`.
 
 
 
@@ -21,4 +21,4 @@ Never publish unsupported claims such as “SOC 2 compliant,” “ISO certified
 
 
 
-\---
+---
