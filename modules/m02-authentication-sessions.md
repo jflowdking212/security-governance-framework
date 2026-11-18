@@ -1,6 +1,6 @@
 # M02 Authentication, identity and sessions
 
-**Source sections:** GLOBAL:1.B authentication, GLOBAL:3:Layer1
+**Source sections:** GLOBAL:1.B authentication, GLOBAL:3:Layer1  
 **Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.
 
 ---
