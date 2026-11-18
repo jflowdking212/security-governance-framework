@@ -14,14 +14,14 @@ Read `KERNEL.md` first. Then read every module below in the listed dependency or
 | 1 | M13 Mandatory in-line penetration self-audit | GLOBAL:2 | `modules/m13-self-audit.md` |
 | 2 | M01 Core operating policy and secure engineering | GLOBAL:Core; GLOBAL:13; GLOBAL:14 | `modules/m01-engineering-workflow.md` |
 | 3 | M08 Secrets, credentials and lifecycle management | GLOBAL:1.F; GLOBAL:17 | `modules/m08-secrets.md` |
-| 4 | M02 Authentication, identity and sessions | GLOBAL:1.B authentication | `modules/m02-authentication-sessions.md` |
-| 5 | M03 Authorisation, roles and tenant isolation | GLOBAL:1.B authorisation | `modules/m03-authorization-tenancy.md` |
-| 6 | M04 Injection, input validation and client security | GLOBAL:1.A; GLOBAL:1.C | `modules/m04-input-injection-web.md` |
+| 4 | M02 Authentication, identity and sessions | GLOBAL:1.B authentication; GLOBAL:3:Layer1 | `modules/m02-authentication-sessions.md` |
+| 5 | M03 Authorisation, roles and tenant isolation | GLOBAL:1.B authorisation; GLOBAL:3:Layer2 | `modules/m03-authorization-tenancy.md` |
+| 6 | M04 Injection, input validation and client security | GLOBAL:1.A; GLOBAL:1.C; GLOBAL:3:Layer3 | `modules/m04-input-injection-web.md` |
 | 7 | M05 Network, transport and API hygiene | GLOBAL:1.D | `modules/m05-api-network-transport.md` |
 | 8 | M09 Data protection, privacy and residency | GLOBAL:3:Layer4; GLOBAL:3:Layer5 | `modules/m09-data-protection.md` |
 | 9 | M10 Operations, environment isolation, audit and incident response | GLOBAL:1.G; GLOBAL:11; GLOBAL:18; GLOBAL:3:Layer10; GLOBAL:3:Layer11; GLOBAL:3:Layer12 | `modules/m10-operations-audit-ir.md` |
-| 10 | M06 Payments, webhooks and external event integrity | GLOBAL:1.E; PAYMENT:A1-A16; PAYMENT:WEBHOOK-NEGATIVE-TESTS | `modules/m06-payments-webhooks.md` |
-| 11 | M07 Revenue tax and indirect-tax compliance | GLOBAL:15; PAYMENT:B1-B12; PAYMENT:AI-TAX-SAFETY; PAYMENT:TAX-VERIFICATION | `modules/m07-tax-compliance.md` |
+| 10 | M06 Payments, webhooks and external event integrity | GLOBAL:1.E; PAYMENT:PREAMBLE; PAYMENT:A1-A16; PAYMENT:WEBHOOK-NEGATIVE-TESTS; GLOBAL:3:Layer6 | `modules/m06-payments-webhooks.md` |
+| 11 | M07 Revenue tax and indirect-tax compliance | GLOBAL:15; PAYMENT:PREAMBLE; PAYMENT:B1-B12; PAYMENT:AI-TAX-SAFETY; PAYMENT:TAX-VERIFICATION | `modules/m07-tax-compliance.md` |
 | 12 | M15 Production evidence, assurance pack and reporting | GLOBAL:4; GLOBAL:9; GLOBAL:12 | `modules/m15-evidence-reporting.md` |
 | 13 | M17 Security finding severity and release gates | GLOBAL:7; OWNER:RELEASE-POLICY | `modules/m17-severity-release-gates.md` |
 | 14 | M19 Financial integration and revenue compliance release gate | GLOBAL:16; PAYMENT:GLOBAL-FINANCIAL-RELEASE-GATE | `modules/m19-financial-release-gate.md` |
