@@ -62,7 +62,8 @@
         "M08"
       ],
       "source_sections": [
-        "GLOBAL:1.B authentication"
+        "GLOBAL:1.B authentication",
+        "GLOBAL:3:Layer1"
       ]
     },
     {
@@ -88,7 +89,8 @@
         "M02"
       ],
       "source_sections": [
-        "GLOBAL:1.B authorisation"
+        "GLOBAL:1.B authorisation",
+        "GLOBAL:3:Layer2"
       ]
     },
     {
@@ -120,7 +122,8 @@
       ],
       "source_sections": [
         "GLOBAL:1.A",
-        "GLOBAL:1.C"
+        "GLOBAL:1.C",
+        "GLOBAL:3:Layer3"
       ]
     },
     {
@@ -172,8 +175,10 @@
       ],
       "source_sections": [
         "GLOBAL:1.E",
+        "PAYMENT:PREAMBLE",
         "PAYMENT:A1-A16",
-        "PAYMENT:WEBHOOK-NEGATIVE-TESTS"
+        "PAYMENT:WEBHOOK-NEGATIVE-TESTS",
+        "GLOBAL:3:Layer6"
       ]
     },
     {
@@ -198,6 +203,7 @@
       ],
       "source_sections": [
         "GLOBAL:15",
+        "PAYMENT:PREAMBLE",
         "PAYMENT:B1-B12",
         "PAYMENT:AI-TAX-SAFETY",
         "PAYMENT:TAX-VERIFICATION"
