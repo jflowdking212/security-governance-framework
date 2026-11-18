@@ -115,7 +115,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `supplements/` | Supplemental implementation guidance for identity, SSRF, API protocols, cryptography, data lifecycle, AI agents/RAG and runtime hardening |
 | `stacks/` | Node.js/Express and Python/FastAPI reference profiles; neither is verified against a consuming application |
 | `templates/` | Audit, remediation and structured security-evidence templates |
-| `tests/` | Automated manifest, routing, documentation and evidence-validator tests |
+| `tests/` | Automated manifest, routing, documentation, evidence-validator and workflow-security tests |
 | `.github/workflows/` | USS validation and security-scanning workflows |
 
 ## Build and validate
