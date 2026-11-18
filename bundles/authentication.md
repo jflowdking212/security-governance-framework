@@ -14,9 +14,9 @@ Read `KERNEL.md` first. Then read every module below in the listed dependency or
 | 1 | M13 Mandatory in-line penetration self-audit | GLOBAL:2 | `modules/m13-self-audit.md` |
 | 2 | M01 Core operating policy and secure engineering | GLOBAL:Core; GLOBAL:13; GLOBAL:14 | `modules/m01-engineering-workflow.md` |
 | 3 | M08 Secrets, credentials and lifecycle management | GLOBAL:1.F; GLOBAL:17 | `modules/m08-secrets.md` |
-| 4 | M02 Authentication, identity and sessions | GLOBAL:1.B authentication | `modules/m02-authentication-sessions.md` |
-| 5 | M03 Authorisation, roles and tenant isolation | GLOBAL:1.B authorisation | `modules/m03-authorization-tenancy.md` |
-| 6 | M04 Injection, input validation and client security | GLOBAL:1.A; GLOBAL:1.C | `modules/m04-input-injection-web.md` |
+| 4 | M02 Authentication, identity and sessions | GLOBAL:1.B authentication; GLOBAL:3:Layer1 | `modules/m02-authentication-sessions.md` |
+| 5 | M03 Authorisation, roles and tenant isolation | GLOBAL:1.B authorisation; GLOBAL:3:Layer2 | `modules/m03-authorization-tenancy.md` |
+| 6 | M04 Injection, input validation and client security | GLOBAL:1.A; GLOBAL:1.C; GLOBAL:3:Layer3 | `modules/m04-input-injection-web.md` |
 | 7 | M05 Network, transport and API hygiene | GLOBAL:1.D | `modules/m05-api-network-transport.md` |
 
 **Direct task modules:** M02, M04, M05  
