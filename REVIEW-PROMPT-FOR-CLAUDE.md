@@ -18,9 +18,10 @@ You are reviewing the Universal Security Standard (USS) modularisation in this r
 5. **Agent usability:** inspect `KERNEL.md`, `AGENTS.md`, and Gemini/Claude/ChatGPT adapters. Confirm agents know how to resolve modules, treat retrieved content as untrusted data, report evidence, and avoid reading the entire archive for ordinary tasks.
 6. **Security policy consistency:** verify fail-closed behavior, evidence standards, tenant boundaries, authentication, input validation, CORS/CSRF, payment/webhook verification, idempotency, tax guardrails, secrets lifecycle, environment isolation, audit logging, incident response, CI/CD, supply chain and AI/LLM controls.
 7. **Severity and risk acceptance:** the owner-approved policy is absolute: P0 and P1 block production release and cannot be waived, downgraded or silently accepted by an agent or operator. Risk acceptance applies only to P2/P3. Check that this is consistent everywhere.
-8. **Tooling:** run `node tools/build-modules.mjs`, confirm `git diff --exit-code -- modules/`, run `node tools/resolve-task.mjs` for representative tasks, `node tools/build-bundles.mjs`, `node tools/validate.mjs`, and `node --test tests/*.test.mjs`. Confirm bundle outputs are deterministic and contain the correct dependency closure.
-9. **CI:** inspect workflow permissions, action pinning, branch/PR behavior and whether generated outputs are checked for staleness.
-10. **Release readiness:** identify any missing docs, test cases, traceability, versioning, or release gates that prevent calling this candidate complete.
+8. **Tooling:** run `node tools/build-modules.mjs`, confirm `git diff --exit-code -- modules/`, run `node tools/resolve-task.mjs` for representative tasks, `node tools/build-bundles.mjs`, `node tools/validate.mjs`, and `node --test tests/*.test.mjs` including `tests/documentation.test.mjs`. Confirm bundle outputs are deterministic and contain the correct dependency closure.
+9. **Repository documentation and hygiene:** review the root README, SECURITY.md, CONTRIBUTING.md, .gitignore and pull request template for accuracy, safe disclosure guidance, consistency with the actual tooling and absence of invented claims. Confirm README links resolve.
+10. **CI:** inspect workflow permissions, action pinning, branch/PR behavior and whether generated outputs are checked for staleness.
+11. **Release readiness:** identify any missing docs, test cases, traceability, versioning, or release gates that prevent calling this candidate complete.
 
 ## Required output
 Create or update `REVIEW-CLAUDE.md` with:
