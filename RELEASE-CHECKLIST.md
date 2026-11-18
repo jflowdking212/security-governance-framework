@@ -64,6 +64,7 @@
 - [ ] Confirm dependency-graph API access and enable GitHub Dependency Review if supported.
 - [x] Pinned direct GitHub Actions and reusable workflow references to full commit SHAs.
 - [x] Added workflow tests for scanner coverage and action pinning.
+- [x] Added a consumer CI security workflow template with explicit language, dependency and permission adaptation notes.
 - [x] AI, identity, SSRF, API, cryptography, privacy and runtime implementation supplements added.
 - [ ] Signed release tag/artefact created and independently verifiable against an owner-published signer identity.
 - [ ] Repository branch protection and required human review verified by the owner.
