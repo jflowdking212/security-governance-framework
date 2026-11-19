@@ -15,7 +15,7 @@ This document describes the trust anchor for official Universal Security Standar
 - **Signing algorithm:** Ed25519 (`ssh-ed25519`).
 - **Verified signing-key fingerprint:** `SHA256:zfXCAflnGbD1984rV8kabaPj92UyXIs0gCVsIspIX/o`.
 
-The fingerprint was obtained locally with `ssh-keygen -lf`. The key successfully produced a Git commit that GitHub reported as verified. The verification test commit is `cead9b6ebb6c904d71604134535083d89f0e8c75`. This proves that the configured key can sign a commit and GitHub recognises it; it is **not** a signed USS release tag and does not complete release verification.
+The fingerprint was obtained locally with `ssh-keygen -lf`. The key successfully produced GitHub-verified commit `cead9b6ebb6c904d71604134535083d89f0e8c75`. The owner subsequently published the public key and allowed-signers entry in signed commit `4f05a3e730aa8491795a6d9cff179ff58219fcb6`; GitHub verified that commit, and the owner locally verified it with `git verify-commit` using `.security/allowed_signers`. This proves the commit signature validates against the published key. It is **not** a signed USS release tag and does not complete release verification.
 
 The corresponding raw public key must be stored as `SECURITY-ROOT.pub`. The SSH allowed-signers entry must be stored as `.security/allowed_signers` in this form:
 
