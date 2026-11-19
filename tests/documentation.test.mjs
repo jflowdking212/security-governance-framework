@@ -35,6 +35,6 @@ test('release trust bootstrap documentation and checksum tooling are present',()
  assert.ok(root.includes('independently trusted source'));
  assert.ok(root.includes('USS-SHA256SUMS'));
  const consuming=fs.readFileSync('CONSUMING.md','utf8');
- assert.ok(consuming.includes('before reading or following'));
+ assert.ok(consuming.includes('Do not read or follow a vendored'));
  assert.ok(consuming.includes('sha256sums_sha256'));
 });
