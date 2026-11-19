@@ -17,8 +17,10 @@ function gitAt(cwd,args) {
 const argv=process.argv.slice(2);
 const command=argv[0];
 let rootArg='.';
+let FILESYSTEM=false;
 for(let i=1;i<argv.length;i++) {
   if(argv[i]==='--root'&&argv[i+1])rootArg=argv[++i];
+  else if(argv[i]==='--filesystem')FILESYSTEM=true;
   else throw new Error('Unknown argument: '+argv[i]);
 }
 const START=process.cwd();
@@ -64,6 +66,7 @@ function excludedPathspecs() {
   return [':(exclude)'+ROOT_PREFIX+MANIFEST,':(exclude)'+ROOT_PREFIX+SIGNATURE];
 }
 function assertNoUnexpectedUntracked() {
+  if(!GIT_ROOT||FILESYSTEM)return;
   const extras=listGitPaths(['ls-files','--others','--exclude-standard','-z','--',rootPathspec()])
     .filter(p=>!EXCLUDED.has(p));
   if(extras.length)throw new Error('Untracked files must be staged before checksum creation or removed: '+extras.join(', '));
@@ -101,14 +104,15 @@ function walkFiles(dir=ROOT,relative='') {
 }
 
 function trackedFiles() {
-  if(GIT_ROOT)return listGitPaths(['ls-files','-z','--',rootPathspec()]).filter(p=>!EXCLUDED.has(p)).sort();
+  if(GIT_ROOT&&!FILESYSTEM)return listGitPaths(['ls-files','-z','--',rootPathspec()]).filter(p=>!EXCLUDED.has(p)).sort();
   return walkFiles().sort();
 }
 
 function createManifest() {
-  if(!GIT_ROOT)throw new Error('Manifest creation must run from a Git worktree; verification can also run from an extracted release bundle.');
-  runGit(['diff','--quiet','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-  assertNoUnexpectedUntracked();
+  if(GIT_ROOT&&!FILESYSTEM) {
+    runGit(['diff','--quiet','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
+    assertNoUnexpectedUntracked();
+  }
   const files=trackedFiles();
   if(!files.length)throw new Error('No tracked files found to checksum.');
   const lines=files.map(rel=>sha256(assertSafePath(rel))+'  '+rel);
@@ -117,7 +121,7 @@ function createManifest() {
 }
 
 function verifyManifest() {
-  if(GIT_ROOT) {
+  if(GIT_ROOT&&!FILESYSTEM) {
     runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
     assertNoUnexpectedUntracked();
   }
@@ -153,7 +157,7 @@ try {
   if(command==='create')createManifest();
   else if(command==='verify')verifyManifest();
   else {
-    console.error('Usage: node tools/checksums.mjs <create|verify> [--root <directory>]');
+    console.error('Usage: node tools/checksums.mjs <create|verify> [--root <directory>] [--filesystem]');
     process.exitCode=2;
   }
 } catch(error) {
