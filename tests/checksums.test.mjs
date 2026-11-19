@@ -23,8 +23,8 @@ function fixture() {
   git(cwd,'commit','-m','fixture');
   return cwd;
 }
-function run(cwd,command) {
-  return spawnSync(process.execPath,[TOOL,command],{cwd,encoding:'utf8'});
+function run(cwd,command,...args) {
+  return spawnSync(process.execPath,[TOOL,command,...args],{cwd,encoding:'utf8'});
 }
 
 test('checksum tool creates a deterministic manifest and verifies it',t=>{
@@ -67,4 +67,34 @@ test('manifest creation refuses unstaged untracked files',t=>{
   const result=run(cwd,'create');
   assert.notEqual(result.status,0);
   assert.match(result.stderr,/Untracked files must be staged/);
+});
+
+test('verification works on an extracted release snapshot without Git metadata',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  assert.equal(run(cwd,'create').status,0);
+  const bundle=fs.mkdtempSync(path.join(os.tmpdir(),'uss-bundle-'));
+  t.after(()=>fs.rmSync(bundle,{recursive:true,force:true}));
+  for(const file of ['README.md','KERNEL.md','SHA256SUMS']) {
+    fs.copyFileSync(path.join(cwd,file),path.join(bundle,file));
+  }
+  const verified=run(bundle,'verify');
+  assert.equal(verified.status,0,verified.stderr);
+});
+
+test('root option verifies a vendored USS subtree inside another Git repository',t=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-vendor-'));t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  git(cwd,'init','-q');
+  git(cwd,'config','user.name','USS Test');
+  git(cwd,'config','user.email','uss-test@example.invalid');
+  fs.mkdirSync(path.join(cwd,'vendor','uss'),{recursive:true});
+  fs.writeFileSync(path.join(cwd,'README.md'),'consumer project\n');
+  fs.writeFileSync(path.join(cwd,'vendor','uss','KERNEL.md'),'vendored policy\n');
+  git(cwd,'add','README.md','vendor/uss/KERNEL.md');
+  git(cwd,'commit','-m','vendor fixture');
+  const created=run(cwd,'create','--root','vendor/uss');
+  assert.equal(created.status,0,created.stderr);
+  git(cwd,'add','vendor/uss/SHA256SUMS');
+  git(cwd,'commit','-m','add vendored checksum manifest');
+  const verified=run(cwd,'verify','--root','vendor/uss');
+  assert.equal(verified.status,0,verified.stderr);
 });
