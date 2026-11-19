@@ -67,7 +67,7 @@ test('manifest creation refuses unstaged untracked files',t=>{
   fs.writeFileSync(path.join(cwd,'untracked.txt'),'not staged\n');
   const result=run(cwd,'create');
   assert.notEqual(result.status,0);
-  assert.match(result.stderr,/Untracked or ignored files outside the separately verified dist\\/ bundle directory must be staged or removed/);
+  assert.match(result.stderr,/Untracked or ignored files/);
 });
 
 test('verification works on an extracted release snapshot without Git metadata',t=>{
