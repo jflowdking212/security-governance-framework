@@ -107,7 +107,7 @@ function trackedFiles() {
 
 function createManifest() {
   if(!GIT_ROOT)throw new Error('Manifest creation must run from a Git worktree; verification can also run from an extracted release bundle.');
-  runGit(['diff','--quiet','--','.',...excludedPathspecs()],{allowDiff:true});
+  runGit(['diff','--quiet','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
   assertNoUnexpectedUntracked();
   const files=trackedFiles();
   if(!files.length)throw new Error('No tracked files found to checksum.');
