@@ -67,9 +67,10 @@ function excludedPathspecs() {
 }
 function assertNoUnexpectedUntracked() {
   if(!GIT_ROOT||FILESYSTEM)return;
-  const extras=listGitPaths(['ls-files','--others','--exclude-standard','-z','--',rootPathspec()])
-    .filter(p=>!EXCLUDED.has(p));
-  if(extras.length)throw new Error('Untracked files must be staged before checksum creation or removed: '+extras.join(', '));
+  const ordinary=listGitPaths(['ls-files','--others','--exclude-standard','-z','--',rootPathspec()]);
+  const ignored=listGitPaths(['ls-files','--others','--ignored','--exclude-standard','-z','--',rootPathspec()]);
+  const extras=[...new Set([...ordinary,...ignored])].filter(p=>!EXCLUDED.has(p)&&p!=='dist'&&!p.startsWith('dist/'));
+  if(extras.length)throw new Error('Untracked or ignored files outside the separately verified dist/ bundle directory must be staged or removed: '+extras.join(', '));
 }
 
 function assertSafePath(rel) {
@@ -97,7 +98,7 @@ function sha256ForPath(rel) {
 function walkFiles(dir=ROOT,relative='') {
   const out=[];
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
-    if(entry.isDirectory()&&['.git','node_modules','dist'].includes(entry.name))continue;
+    if(entry.isDirectory()&&(entry.name==='.git'||(entry.name==='dist'&&relative==='')))continue;
     const rel=relative?relative+'/'+entry.name:entry.name;
     if(EXCLUDED.has(rel))continue;
     const full=path.join(dir,entry.name);
