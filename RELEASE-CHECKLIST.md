@@ -58,6 +58,7 @@
 - [x] PNCUL 1.0 published by PR #4; repository remains public and proprietary/source-available.
 - [x] Dependabot GitHub Actions updates configured weekly by PR #5; no unused package ecosystems configured.
 - [x] Active `Protect Main` ruleset targets the default branch and requires pull requests, conversation resolution, and blocks deletion/non-fast-forward updates. Required approvals are 0 by owner decision.
+- [x] `.github/CODEOWNERS` assigns security-critical policy, source, tooling and release-integrity files to `@jflowdking212`; mandatory code-owner approval remains disabled by owner decision.
 - [ ] Require the `USS validation` status check before merge after hosted CI is available and the exact check name is confirmed.
 - [x] Owner SSH signing key is registered with GitHub; local signing succeeded and GitHub verified test commit `cead9b6ebb6c904d71604134535083d89f0e8c75`.
 
