@@ -26,6 +26,8 @@ ssh-keygen -lf SECURITY-ROOT.pub
 sha256sum SHA256SUMS
 ssh-keygen -Y verify -f .security/allowed_signers -I jude_m2003@yahoo.com -n USS-SHA256SUMS -s SHA256SUMS.sig < SHA256SUMS
 node tools/checksums.mjs verify
+# If using compiled release bundles:
+node tools/checksums.mjs verify --root dist/bundles --filesystem
 ```
 
 Windows PowerShell:
@@ -35,6 +37,8 @@ ssh-keygen -lf SECURITY-ROOT.pub
 (Get-FileHash SHA256SUMS -Algorithm SHA256).Hash.ToLower()
 cmd /c "ssh-keygen -Y verify -f .security/allowed_signers -I jude_m2003@yahoo.com -n USS-SHA256SUMS -s SHA256SUMS.sig < SHA256SUMS"
 node tools/checksums.mjs verify
+# If using compiled release bundles:
+node tools/checksums.mjs verify --root dist/bundles --filesystem
 ```
 
 Compare the displayed digest and fingerprint with the consuming project's protected `.uss-version` record and independently trusted owner fingerprint. The commands must all succeed.
