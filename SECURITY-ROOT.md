@@ -55,6 +55,8 @@ The checksum tool supports repository checkouts, vendored subdirectories (`--roo
 node tools/checksums.mjs verify
 node tools/checksums.mjs verify --root vendor/uss
 node tools/checksums.mjs create --root dist/bundles --filesystem
+ssh-keygen -Y sign -f ~/.ssh/security_layer_signing -n USS-SHA256SUMS dist/bundles/SHA256SUMS
+ssh-keygen -Y verify -f .security/allowed_signers -I jude_m2003@yahoo.com -n USS-SHA256SUMS -s dist/bundles/SHA256SUMS.sig < dist/bundles/SHA256SUMS
 node tools/checksums.mjs verify --root dist/bundles --filesystem
 ```
 
