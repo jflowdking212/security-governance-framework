@@ -183,6 +183,6 @@ This repository is public but is **not open source under an OSI-approved licence
 - Commercial use, resale, paid services, sublicensing and redistribution of copies or modified versions are not permitted without prior written permission.
 - Copyright and attribution must be retained: **Jude O. Richard and Jay Bliss Tech Limited**.
 
-Public visibility does not grant commercial rights. Third-party materials remain subject to their own licence terms. For commercial licensing, contact the Rights Holders through the repository owner.
+Public visibility does not grant commercial rights. GitHub's Terms of Service do permit users to view and fork public repositories within GitHub; the licence does not override those platform-specific permissions. Those permissions do not grant commercial-use rights or broader redistribution rights outside GitHub. Third-party materials remain subject to their own licence terms. For commercial licensing, contact the Rights Holders through the repository owner.
 
 The licence is a custom source-available, non-commercial licence. It is not an OSI-approved open-source licence. See [LICENSE](LICENSE) for the complete terms.
