@@ -60,6 +60,8 @@ ssh-keygen -Y verify -f .security/allowed_signers -I jude_m2003@yahoo.com -n USS
 node tools/checksums.mjs verify --root dist/bundles --filesystem
 ```
 
+In Git mode, the tool hashes committed Git blob bytes from `HEAD`, not the platform-dependent working-tree representation, so Windows CRLF checkout settings do not change the digest. The repository must be clean and all release files must already be committed before creating the source manifest.
+
 The `--filesystem` mode is for generated artifacts such as `dist/bundles/`, which are intentionally not Git-tracked. It hashes every regular file in the selected directory. The signature must be verified separately before trusting the checksum file.
 
 ### Verify the signature
