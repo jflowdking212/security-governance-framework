@@ -64,6 +64,10 @@ In Git mode, the tool hashes committed Git blob bytes from `HEAD`, not the platf
 
 The `--filesystem` mode is for generated artifacts such as `dist/bundles/`, which are intentionally not Git-tracked. It hashes every regular file in the selected directory. The signature must be verified separately before trusting the checksum file.
 
+### Owner workstation test evidence (2026-11-19)
+
+The owner tested this workflow against a disposable `dist/p1-4-sign-test/` directory on Windows PowerShell. Manifest creation succeeded; `ssh-keygen -Y sign` created a detached signature in namespace `USS-SHA256SUMS`; verification using the published `.security/allowed_signers` succeeded; checksum verification succeeded. After modifying the sample file, verification failed with `SHA-256 mismatch: sample.txt`. After appending a forged entry to the manifest, SSH verification failed with `incorrect signature`; restoring the original manifest made signature verification succeed again. This validates the tested signing and tamper-detection path. It does not replace final source/bundle manifests, signed release commit/tag verification, or hosted CI.
+
 ### Verify the signature
 
 On Linux/macOS, after independently confirming the public-key fingerprint:
