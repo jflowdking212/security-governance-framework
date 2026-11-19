@@ -68,7 +68,7 @@
 - [x] Claude independent review completed (`REVIEW-CLAUDE.md`, 2026-11-18).
 - [x] Claude findings resolved or explicitly documented in the correction series and review report.
 - [ ] Owner approves final release after GitHub CI and remaining substantive review.
-- [ ] Publish `SECURITY-ROOT.pub` and `.security/allowed_signers` containing the owner's public SSH signing key; verify the fingerprint against the independently trusted value in `SECURITY-ROOT.md`.
+- [x] Publish `SECURITY-ROOT.pub` and `.security/allowed_signers` containing the owner's public SSH signing key; local fingerprint matches `SHA256:zfXCAflnGbD1984rV8kabaPj92UyXIs0gCVsIspIX/o`, and GitHub verified signed publication commit `4f05a3e730aa8491795a6d9cff179ff58219fcb6`. Independent out-of-band confirmation of the fingerprint remains part of consumer trust bootstrap.
 - [ ] Generate and sign `SHA256SUMS` for the exact release candidate using `tools/checksums.mjs`; verify the signature and file set independently.
 - [ ] Create a signed annotated `v1.0.0` tag and independently verify the tag, commit, checksum signature and every file digest.
 - [ ] Require the `USS validation` status check before merge after hosted CI is available and the exact check name is confirmed.
