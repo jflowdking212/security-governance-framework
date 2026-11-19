@@ -17,6 +17,7 @@ function fixture() {
   git(cwd,'init','-q');
   git(cwd,'config','user.name','USS Test');
   git(cwd,'config','user.email','uss-test@example.invalid');
+  git(cwd,'config','commit.gpgsign','false');
   fs.writeFileSync(path.join(cwd,'README.md'),'trusted test content\n');
   fs.writeFileSync(path.join(cwd,'KERNEL.md'),'kernel test content\n');
   git(cwd,'add','README.md','KERNEL.md');
