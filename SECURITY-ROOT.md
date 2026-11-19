@@ -49,14 +49,16 @@ ssh-keygen -Y sign -f ~/.ssh/security_layer_signing -n USS-SHA256SUMS SHA256SUMS
 
 This creates `SHA256SUMS.sig`. Commit the manifest and signature, sign the resulting release commit, and create the signed annotated version tag. The manifest and signature must remain associated with that exact tagged commit. A later, untagged change to `main` does not inherit the old release's checksum claim.
 
-The checksum tool supports repository checkouts, vendored subdirectories (`--root vendor/uss`) and extracted release snapshots:
+The checksum tool supports repository checkouts, vendored subdirectories (`--root vendor/uss`), extracted release snapshots and generated bundle directories:
 
 ```sh
 node tools/checksums.mjs verify
 node tools/checksums.mjs verify --root vendor/uss
+node tools/checksums.mjs create --root dist/bundles --filesystem
+node tools/checksums.mjs verify --root dist/bundles --filesystem
 ```
 
-The signature must be verified separately before trusting the checksum file.
+The `--filesystem` mode is for generated artifacts such as `dist/bundles/`, which are intentionally not Git-tracked. It hashes every regular file in the selected directory. The signature must be verified separately before trusting the checksum file.
 
 ### Verify the signature
 
@@ -92,11 +94,12 @@ For each official release:
 
 1. Complete the full release checklist and resolve all P0/P1 findings.
 2. Generate `SHA256SUMS` from the exact release candidate commit and sign it with the owner's SSH key.
-3. Commit the manifest and detached signature. Sign the release commit.
-4. Create an annotated, signed version tag with `git tag -s`.
-5. Push the tag and publish the release from that exact tag.
-6. Independently verify the GitHub commit/tag signature, the trusted fingerprint, the checksum-manifest signature and every file digest.
-7. Attach the compiled task bundles and verification evidence to the release.
+3. Build the task bundles and create a separate manifest for `dist/bundles/` with `node tools/checksums.mjs create --root dist/bundles --filesystem`; sign and verify that manifest too.
+4. Commit the source manifest and detached signature. Sign the release commit.
+5. Create an annotated, signed version tag with `git tag -s`.
+6. Push the tag and publish the release from that exact tag.
+7. Independently verify the GitHub commit/tag signature, the trusted fingerprint, both checksum-manifest signatures and every listed file digest.
+8. Attach the compiled task bundles, their signed manifest and verification evidence to the release.
 
 No release is trusted solely because it is published from `main`, carries a version label or passes CI.
 
