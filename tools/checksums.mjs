@@ -87,7 +87,7 @@ function assertSafePath(rel) {
 function sha256ForPath(rel) {
   if(GIT_ROOT&&!FILESYSTEM) {
     const gitPath=ROOT_PREFIX+rel;
-    const r=spawnSync('git',['show','HEAD:'+gitPath],{cwd:GIT_ROOT,encoding:'buffer'});
+    const r=spawnSync('git',['show','HEAD:'+gitPath],{cwd:GIT_ROOT,encoding:null});
     if(r.error||r.status!==0)throw new Error('Unable to read committed file from HEAD: '+rel);
     return createHash('sha256').update(r.stdout).digest('hex');
   }
