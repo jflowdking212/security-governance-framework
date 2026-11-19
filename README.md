@@ -1,7 +1,7 @@
 # Universal Security Standard (USS)
 
 **Current version:** 1.0.0  
-**Release status:** Independent review completed with required fixes applied; GitHub Actions CI passes on Node.js 20 (34 tests); final owner release approval remains.  
+**Release status:** Independent review completed; last confirmed hosted CI pass was on Node.js 20.20.2 with 34 tests at the pre-governance correction commit. Later governance changes are awaiting validation because GitHub Actions credits are unavailable until 30 November 2026. No formal v1.0.0 release has been signed or published.  
 **Security posture:** FAIL CLOSED & PROVE  
 **Runtime requirement:** Node.js 20 or later for the repository validation tools. No third-party Node packages are required.
 
@@ -23,6 +23,12 @@ USS is a modular, source-traceable security engineering standard for human devel
 - Short adapters for Gemini, Claude and ChatGPT.
 
 USS is a policy and verification framework. It does not automatically secure an application, replace application-specific engineering, or constitute an external certification.
+
+## Verify integrity before use
+
+USS is security policy and must be treated as a security-critical dependency. Before reading or executing a vendored copy, follow the trust-bootstrap sequence in [CONSUMING.md](CONSUMING.md): compare the pinned version and commit, obtain the signing-key fingerprint independently, verify the signed `SHA256SUMS` manifest, and verify every file digest. If any check fails, stop and treat the copy as untrusted.
+
+The current owner signing-key fingerprint and verification procedure are documented in [SECURITY-ROOT.md](SECURITY-ROOT.md). The test commit proves GitHub recognises the owner's key; it is not a signed v1.0.0 release. The signed release manifest and tag remain outstanding.
 
 ## Start here
 
@@ -138,6 +144,17 @@ node tools/build-bundles.mjs --task payments
 Generated full-text bundles are written to `dist/bundles/` and are local build artefacts. They are not a substitute for reading the source modules.
 
 GitHub Actions runs the module generator, checks for stale generated modules, compiles bundles, runs validation and executes the tests on pushes and pull requests.
+
+## Release integrity tooling
+
+The deterministic checksum tool creates and verifies a SHA-256 manifest for the exact release file set:
+
+```sh
+node tools/checksums.mjs create
+node tools/checksums.mjs verify
+```
+
+For a vendored subtree, use `--root vendor/uss`. Verify the detached SSH signature on `SHA256SUMS` with the independently trusted key fingerprint before trusting the manifest or running the checksum verifier. See [SECURITY-ROOT.md](SECURITY-ROOT.md).
 
 ## Core release rules
 
