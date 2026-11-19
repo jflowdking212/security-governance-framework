@@ -14,6 +14,7 @@ function runGit(args,{allowDiff=false}={}) {
   if(allowDiff) {
     if(r.status===0)return;
     if(r.status===1)throw new Error('Working tree has changes outside '+MANIFEST+' and '+SIGNATURE+'. Stage intended changes and ensure the worktree matches the index before creating a manifest.');
+    throw new Error('git '+args.join(' ')+' failed: '+(r.stderr||'exit '+r.status).trim());
   } else if(r.status!==0) {
     throw new Error('git '+args.join(' ')+' failed: '+(r.stderr||'exit '+r.status).trim());
   }
@@ -53,11 +54,11 @@ function sha256(file) {
 }
 
 function trackedFiles() {
-  return listGitPaths(['ls-files','-z']).filter(p=>!EXCLUDED.has(p)).sort((a,b)=>a.localeCompare(b,'en'));
+  return listGitPaths(['ls-files','-z']).filter(p=>!EXCLUDED.has(p)).sort();
 }
 
 function createManifest() {
-  runGit(['diff','--quiet','--','.',' :(exclude)'+MANIFEST,' :(exclude)'+SIGNATURE],{allowDiff:true});
+  runGit(['diff','--quiet','--','.',':(exclude)'+MANIFEST,':(exclude)'+SIGNATURE],{allowDiff:true});
   assertNoUnexpectedUntracked();
   const files=trackedFiles();
   if(!files.length)throw new Error('No tracked files found to checksum.');
@@ -67,7 +68,7 @@ function createManifest() {
 }
 
 function verifyManifest() {
-  runGit(['diff','--quiet','HEAD','--','.',' :(exclude)'+MANIFEST,' :(exclude)'+SIGNATURE],{allowDiff:true});
+  runGit(['diff','--quiet','HEAD','--','.',':(exclude)'+MANIFEST,':(exclude)'+SIGNATURE],{allowDiff:true});
   assertNoUnexpectedUntracked();
   const manifestPath=path.join(ROOT,MANIFEST);
   if(!fs.existsSync(manifestPath))throw new Error('Missing '+MANIFEST+'.');
@@ -85,7 +86,7 @@ function verifyManifest() {
   const names=entries.map(x=>x.rel);
   if(new Set(names).size!==names.length)throw new Error('Duplicate path in '+MANIFEST+'.');
   const expected=trackedFiles();
-  const actual=[...names].sort((a,b)=>a.localeCompare(b,'en'));
+  const actual=names;
   if(JSON.stringify(actual)!==JSON.stringify(expected)) {
     const missing=expected.filter(p=>!names.includes(p));
     const unexpected=names.filter(p=>!expected.includes(p));
