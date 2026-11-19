@@ -69,6 +69,7 @@
 - [x] Claude findings resolved or explicitly documented in the correction series and review report.
 - [ ] Owner approves final release after GitHub CI and remaining substantive review.
 - [x] Publish `SECURITY-ROOT.pub` and `.security/allowed_signers` containing the owner's public SSH signing key; local fingerprint matches `SHA256:zfXCAflnGbD1984rV8kabaPj92UyXIs0gCVsIspIX/o`, GitHub verified signed publication commit `4f05a3e730aa8491795a6d9cff179ff58219fcb6`, and the owner independently ran `git verify-commit` successfully using the published allowed-signers file. Independent out-of-band confirmation of the fingerprint remains part of consumer trust bootstrap.
+- [x] Owner workstation successfully tested temporary filesystem-mode manifest creation, SSH signing with namespace `USS-SHA256SUMS`, signature verification against the published `.security/allowed_signers`, and file-digest verification. A modified protected file was rejected with `SHA-256 mismatch`; a modified manifest was rejected with `incorrect signature`; the original manifest signature verified again after restoration. This is workflow evidence only, not the final release manifest.
 - [ ] Generate and sign `SHA256SUMS` for the exact release candidate using `tools/checksums.mjs`; verify the signature and file set independently.
 - [ ] Create a signed annotated `v1.0.0` tag and independently verify the tag, commit, checksum signature and every file digest.
 - [ ] Require the `USS validation` status check before merge after hosted CI is available and the exact check name is confirmed.
