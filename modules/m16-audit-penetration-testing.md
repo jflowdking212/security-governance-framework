@@ -17,23 +17,23 @@ Use the following lifecycle:
 
 
 
-1\. **\*\*Production Security Audit\*\*** — assess the 13 layers; identify P0/P1/P2/P3 or equivalent severity; document evidence and unknowns.
+1. **Production Security Audit** — assess the 13 layers; identify P0/P1/P2/P3 or equivalent severity; document evidence and unknowns.
 
-2\. **\*\*Remediation\*\*** — fix confirmed defects; add regression tests; add missing controls; document architecture/security decisions.
+2. **Remediation** — fix confirmed defects; add regression tests; add missing controls; document architecture/security decisions.
 
-3\. **\*\*Internal Re-Verification\*\*** — re-run deterministic tests, security scans, authorization tests, dependency checks, CI gates, and applicable DAST against a safe environment.
+3. **Internal Re-Verification** — re-run deterministic tests, security scans, authorization tests, dependency checks, CI gates, and applicable DAST against a safe environment.
 
-4\. **\*\*Authorized External Penetration Test\*\*** — use a qualified independent tester/team against explicitly authorized scope; never represent an internal AI audit as independent external validation.
+4. **Authorized External Penetration Test** — use a qualified independent tester/team against explicitly authorized scope; never represent an internal AI audit as independent external validation.
 
-5\. **\*\*Pen-Test Remediation\*\*** — fix validated findings; add regression coverage; preserve evidence of disposition.
+5. **Pen-Test Remediation** — fix validated findings; add regression coverage; preserve evidence of disposition.
 
-6\. **\*\*Re-Audit\*\*** — repeat the 13-layer audit; verify remediation held; record remaining limitations.
+6. **Re-Audit** — repeat the 13-layer audit; verify remediation held; record remaining limitations.
 
-7\. **\*\*Security Assurance Package\*\*** — preserve auditable security evidence for procurement, due diligence, and enterprise security questionnaires.
+7. **Security Assurance Package** — preserve auditable security evidence for procurement, due diligence, and enterprise security questionnaires.
 
 
 
-\---
+---
 
 **## 6. Authorized Penetration Testing Boundary**
 
@@ -47,23 +47,23 @@ Before intrusive or exploitative testing against a live target:
 
 
 
-\- verify target scope;
+- verify target scope;
 
-\- verify authorization;
+- verify authorization;
 
-\- prefer staging or dedicated test environments;
+- prefer staging or dedicated test environments;
 
-\- define excluded systems;
+- define excluded systems;
 
-\- protect production data;
+- protect production data;
 
-\- establish rollback/recovery;
+- establish rollback/recovery;
 
-\- avoid destructive payloads unless specifically approved;
+- avoid destructive payloads unless specifically approved;
 
-\- preserve logs/evidence;
+- preserve logs/evidence;
 
-\- stop if the test creates unexpected production risk.
+- stop if the test creates unexpected production risk.
 
 
 
@@ -71,4 +71,4 @@ Defensive code review, static analysis, local tests, mocked exploit regression t
 
 
 
-\---
+---

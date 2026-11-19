@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {renderSourceMarkdown} from './render-source-markdown.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(ROOT);
 const source={
@@ -49,7 +50,7 @@ function annotateRiskAcceptanceClause(text,anchor){
 }
 
 function moduleText(id,title,refs,body){
- return '# '+id+' '+title+'\n\n**Source sections:** '+refs.join(', ')+'  \n**Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.\n\n---\n\n'+body+'\n';
+ return '# '+id+' '+title+'\n\n**Source sections:** '+refs.join(', ')+'  \n**Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.\n\n---\n\n'+renderSourceMarkdown(body)+'\n';
 }
 const specs=[
 ['m01-engineering-workflow.md','M01','Core operating policy and secure engineering',['GLOBAL:Core','GLOBAL:13','GLOBAL:14'],between(g,'Core Persona & Operating Constraints','1. Defensive Architecture & Hardening Standards')+'\n\n'+between(g,'13. Global Security Decision Principles','14. Definition of Secure Engineering Done')+'\n\n'+between(g,'14. Definition of Secure Engineering Done','15. Revenue Tax & Indirect Tax Compliance Guardrail')],

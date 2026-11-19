@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0.0",
+  "standard_version": "1.0.0",
+  "description": "Stable module-family control identifiers. These IDs reference module-level control families, not individual requirements or implementation status.",
+  "controls": [
+    {
+      "id": "USS-ENG",
+      "module_id": "M01",
+      "module_path": "modules/m01-engineering-workflow.md",
+      "title": "Core operating policy and secure engineering",
+      "verification_guidance": "Review authority, secure defaults, engineering workflow and mandatory self-audit."
+    },
+    {
+      "id": "USS-AUTH",
+      "module_id": "M02",
+      "module_path": "modules/m02-authentication-sessions.md",
+      "title": "Authentication, identity and sessions",
+      "verification_guidance": "Review credential storage, MFA, recovery, session lifecycle and authentication abuse controls."
+    },
+    {
+      "id": "USS-TEN",
+      "module_id": "M03",
+      "module_path": "modules/m03-authorization-tenancy.md",
+      "title": "Authorisation, roles and tenant isolation",
+      "verification_guidance": "Review object/function/property authorization, ownership and tenant isolation."
+    },
+    {
+      "id": "USS-INPUT",
+      "module_id": "M04",
+      "module_path": "modules/m04-input-injection-web.md",
+      "title": "Injection, input validation and client security",
+      "verification_guidance": "Review injection, validation, output encoding, CSRF, SSRF and file safety."
+    },
+    {
+      "id": "USS-API",
+      "module_id": "M05",
+      "module_path": "modules/m05-api-network-transport.md",
+      "title": "Network, transport and API hygiene",
+      "verification_guidance": "Review TLS, CORS, API limits, abuse controls and safe transport."
+    },
+    {
+      "id": "USS-PAY",
+      "module_id": "M06",
+      "module_path": "modules/m06-payments-webhooks.md",
+      "title": "Payments, webhooks and external event integrity",
+      "verification_guidance": "Review webhook authenticity, raw-body verification, replay, idempotency and financial invariants."
+    },
+    {
+      "id": "USS-TAX",
+      "module_id": "M07",
+      "module_path": "modules/m07-tax-compliance.md",
+      "title": "Revenue tax and indirect-tax compliance",
+      "verification_guidance": "Review jurisdiction, tax classification, evidence, filing and reconciliation controls."
+    },
+    {
+      "id": "USS-SECRET",
+      "module_id": "M08",
+      "module_path": "modules/m08-secrets.md",
+      "title": "Secrets, credentials and lifecycle management",
+      "verification_guidance": "Review secret storage, least privilege, rotation, revocation and leakage."
+    },
+    {
+      "id": "USS-DATA",
+      "module_id": "M09",
+      "module_path": "modules/m09-data-protection.md",
+      "title": "Data protection, privacy and residency",
+      "verification_guidance": "Review data protection, privacy, residency, retention and database integrity."
+    },
+    {
+      "id": "USS-OPS",
+      "module_id": "M10",
+      "module_path": "modules/m10-operations-audit-ir.md",
+      "title": "Operations, audit and incident response",
+      "verification_guidance": "Review environment isolation, logging, monitoring, incident response and recovery."
+    },
+    {
+      "id": "USS-AI",
+      "module_id": "M11",
+      "module_path": "modules/m11-ai-llm-security.md",
+      "title": "AI/LLM security and governance",
+      "verification_guidance": "Review prompt injection, retrieval, model governance, tool boundaries and sensitive-data handling."
+    },
+    {
+      "id": "USS-SUPPLY",
+      "module_id": "M12",
+      "module_path": "modules/m12-supply-chain-cicd-infra.md",
+      "title": "CI/CD, infrastructure and software supply chain",
+      "verification_guidance": "Review build integrity, deployment, dependencies, infrastructure and supply chain."
+    },
+    {
+      "id": "USS-SELF",
+      "module_id": "M13",
+      "module_path": "modules/m13-self-audit.md",
+      "title": "Mandatory in-line self-audit",
+      "verification_guidance": "Execute and record the applicable adversarial self-audit vectors."
+    },
+    {
+      "id": "USS-ASSURE",
+      "module_id": "M14",
+      "module_path": "modules/m14-assurance-model.md",
+      "title": "13-layer security assurance model",
+      "verification_guidance": "Assess the complete assurance model for formal audit and release claims."
+    },
+    {
+      "id": "USS-EVID",
+      "module_id": "M15",
+      "module_path": "modules/m15-evidence-reporting.md",
+      "title": "Production evidence and reporting",
+      "verification_guidance": "Review evidence quality, traceability and assurance reporting."
+    },
+    {
+      "id": "USS-TEST",
+      "module_id": "M16",
+      "module_path": "modules/m16-audit-penetration-testing.md",
+      "title": "Audit and authorised penetration testing",
+      "verification_guidance": "Review audit lifecycle, test scope, authorisation and retest evidence."
+    },
+    {
+      "id": "USS-SEVERITY",
+      "module_id": "M17",
+      "module_path": "modules/m17-severity-release-gates.md",
+      "title": "Security finding severity and release gates",
+      "verification_guidance": "Classify findings consistently and enforce non-waivable P0/P1 release blockers."
+    },
+    {
+      "id": "USS-COMMS",
+      "module_id": "M18",
+      "module_path": "modules/m18-public-security-communication.md",
+      "title": "Public security communication",
+      "verification_guidance": "Review public disclosures, security claims and incident communications."
+    },
+    {
+      "id": "USS-FIN",
+      "module_id": "M19",
+      "module_path": "modules/m19-financial-release-gate.md",
+      "title": "Financial integration and revenue release gate",
+      "verification_guidance": "Review financial release criteria, payment/tax evidence and reconciliation gates."
+    },
+    {
+      "id": "USS-REMED",
+      "module_id": "M20",
+      "module_path": "modules/m20-audit-first-remediation.md",
+      "title": "Audit-first remediation and risk acceptance",
+      "verification_guidance": "Review root cause, remediation prioritisation and P2/P3-only risk acceptance."
+    },
+    {
+      "id": "USS-CORS",
+      "module_id": "M21",
+      "module_path": "modules/m21-cors-browser-boundary.md",
+      "title": "CORS and browser cross-origin trust boundary",
+      "verification_guidance": "Review origin trust, preflight and browser cross-origin enforcement."
+    },
+    {
+      "id": "USS-AGENT",
+      "module_id": "M22",
+      "module_path": "modules/m22-agent-execution-contract.md",
+      "title": "Agent execution contract",
+      "verification_guidance": "Review agent instruction integrity, scope, permissions and execution boundaries."
+    }
+  ]
+}

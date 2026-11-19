@@ -25,13 +25,13 @@ This section is an engineering/compliance guardrail, not a substitute for legal 
 
 
 
-\- The relevant US concept is generally **economic nexus** or **tax nexus**, not “NEXIS.”
+- The relevant US concept is generally **economic nexus** or **tax nexus**, not “NEXIS.”
 
-\- Never encode educational shorthand or a mentor/social-media example as binding legal truth without current authoritative verification.
+- Never encode educational shorthand or a mentor/social-media example as binding legal truth without current authoritative verification.
 
-\- Do not assume all US states use `$100,000`, `200 transactions`, “first-dollar digital goods,” or any other universal threshold. Threshold amounts, transaction-count tests, included/excluded sales, measurement periods, product taxability, sourcing rules, and registration obligations vary and can change.
+- Do not assume all US states use `$100,000`, `200 transactions`, “first-dollar digital goods,” or any other universal threshold. Threshold amounts, transaction-count tests, included/excluded sales, measurement periods, product taxability, sourcing rules, and registration obligations vary and can change.
 
-\- Do not generalize US state sales-tax concepts to VAT, GST, or other jurisdictions. Apply the legal model relevant to the seller, customer, product/service, and jurisdiction.
+- Do not generalize US state sales-tax concepts to VAT, GST, or other jurisdictions. Apply the legal model relevant to the seller, customer, product/service, and jurisdiction.
 
 
 
@@ -41,35 +41,35 @@ This section is an engineering/compliance guardrail, not a substitute for legal 
 
 Where a product collects revenue across jurisdictions, maintain or integrate a current exposure model that can track, as applicable:
 
-\- seller legal entity and relevant business locations;
+- seller legal entity and relevant business locations;
 
-\- customer jurisdiction/location evidence;
+- customer jurisdiction/location evidence;
 
-\- gross and/or taxable sales as required by the applicable rule;
+- gross and/or taxable sales as required by the applicable rule;
 
-\- transaction counts where relevant;
+- transaction counts where relevant;
 
-\- product/service tax classification;
+- product/service tax classification;
 
-\- B2B/B2C treatment;
+- B2B/B2C treatment;
 
-\- marketplace-facilitated or merchant-of-record transactions;
+- marketplace-facilitated or merchant-of-record transactions;
 
-\- physical-presence indicators;
+- physical-presence indicators;
 
-\- exemptions and validated tax IDs where applicable;
+- exemptions and validated tax IDs where applicable;
 
-\- refunds/credits;
+- refunds/credits;
 
-\- threshold measurement window;
+- threshold measurement window;
 
-\- potential obligation status;
+- potential obligation status;
 
-\- registration status;
+- registration status;
 
-\- collection status;
+- collection status;
 
-\- filing/remittance status.
+- filing/remittance status.
 
 Material threshold/rule data MUST carry an authoritative/reputable source and a last-verification date. Do not silently treat stale hard-coded threshold tables as current law.
 
@@ -85,13 +85,13 @@ Track separate states such as:
 
 Do not equate:
 
-\- crossing or approaching a software-estimated threshold with a final legal conclusion;
+- crossing or approaching a software-estimated threshold with a final legal conclusion;
 
-\- creating a tax-provider configuration object with completing government registration;
+- creating a tax-provider configuration object with completing government registration;
 
-\- enabling tax calculation with authorization to collect in every jurisdiction;
+- enabling tax calculation with authorization to collect in every jurisdiction;
 
-\- collecting tax with filing/remittance completion.
+- collecting tax with filing/remittance completion.
 
 Do not automatically register a company with a tax authority, enable a new production tax jurisdiction, submit a return, remit funds, or alter historical tax records without explicit authorization and verified business/compliance information.
 
@@ -173,7 +173,7 @@ AI agents MUST NOT independently invent a legal conclusion and silently change p
 
 
 
-\---
+---
 
 # PART B — REVENUE TAX / INDIRECT TAX COMPLIANCE
 

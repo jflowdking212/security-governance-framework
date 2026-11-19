@@ -56,14 +56,29 @@
 - [x] PR #1 squash-merged into `main` after successful CI and substantive review.
 - [x] Post-merge GitHub Actions passed on Node.js 20.20.2, including all 34 tests.
 
+## Trust and evidence correction series
+- [x] Current Claude-review findings and implementation/owner-action status recorded in [REVIEW-CORRECTION-LOG.md](REVIEW-CORRECTION-LOG.md).
+- [x] External trust-root limitations documented; consumers are required to pin a full commit SHA obtained through an independent trusted channel.
+- [x] Machine-readable control-family catalog and structured evidence validator added.
+- [x] Added a severity classification rubric clarifying P0-P3 evidence, reachability, impact and risk acceptance.
+- [x] Added full-history Gitleaks, Semgrep, CodeQL and OSV-Scanner workflows.
+- [ ] Confirm dependency-graph API access and enable GitHub Dependency Review if supported.
+- [x] Pinned direct GitHub Actions and reusable workflow references to full commit SHAs.
+- [x] Added workflow tests for scanner coverage and action pinning.
+- [x] Added a consumer CI security workflow template with explicit language, dependency and permission adaptation notes.
+- [x] AI, identity, SSRF, API, cryptography, privacy and runtime implementation supplements added.
+- [ ] Signed release tag/artefact created and independently verifiable against an owner-published signer identity.
+- [ ] Repository branch protection and required human review configured by the owner. GitHub API verification on 2026-11-18 confirmed main is unprotected, enforcement is disabled and no rulesets exist.
+- [ ] Owner selects and approves a software licence, or explicitly retains the no-licence state.
+
 ## Remaining before final v1.0.0 release
 - [x] Additional substantive review of M06, M07, M08, M10, M12 and M21 completed; no further internal policy contradictions identified.
 - [x] GitHub Actions CI passed on Node.js 20, including source generation, index drift checks, validation and 34 automated tests.
 - [x] Claude independent review completed (`REVIEW-CLAUDE.md`, 2026-11-18).
-- [x] Claude findings resolved or explicitly documented in the correction series and review report.
+- [ ] All findings from the latest Claude review resolved or explicitly documented with an owner decision.
 - [ ] Owner approves final release after GitHub CI and remaining substantive review.
-- [ ] Main branch protection configured with required USS validation checks and review. The repository rulesets query returned no rulesets; classic branch-protection status could not be verified because the connected GitHub integration returned HTTP 403. Owner must confirm in GitHub Settings.
+- [ ] Main branch protection configured with required USS validation checks and review. The GitHub API reports main is unprotected and branch-protection enforcement is disabled. Owner must configure this in GitHub Settings.
 - [ ] Final release commit/tag created.
 - [ ] Consuming applications pin the released version.
 
-**Current status:** Corrections are merged into `main` at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. GitHub Actions passed on Node.js 20.20.2 with 34 tests. No formal v1.0.0 tag/release has been created. Branch protection and owner approval for the formal release remain outstanding.
+**Current status:** The previous modular-standard correction baseline is merged into `main` at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. The new Claude-review correction series is being developed in draft PR #3 and has not been merged. The latest recorded CI run for the current branch passed after the M1-M4 evidence-validator changes. No formal v1.0.0 tag/release or independently verifiable signature has been created. Branch protection, licence choice and final owner approval remain outstanding.
