@@ -141,3 +141,78 @@ test('manifest creation rejects ignored untracked files outside dist bundles',t=
   assert.notEqual(result.status,0);
   assert.match(result.stderr,/Untracked or ignored files/);
 });
+
+test('adversarial: rejects assume-unchanged index bypass concealing modifications',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  assert.equal(run(cwd,'create').status,0);
+  git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add manifest');
+  fs.writeFileSync(path.join(cwd,'README.md'),'malicious payload\n');
+  git(cwd,'update-index','--assume-unchanged','README.md');
+  const result=run(cwd,'verify');
+  assert.notEqual(result.status,0,'Verification must fail when assume-unchanged flag is used');
+  assert.match(result.stderr,/Non-default Git index flags|Working-tree bytes differ|SHA-256 mismatch/);
+});
+
+test('adversarial: rejects skip-worktree index bypass concealing modifications',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  assert.equal(run(cwd,'create').status,0);
+  git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add manifest');
+  fs.writeFileSync(path.join(cwd,'README.md'),'malicious payload\n');
+  git(cwd,'update-index','--skip-worktree','README.md');
+  const result=run(cwd,'verify');
+  assert.notEqual(result.status,0,'Verification must fail when skip-worktree flag is used');
+  assert.match(result.stderr,/Non-default Git index flags|Working-tree bytes differ|SHA-256 mismatch/);
+});
+
+test('adversarial: rejects uncommitted working tree modifications in Git mode',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  assert.equal(run(cwd,'create').status,0);
+  git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add manifest');
+  fs.writeFileSync(path.join(cwd,'KERNEL.md'),'tampered working tree content\n');
+  const result=run(cwd,'verify');
+  assert.notEqual(result.status,0,'Verification must fail when working tree is dirty');
+  assert.match(result.stderr,/Repository has changes outside|Working-tree bytes differ|SHA-256 mismatch/);
+});
+
+test('adversarial: does not exclude nested .git directories in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-nested-git-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
+  fs.mkdirSync(path.join(dir,'sub','.git'),{recursive:true});
+  fs.writeFileSync(path.join(dir,'sub','.git','config'),'sub git config\n');
+  const created=run(dir,'create','--filesystem');
+  assert.equal(created.status,0,created.stderr);
+  const manifest=fs.readFileSync(path.join(dir,'SHA256SUMS'),'utf8');
+  assert.match(manifest,/sub\/\.git\/config/,'Manifest must include nested .git files');
+  assert.equal(run(dir,'verify','--filesystem').status,0);
+  fs.writeFileSync(path.join(dir,'sub','.git','config'),'tampered sub git config\n');
+  const tampered=run(dir,'verify','--filesystem');
+  assert.notEqual(tampered.status,0);
+  assert.match(tampered.stderr,/SHA-256 mismatch: sub\/\.git\/config/);
+});
+
+test('adversarial: does not silently exclude top-level dist directory in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-dist-fs-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
+  fs.mkdirSync(path.join(dir,'dist'),{recursive:true});
+  fs.writeFileSync(path.join(dir,'dist','custom-artifact.txt'),'important dist file\n');
+  const created=run(dir,'create','--filesystem');
+  assert.equal(created.status,0,created.stderr);
+  const manifest=fs.readFileSync(path.join(dir,'SHA256SUMS'),'utf8');
+  assert.match(manifest,/dist\/custom-artifact\.txt/,'Manifest must include top-level dist files in filesystem mode');
+  assert.equal(run(dir,'verify','--filesystem').status,0);
+  fs.writeFileSync(path.join(dir,'dist','custom-artifact.txt'),'tampered artifact\n');
+  const tampered=run(dir,'verify','--filesystem');
+  assert.notEqual(tampered.status,0);
+  assert.match(tampered.stderr,/SHA-256 mismatch: dist\/custom-artifact\.txt/);
+});
+
+test('adversarial: rejects unexpected untracked files in dist outside bundles',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  fs.mkdirSync(path.join(cwd,'dist'),{recursive:true});
+  fs.writeFileSync(path.join(cwd,'dist','backdoor.txt'),'unexpected dist file\n');
+  const result=run(cwd,'create');
+  assert.notEqual(result.status,0,'Manifest creation must reject unexpected files in dist');
+  assert.match(result.stderr,/Untracked or ignored files/);
+});

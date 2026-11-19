@@ -15,6 +15,16 @@ function visit(id,trail=[]){if(state.get(id)==='done')return;if(state.get(id)===
 for(const id of ids)visit(id);
 for(const [task,mods] of Object.entries(m.tasks)){for(const id of mods)if(!idSet.has(id))errors.push('Task '+task+' references unknown module '+id)}
 for(const [bundle,mods] of Object.entries(m.bundles)){for(const id of mods)if(!idSet.has(id))errors.push('Bundle '+bundle+' references unknown module '+id)}
+const suppIds=(m.supplements||[]).map(x=>x.id),suppIdSet=new Set(suppIds);
+if(suppIdSet.size!==suppIds.length)errors.push('Duplicate supplement IDs');
+for(const s of (m.supplements||[])){
+ if(!await exists(s.path))errors.push('Missing supplement '+s.path);
+ for(const d of (s.related_modules||[]))if(!idSet.has(d))errors.push('Unknown related module '+d+' in supplement '+s.id);
+}
+for(const [task,sids] of Object.entries(m.task_supplements||{})){
+ if(!m.tasks[task])errors.push('task_supplements references unknown task '+task);
+ for(const sid of sids)if(!suppIdSet.has(sid))errors.push('Task '+task+' references unknown supplement '+sid);
+}
 const moduleText=(await Promise.all(m.modules.map(x=>fs.readFile(x.path,'utf8')))).join('\n');
 for(const ref of m.required_source_sections)if(!moduleText.includes(ref))errors.push('Required source section absent from module metadata: '+ref);
 const matrix=await fs.readFile('source/traceability-matrix.csv','utf8');

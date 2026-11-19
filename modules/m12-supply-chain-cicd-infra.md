@@ -360,3 +360,14 @@ Review protected branches, mandatory status checks, immutable/pinned workflow de
 
 
 A successful `git push` only proves the remote received the commit. It does NOT prove CI, security review, deployment, or production health succeeded.
+
+## CI/CD supply chain hardening, pull-request safety and workflow security
+
+- **Untrusted pull requests & fork contributions:** Workflows triggered by external forks or untrusted pull requests must never be granted access to production secrets, repository write tokens, or privileged self-hosted runners. Enforce maintainer approval requirements before running CI workflows on pull requests from first-time or untrusted contributors.
+- **pull_request_target risks and prohibition:** Prohibit using `pull_request_target` unless an explicitly approved, vetted design is implemented. Never check out untrusted pull-request head commits (`ref: ${{ github.event.pull_request.head.sha }}`) in a workflow that holds repository secrets or write permissions. Use standard `pull_request` triggers with read-only permissions for untrusted code execution.
+- **Workflow injection prevention:** Never interpolate untrusted GitHub context expressions (such as `${{ github.event.pull_request.title }}`, `${{ github.head_ref }}`, or `${{ github.event.issue.body }}`) directly into inline shell scripts (`run:`). An attacker can craft malicious inputs that execute arbitrary commands. Always pass untrusted metadata safely via dedicated environment variables (`env:`).
+- **Untrusted branch and commit metadata:** Treat all Git commit messages, author names, branch references, and PR titles as untrusted user input. Validate and sanitize any metadata before using it in release scripts, container tag generation, or automated messaging.
+- **Secret exposure and containment:** Inject secrets only into specific steps that require them, never at top-level workflow scope. Enforce automated secret scanning (such as full-history Gitleaks) in CI to block credentials from being committed to repository history.
+- **Least-privilege GitHub permissions:** Enforce least-privilege workflow permissions by setting top-level workflow defaults to `permissions: contents: read`. Grant elevated scopes (such as `security-events: write`) only to the specific jobs requiring them.
+- **Checkout credential persistence:** Explicitly configure `persist-credentials: false` on all `actions/checkout` steps to prevent post-build steps or third-party dependencies from accessing the ephemeral repository token from `.git/config`.
+- **Secure workflow_run handling:** Treat artifacts and metadata downloaded from `workflow_run` events as untrusted data. Validate artifact integrity, verify commit SHAs, and strictly parse structured inputs before processing in downstream release workflows.

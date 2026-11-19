@@ -14,7 +14,7 @@ The universal modules state the controls that apply across systems. These supple
 4. Record the exact framework/library/provider version and the authoritative guidance checked during implementation.
 5. Do not claim a supplement has been implemented merely because an agent read it. Verify the application and record test evidence.
 
-Supplements are not yet part of the task resolver output. Agents must select them from this index and state which ones were used in their completion report.
+Supplements can be resolved automatically using `node tools/resolve-task.mjs --supplement <id|slug|path>` or via matching task keys and keywords. Agents must state which supplements were used in their completion report.
 
 ## Security supplements
 

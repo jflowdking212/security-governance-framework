@@ -560,6 +560,160 @@
       ]
     }
   ],
+  "supplements": [
+    {
+      "id": "S01",
+      "slug": "authentication-federation",
+      "title": "Authentication and federation",
+      "path": "supplements/authentication-federation.md",
+      "triggers": [
+        "oauth",
+        "oidc",
+        "jwt",
+        "refresh-token",
+        "passkey",
+        "webauthn",
+        "mfa",
+        "sso",
+        "federation",
+        "saml"
+      ],
+      "related_modules": [
+        "M02",
+        "M03",
+        "M08"
+      ]
+    },
+    {
+      "id": "S02",
+      "slug": "ssrf-outbound-requests",
+      "title": "SSRF and outbound requests",
+      "path": "supplements/ssrf-outbound-requests.md",
+      "triggers": [
+        "ssrf",
+        "outbound",
+        "webhook-outbound",
+        "dns-rebinding",
+        "remote-content",
+        "fetch-url",
+        "url-fetch"
+      ],
+      "related_modules": [
+        "M04",
+        "M05",
+        "M08",
+        "M10"
+      ]
+    },
+    {
+      "id": "S03",
+      "slug": "api-graphql-websocket-grpc",
+      "title": "API protocol security (GraphQL, WebSocket, gRPC)",
+      "path": "supplements/api-graphql-websocket-grpc.md",
+      "triggers": [
+        "graphql",
+        "websocket",
+        "grpc",
+        "introspection",
+        "query-depth",
+        "rpc",
+        "subscriptions"
+      ],
+      "related_modules": [
+        "M03",
+        "M04",
+        "M05",
+        "M10"
+      ]
+    },
+    {
+      "id": "S04",
+      "slug": "cryptography-key-management",
+      "title": "Cryptography and key management",
+      "path": "supplements/cryptography-key-management.md",
+      "triggers": [
+        "crypto",
+        "cryptography",
+        "encryption",
+        "envelope-encryption",
+        "kms",
+        "key-rotation",
+        "signing-key",
+        "secret-key"
+      ],
+      "related_modules": [
+        "M08",
+        "M09",
+        "M12"
+      ]
+    },
+    {
+      "id": "S05",
+      "slug": "data-lifecycle-privacy",
+      "title": "Data lifecycle and privacy",
+      "path": "supplements/data-lifecycle-privacy.md",
+      "triggers": [
+        "privacy",
+        "gdpr",
+        "retention",
+        "pii",
+        "personal-data",
+        "data-lifecycle",
+        "right-to-erasure",
+        "anonymization"
+      ],
+      "related_modules": [
+        "M09",
+        "M10",
+        "M11"
+      ]
+    },
+    {
+      "id": "S06",
+      "slug": "container-cloud-runtime",
+      "title": "Container and cloud runtime",
+      "path": "supplements/container-cloud-runtime.md",
+      "triggers": [
+        "container",
+        "docker",
+        "kubernetes",
+        "k8s",
+        "workload-identity",
+        "cgroups",
+        "cloud-runtime"
+      ],
+      "related_modules": [
+        "M08",
+        "M10",
+        "M12"
+      ]
+    },
+    {
+      "id": "S07",
+      "slug": "ai-agent-security",
+      "title": "AI agent, tool and retrieval security",
+      "path": "supplements/ai-agent-security.md",
+      "triggers": [
+        "ai-agent",
+        "prompt-injection",
+        "mcp",
+        "tool-call",
+        "rag",
+        "autonomous-agent",
+        "agent-security"
+      ],
+      "related_modules": [
+        "M03",
+        "M04",
+        "M08",
+        "M09",
+        "M10",
+        "M11",
+        "M12",
+        "M22"
+      ]
+    }
+  ],
   "tasks": {
     "authentication": [
       "M02",
@@ -698,6 +852,47 @@
       "M20",
       "M21",
       "M22"
+    ]
+  },
+  "task_supplements": {
+    "authentication": [
+      "S01"
+    ],
+    "api-security": [
+      "S03"
+    ],
+    "secrets": [
+      "S04"
+    ],
+    "data-protection": [
+      "S05"
+    ],
+    "operations": [
+      "S06"
+    ],
+    "ai-security": [
+      "S07"
+    ],
+    "agent-execution": [
+      "S07"
+    ],
+    "full-audit": [
+      "S01",
+      "S02",
+      "S03",
+      "S04",
+      "S05",
+      "S06",
+      "S07"
+    ],
+    "production-release": [
+      "S01",
+      "S02",
+      "S03",
+      "S04",
+      "S05",
+      "S06",
+      "S07"
     ]
   },
   "bundles": {

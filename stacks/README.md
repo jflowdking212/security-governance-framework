@@ -8,12 +8,15 @@ Stack profiles add framework- and runtime-specific implementation details to the
 - **VALIDATED FOR A NAMED APPLICATION:** The exact application commit, runtime and dependency versions, configuration, tests and reviewer are recorded in the profile.
 - **DEPRECATED:** The profile is no longer maintained for supported versions or has been superseded.
 
-No stack profile is currently marked VALIDATED. The available Node.js/Express and Python/FastAPI documents are reference checklists only.
+No stack profile is currently marked VALIDATED. The available profiles are reference checklists only.
 
 ## Available reference profiles
 
 - [Node.js and Express](nodejs-express.md)
 - [Python and FastAPI](python-fastapi.md)
+- [Laravel 11 and PHP](laravel-php.md)
+- [React and TypeScript](react-typescript.md)
+- [Flutter and Dart mobile](flutter-dart.md)
 
 ## Requirements for a validated profile
 

@@ -65,12 +65,35 @@ function rootPathspec() {
 function excludedPathspecs() {
   return [':(exclude)'+ROOT_PREFIX+MANIFEST,':(exclude)'+ROOT_PREFIX+SIGNATURE];
 }
+
+function assertNoNonDefaultIndexFlags() {
+  if(!GIT_ROOT||FILESYSTEM)return;
+  const raw=runGit(['ls-files','-v','-z','--',rootPathspec()]);
+  const entries=raw.split('\0').filter(Boolean);
+  const flagged=[];
+  for(const item of entries) {
+    const tag=item.charAt(0);
+    const gitPath=item.slice(2);
+    if(tag!=='H') {
+      const rel=ROOT_PREFIX&&gitPath.startsWith(ROOT_PREFIX)?gitPath.slice(ROOT_PREFIX.length):gitPath;
+      flagged.push(`${rel} (flag '${tag}')`);
+    }
+  }
+  if(flagged.length) {
+    throw new Error('Non-default Git index flags detected (assume-unchanged / skip-worktree / unmerged): '+flagged.join(', '));
+  }
+}
+
 function assertNoUnexpectedUntracked() {
   if(!GIT_ROOT||FILESYSTEM)return;
   const ordinary=listGitPaths(['ls-files','--others','--exclude-standard','-z','--',rootPathspec()]);
   const ignored=listGitPaths(['ls-files','--others','--ignored','--exclude-standard','-z','--',rootPathspec()]);
-  const extras=[...new Set([...ordinary,...ignored])].filter(p=>!EXCLUDED.has(p)&&p!=='dist'&&!p.startsWith('dist/'));
-  if(extras.length)throw new Error('Untracked or ignored files outside the separately verified dist/ bundle directory must be staged or removed: '+extras.join(', '));
+  const extras=[...new Set([...ordinary,...ignored])].filter(p=>{
+    if(EXCLUDED.has(p))return false;
+    if(p==='dist'||p==='dist/bundles'||p.startsWith('dist/bundles/'))return false;
+    return true;
+  });
+  if(extras.length)throw new Error('Untracked or ignored files outside dist/bundles must be staged or removed: '+extras.join(', '));
 }
 
 function assertSafePath(rel) {
@@ -86,19 +109,31 @@ function assertSafePath(rel) {
 }
 
 function sha256ForPath(rel) {
+  const absolute=assertSafePath(rel);
+  const diskBytes=fs.readFileSync(absolute);
   if(GIT_ROOT&&!FILESYSTEM) {
     const gitPath=ROOT_PREFIX+rel;
     const r=spawnSync('git',['show','HEAD:'+gitPath],{cwd:GIT_ROOT,encoding:null});
     if(r.error||r.status!==0)throw new Error('Unable to read committed file from HEAD: '+rel);
-    return createHash('sha256').update(r.stdout).digest('hex');
+    const headBytes=r.stdout;
+    if(diskBytes.equals(headBytes)) {
+      return createHash('sha256').update(diskBytes).digest('hex');
+    }
+    // Allow Windows CRLF conversion if and only if normalized LF bytes match committed HEAD
+    const normalized=Buffer.from(diskBytes.toString('utf8').replace(/\r\n/g,'\n'),'utf8');
+    if(normalized.equals(headBytes)) {
+      return createHash('sha256').update(headBytes).digest('hex');
+    }
+    throw new Error('Working-tree bytes differ from committed HEAD: '+rel);
   }
-  return createHash('sha256').update(fs.readFileSync(assertSafePath(rel))).digest('hex');
+  return createHash('sha256').update(diskBytes).digest('hex');
 }
 
 function walkFiles(dir=ROOT,relative='') {
   const out=[];
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
-    if(entry.isDirectory()&&(entry.name==='.git'||(entry.name==='dist'&&relative==='')))continue;
+    // Only exclude repository root .git directory when relative is empty
+    if(entry.isDirectory()&&entry.name==='.git'&&relative==='')continue;
     const rel=relative?relative+'/'+entry.name:entry.name;
     if(EXCLUDED.has(rel))continue;
     const full=path.join(dir,entry.name);
@@ -117,7 +152,9 @@ function trackedFiles() {
 
 function createManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
+    assertNoNonDefaultIndexFlags();
     runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
+    runGit(['diff','--cached','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
     assertNoUnexpectedUntracked();
   }
   const files=trackedFiles();
@@ -129,7 +166,9 @@ function createManifest() {
 
 function verifyManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
+    assertNoNonDefaultIndexFlags();
     runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
+    runGit(['diff','--cached','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
     assertNoUnexpectedUntracked();
   }
   const manifestPath=path.join(ROOT,MANIFEST);

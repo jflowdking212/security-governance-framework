@@ -103,6 +103,9 @@ test('vendored resolver runs from a consuming project root and prints caller-rel
   fs.copyFileSync(resolver,path.join(vendorRoot,'tools','resolve-task.mjs'));
   fs.copyFileSync(path.join(TEST_ROOT,'manifest.json'),path.join(vendorRoot,'manifest.json'));
   fs.cpSync(path.join(TEST_ROOT,'modules'),path.join(vendorRoot,'modules'),{recursive:true});
+  if(fs.existsSync(path.join(TEST_ROOT,'supplements'))){
+   fs.cpSync(path.join(TEST_ROOT,'supplements'),path.join(vendorRoot,'supplements'),{recursive:true});
+  }
   const r=run(['--task','payments'],temp,'vendor/uss/tools/resolve-task.mjs');
   assert.equal(r.status,0,r.stderr);
   const payment=manifest.modules.find(m=>m.id==='M06');
@@ -116,4 +119,80 @@ test('vendored resolver runs from a consuming project root and prints caller-rel
 test('unknown task fails safely',()=>{
  const r=run(['--task','not-a-task']);
  assert.equal(r.status,2);
+});
+
+test('resolver with --supplement finds supplement by ID, slug, and relative path',()=>{
+ for(const flag of ['S01','authentication-federation','supplements/authentication-federation.md']){
+  const r=run(['--supplement',flag]);
+  assert.equal(r.status,0,flag+': '+r.stderr);
+  assert.ok(r.stdout.includes('S01 supplements/authentication-federation.md | Authentication and federation'),flag);
+  assert.ok(r.stdout.includes('M02 modules/m02-authentication-sessions.md'),flag+' should seed related modules');
+ }
+});
+
+test('resolver rejects unknown supplement reference',()=>{
+ const r=run(['--supplement','non-existent-supplement']);
+ assert.equal(r.status,2);
+ assert.match(r.stderr,/Unknown supplement/);
+});
+
+test('resolver rejects nonexistent supplement file path on disk',()=>{
+ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'uss-bad-supp-'));
+ try{
+  const customManifest=JSON.parse(JSON.stringify(manifest));
+  customManifest.supplements.push({
+   id:'S99',
+   slug:'missing-file',
+   title:'Missing',
+   path:'supplements/does-not-exist.md',
+   triggers:['missing'],
+   related_modules:[]
+  });
+  fs.mkdirSync(path.join(temp,'tools'),{recursive:true});
+  fs.copyFileSync(resolver,path.join(temp,'tools','resolve-task.mjs'));
+  fs.writeFileSync(path.join(temp,'manifest.json'),JSON.stringify(customManifest,null,2));
+  fs.cpSync(path.join(TEST_ROOT,'modules'),path.join(temp,'modules'),{recursive:true});
+  const r=run(['--supplement','S99'],temp,'tools/resolve-task.mjs');
+  assert.equal(r.status,2);
+  assert.match(r.stderr,/Referenced supplement file does not exist on disk/);
+ }finally{
+  fs.rmSync(temp,{recursive:true,force:true});
+ }
+});
+
+test('resolver prevents duplicate supplement loading',()=>{
+ const r=run(['--task','authentication','--supplement','S01','--keywords','oauth']);
+ assert.equal(r.status,0,r.stderr);
+ const occurrences=(r.stdout.match(/S01 supplements\/authentication-federation\.md/g)||[]).length;
+ assert.equal(occurrences,1,'Supplement S01 was duplicated in output');
+});
+
+test('resolver strict mode fails closed on unmatched keywords',()=>{
+ const r=run(['--strict','--task','secrets','--keywords','unmappedterm']);
+ assert.equal(r.status,2);
+ assert.match(r.stderr,/Strict mode: unmatched keywords/);
+});
+
+test('resolver strict mode fails closed on empty selector',()=>{
+ const r=run(['--strict']);
+ assert.equal(r.status,2);
+ assert.match(r.stderr,/Strict mode: no task, module, keywords, or supplement selector provided/);
+});
+
+test('resolver strict mode passes when all keywords match',()=>{
+ const r=run(['--strict','--task','code-change','--keywords','payment webhook']);
+ assert.equal(r.status,0,r.stderr);
+ assert.ok(r.stdout.includes('M06 '));
+});
+
+test('resolver normal mode allows unmatched keywords with warning',()=>{
+ const r=run(['--task','secrets','--keywords','unmappedterm']);
+ assert.equal(r.status,0,r.stderr);
+ assert.match(r.stderr,/WARNING: keywords not matched to any trigger/);
+});
+
+test('resolver keyword search identifies applicable supplement triggers',()=>{
+ const r=run(['--keywords','graphql']);
+ assert.equal(r.status,0,r.stderr);
+ assert.ok(r.stdout.includes('S03 supplements/api-graphql-websocket-grpc.md'));
 });

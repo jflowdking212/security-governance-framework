@@ -119,3 +119,28 @@ test('generated task indexes remain in sync with manifest routing',()=>{
   for(const id of closure(ids))assert.ok(bundle.includes('| '+id+' '),name+' index missing '+id);
  }
 });
+
+test('M06 contains comprehensive payment and webhook security controls',()=>{
+ const text=read(map.get('M06').path);
+ assert.match(text,/Timing-safe comparison/);
+ assert.match(text,/crypto\.timingSafeEqual|hash_equals/);
+ assert.match(text,/raw, untouched request byte stream/);
+ assert.match(text,/Replay protection/);
+ assert.match(text,/Atomic idempotency/);
+ assert.match(text,/PCI DSS cardholder data minimisation/);
+ assert.match(text,/CVV\/CVC\/CID/);
+ assert.match(text,/Payment provider tokenisation/);
+ assert.match(text,/Sensitive data logging prohibition/);
+});
+
+test('M12 contains comprehensive supply-chain and CI/CD security controls',()=>{
+ const text=read(map.get('M12').path);
+ assert.match(text,/Untrusted pull requests & fork contributions/);
+ assert.match(text,/pull_request_target risks and prohibition/);
+ assert.match(text,/Workflow injection prevention/);
+ assert.match(text,/Untrusted branch and commit metadata/);
+ assert.match(text,/Secret exposure and containment/);
+ assert.match(text,/Least-privilege GitHub permissions/);
+ assert.match(text,/Checkout credential persistence/);
+ assert.match(text,/Secure workflow_run handling/);
+});

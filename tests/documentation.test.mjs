@@ -31,7 +31,7 @@ test('supplement index links resolve and every implementation supplement is inde
  for(const name of ['authentication-federation.md','ssrf-outbound-requests.md','api-graphql-websocket-grpc.md','cryptography-key-management.md','data-lifecycle-privacy.md','container-cloud-runtime.md','ai-agent-security.md'])assert.ok(index.includes(name),'Supplement index missing '+name);
 });
 test('stack profiles remain explicitly unverified until application evidence exists',()=>{
- for(const file of ['stacks/nodejs-express.md','stacks/python-fastapi.md'])assert.match(read(file),/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/);
+ for(const file of ['stacks/nodejs-express.md','stacks/python-fastapi.md','stacks/laravel-php.md','stacks/react-typescript.md','stacks/flutter-dart.md'])assert.match(read(file),/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/);
 });
 test('review correction log records unresolved owner-only release blockers',()=>{
  const log=read('REVIEW-CORRECTION-LOG.md');
