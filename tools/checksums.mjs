@@ -46,7 +46,7 @@ function runGit(args,{allowDiff=false}={}) {
   const r=gitAt(GIT_ROOT,args);
   if(allowDiff) {
     if(r.status===0)return;
-    if(r.status===1)throw new Error('Working tree has changes outside '+MANIFEST+' and '+SIGNATURE+'. Stage intended changes and ensure the worktree matches the index before creating a manifest.');
+    if(r.status===1)throw new Error('Repository has changes outside '+MANIFEST+' and '+SIGNATURE+'. Commit all release files first and ensure the worktree matches HEAD before creating a manifest.');
     throw new Error('git '+args.join(' ')+' failed: '+(r.stderr||'exit '+r.status).trim());
   }
   if(r.status!==0)throw new Error('git '+args.join(' ')+' failed: '+(r.stderr||'exit '+r.status).trim());
@@ -84,8 +84,14 @@ function assertSafePath(rel) {
   return absolute;
 }
 
-function sha256(file) {
-  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+function sha256ForPath(rel) {
+  if(GIT_ROOT&&!FILESYSTEM) {
+    const gitPath=ROOT_PREFIX+rel;
+    const r=spawnSync('git',['show','HEAD:'+gitPath],{cwd:GIT_ROOT,encoding:'buffer'});
+    if(r.error||r.status!==0)throw new Error('Unable to read committed file from HEAD: '+rel);
+    return createHash('sha256').update(r.stdout).digest('hex');
+  }
+  return createHash('sha256').update(fs.readFileSync(assertSafePath(rel))).digest('hex');
 }
 
 function walkFiles(dir=ROOT,relative='') {
@@ -110,12 +116,12 @@ function trackedFiles() {
 
 function createManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
-    runGit(['diff','--quiet','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
+    runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
     assertNoUnexpectedUntracked();
   }
   const files=trackedFiles();
   if(!files.length)throw new Error('No tracked files found to checksum.');
-  const lines=files.map(rel=>sha256(assertSafePath(rel))+'  '+rel);
+  const lines=files.map(rel=>{assertSafePath(rel);return sha256ForPath(rel)+'  '+rel;});
   fs.writeFileSync(path.join(ROOT,MANIFEST),lines.join('\n')+'\n',{encoding:'utf8'});
   console.log('Created '+MANIFEST+' for '+files.length+' files (excluding '+MANIFEST+' and '+SIGNATURE+').');
 }
@@ -147,7 +153,7 @@ function verifyManifest() {
     throw new Error('Checksum file set does not match release files. Missing: '+(missing.join(', ')||'none')+'. Unexpected: '+(unexpected.join(', ')||'none')+'.');
   }
   for(const {digest,rel} of entries) {
-    const actualDigest=sha256(assertSafePath(rel));
+    const actualDigest=sha256ForPath(rel);
     if(actualDigest!==digest)throw new Error('SHA-256 mismatch: '+rel);
   }
   console.log('Verified '+entries.length+' file digests in '+MANIFEST+'.');
