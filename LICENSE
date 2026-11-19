@@ -38,7 +38,7 @@ If you are unsure whether a proposed use is commercial, obtain written permissio
 Unless the Rights Holders give you prior written permission, you must not:
 
 1. sell, resell, rent, lease, lend, sublicense or commercially exploit the Licensed Materials;
-2. publish, distribute, transmit, share or make available copies of the Licensed Materials, whether modified or unmodified, to another person or the public;
+2. publish, distribute, transmit, share or make available copies of the Licensed Materials, whether modified or unmodified, to another person or the public, except for the platform-specific viewing and forking permissions described in Section 6;
 3. offer the Licensed Materials or a derivative as a download, package, product, service, repository, hosted tool or competing offering;
 4. use the Licensed Materials to provide a service or deliverable to a customer or other third party;
 5. remove, alter, obscure or misrepresent copyright, authorship, attribution or licence notices;
@@ -61,35 +61,41 @@ You must not remove or conceal this attribution or represent the Licensed Materi
 
 The permission granted by this Licence is personal to you. You may not transfer, assign or sublicense it. No person who receives a copy from you obtains rights under this Licence through you.
 
-## 6. Third-party materials
+## 6. Public GitHub repository permissions
+
+Because this repository is public, GitHub's Terms of Service grant GitHub users certain platform-specific permissions, including the ability to view and fork public repositories through GitHub. Nothing in this Licence is intended to revoke or narrow permissions that GitHub grants under its then-current Terms of Service solely for the operation and use of GitHub's platform and functionality.
+
+Those GitHub platform permissions are not a commercial licence from the Rights Holders. They do not grant permission to commercially exploit the Licensed Materials, sell or monetise them, or redistribute copies or modifications outside the permissions GitHub expressly provides. Any use beyond those platform-specific permissions remains subject to this Licence and applicable law.
+
+## 7. Third-party materials
 
 The Licensed Materials may refer to, include or depend on materials owned by third parties. Those materials are not relicensed by this Licence. Their respective copyright notices and licence terms continue to apply. This Licence grants rights only to the extent the Rights Holders own or control the relevant material and have authority to license it.
 
-## 7. Ownership and reservation of rights
+## 8. Ownership and reservation of rights
 
 The Licensed Materials remain the property of their respective Rights Holders and other applicable copyright owners. No ownership is transferred to you.
 
 All rights not expressly granted in this Licence are reserved. In particular, no commercial-use right is granted.
 
-## 8. Separate commercial permission
+## 9. Separate commercial permission
 
 The Rights Holders may grant commercial permissions under a separate written agreement. A request, discussion or application for commercial permission does not itself grant permission. Commercial use may begin only after the required written agreement has been issued by the Rights Holders.
 
-## 9. Termination
+## 10. Termination
 
 Your permission under this Licence terminates automatically if you materially breach its terms. Upon termination, you must stop using the Licensed Materials and delete or destroy all copies and private modifications in your possession or control, except to the extent retention is required by applicable law. The Rights Holders may reinstate permission in writing.
 
-## 10. Disclaimer of warranty
+## 11. Disclaimer of warranty
 
 To the maximum extent permitted by applicable law, the Licensed Materials are provided "AS IS" and without warranties or conditions of any kind, whether express, implied or statutory, including warranties of merchantability, fitness for a particular purpose, title and non-infringement.
 
-## 11. Limitation of liability
+## 12. Limitation of liability
 
 To the maximum extent permitted by applicable law, the Rights Holders will not be liable for any indirect, incidental, special, exemplary or consequential damages, or for loss of data, profits, revenue, business or goodwill, arising out of or relating to the Licensed Materials or this Licence.
 
 Nothing in this Licence excludes or limits liability that cannot lawfully be excluded or limited.
 
-## 12. General
+## 13. General
 
 If any provision of this Licence is held unenforceable, it will be modified only to the minimum extent necessary, and the remaining provisions will continue in effect. A failure to enforce a provision is not a waiver of that provision.
 
