@@ -5,3 +5,5 @@ tag=v1.0.0
 commit=<40-character signed release commit SHA>
 sha256sums_sha256=<64-character SHA-256 digest of SHA256SUMS>
 signing_fingerprint=SHA256:zfXCAflnGbD1984rV8kabaPj92UyXIs0gCVsIspIX/o
+profile_path=<optional relative path to the consuming project's security profile>
+profile_sha256=<64-character SHA-256 digest of that profile, if present>
