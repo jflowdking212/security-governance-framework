@@ -8,32 +8,64 @@ const MANIFEST='SHA256SUMS';
 const SIGNATURE='SHA256SUMS.sig';
 const EXCLUDED=new Set([MANIFEST,SIGNATURE]);
 
-function runGit(args,{allowDiff=false}={}) {
-  const r=spawnSync('git',args,{cwd:ROOT,encoding:'utf8',stdio:['ignore','pipe','pipe']});
+function gitAt(cwd,args) {
+  const r=spawnSync('git',args,{cwd,encoding:'utf8',stdio:['ignore','pipe','pipe']});
   if(r.error)throw new Error('Unable to run git: '+r.error.message);
+  return r;
+}
+
+const argv=process.argv.slice(2);
+const command=argv[0];
+let rootArg='.';
+for(let i=1;i<argv.length;i++) {
+  if(argv[i]==='--root'&&argv[i+1])rootArg=argv[++i];
+  else throw new Error('Unknown argument: '+argv[i]);
+}
+const START=process.cwd();
+const ROOT=path.resolve(START,rootArg);
+if(!fs.existsSync(ROOT)||!fs.statSync(ROOT).isDirectory()) {
+  console.error('Checksum root does not exist or is not a directory: '+ROOT);
+  process.exit(1);
+}
+const gitRootResult=gitAt(START,['rev-parse','--show-toplevel']);
+const GIT_ROOT=gitRootResult.status===0?path.resolve(gitRootResult.stdout.trim()):null;
+let ROOT_PREFIX='';
+if(GIT_ROOT) {
+  const relative=path.relative(GIT_ROOT,ROOT);
+  if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative)) {
+    console.error('--root must be inside the current Git worktree.');
+    process.exit(1);
+  }
+  ROOT_PREFIX=relative?relative.split(path.sep).join('/')+'/':'';
+}
+
+function runGit(args,{allowDiff=false}={}) {
+  if(!GIT_ROOT)throw new Error('This operation requires a Git worktree.');
+  const r=gitAt(GIT_ROOT,args);
   if(allowDiff) {
     if(r.status===0)return;
     if(r.status===1)throw new Error('Working tree has changes outside '+MANIFEST+' and '+SIGNATURE+'. Stage intended changes and ensure the worktree matches the index before creating a manifest.');
     throw new Error('git '+args.join(' ')+' failed: '+(r.stderr||'exit '+r.status).trim());
-  } else if(r.status!==0) {
-    throw new Error('git '+args.join(' ')+' failed: '+(r.stderr||'exit '+r.status).trim());
   }
+  if(r.status!==0)throw new Error('git '+args.join(' ')+' failed: '+(r.stderr||'exit '+r.status).trim());
   return r.stdout;
 }
 
-const rootResult=spawnSync('git',['rev-parse','--show-toplevel'],{cwd:process.cwd(),encoding:'utf8'});
-if(rootResult.error||rootResult.status!==0) {
-  console.error('Run this command from inside a Git repository.');
-  process.exit(1);
-}
-const ROOT=rootResult.stdout.trim();
-
 function listGitPaths(args) {
-  return runGit(args).split('\0').filter(Boolean);
+  return runGit(args).split('\0').filter(Boolean)
+    .filter(p=>!ROOT_PREFIX||p.startsWith(ROOT_PREFIX))
+    .map(p=>ROOT_PREFIX?p.slice(ROOT_PREFIX.length):p);
 }
 
+function rootPathspec() {
+  return ROOT_PREFIX?ROOT_PREFIX.slice(0,-1):'.';
+}
+function excludedPathspecs() {
+  return [':(exclude)'+ROOT_PREFIX+MANIFEST,':(exclude)'+ROOT_PREFIX+SIGNATURE];
+}
 function assertNoUnexpectedUntracked() {
-  const extras=listGitPaths(['ls-files','--others','--exclude-standard','-z']).filter(p=>!EXCLUDED.has(p));
+  const extras=listGitPaths(['ls-files','--others','--exclude-standard','-z','--',rootPathspec()])
+    .filter(p=>!EXCLUDED.has(p));
   if(extras.length)throw new Error('Untracked files must be staged before checksum creation or removed: '+extras.join(', '));
 }
 
@@ -43,7 +75,7 @@ function assertSafePath(rel) {
   }
   const absolute=path.resolve(ROOT,...rel.split('/'));
   const relative=path.relative(ROOT,absolute);
-  if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('Path escapes repository: '+rel);
+  if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('Path escapes checksum root: '+rel);
   const stat=fs.lstatSync(absolute);
   if(!stat.isFile()||stat.isSymbolicLink())throw new Error('Only regular files can be checksummed: '+rel);
   return absolute;
@@ -53,23 +85,42 @@ function sha256(file) {
   return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
+function walkFiles(dir=ROOT,relative='') {
+  const out=[];
+  for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
+    if(entry.isDirectory()&&['.git','node_modules','dist'].includes(entry.name))continue;
+    const rel=relative?relative+'/'+entry.name:entry.name;
+    if(EXCLUDED.has(rel))continue;
+    const full=path.join(dir,entry.name);
+    if(entry.isSymbolicLink())throw new Error('Symbolic links are not supported in checksum snapshots: '+rel);
+    if(entry.isDirectory())out.push(...walkFiles(full,rel));
+    else if(entry.isFile())out.push(rel);
+    else throw new Error('Unsupported filesystem entry in checksum snapshot: '+rel);
+  }
+  return out;
+}
+
 function trackedFiles() {
-  return listGitPaths(['ls-files','-z']).filter(p=>!EXCLUDED.has(p)).sort();
+  if(GIT_ROOT)return listGitPaths(['ls-files','-z','--',rootPathspec()]).filter(p=>!EXCLUDED.has(p)).sort();
+  return walkFiles().sort();
 }
 
 function createManifest() {
-  runGit(['diff','--quiet','--','.',':(exclude)'+MANIFEST,':(exclude)'+SIGNATURE],{allowDiff:true});
+  if(!GIT_ROOT)throw new Error('Manifest creation must run from a Git worktree; verification can also run from an extracted release bundle.');
+  runGit(['diff','--quiet','--','.',...excludedPathspecs()],{allowDiff:true});
   assertNoUnexpectedUntracked();
   const files=trackedFiles();
   if(!files.length)throw new Error('No tracked files found to checksum.');
   const lines=files.map(rel=>sha256(assertSafePath(rel))+'  '+rel);
   fs.writeFileSync(path.join(ROOT,MANIFEST),lines.join('\n')+'\n',{encoding:'utf8'});
-  console.log('Created '+MANIFEST+' for '+files.length+' tracked files (excluding '+MANIFEST+' and '+SIGNATURE+').');
+  console.log('Created '+MANIFEST+' for '+files.length+' files (excluding '+MANIFEST+' and '+SIGNATURE+').');
 }
 
 function verifyManifest() {
-  runGit(['diff','--quiet','HEAD','--','.',':(exclude)'+MANIFEST,':(exclude)'+SIGNATURE],{allowDiff:true});
-  assertNoUnexpectedUntracked();
+  if(GIT_ROOT) {
+    runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
+    assertNoUnexpectedUntracked();
+  }
   const manifestPath=path.join(ROOT,MANIFEST);
   if(!fs.existsSync(manifestPath))throw new Error('Missing '+MANIFEST+'.');
   const raw=fs.readFileSync(manifestPath,'utf8');
@@ -86,11 +137,10 @@ function verifyManifest() {
   const names=entries.map(x=>x.rel);
   if(new Set(names).size!==names.length)throw new Error('Duplicate path in '+MANIFEST+'.');
   const expected=trackedFiles();
-  const actual=names;
-  if(JSON.stringify(actual)!==JSON.stringify(expected)) {
+  if(JSON.stringify(names)!==JSON.stringify(expected)) {
     const missing=expected.filter(p=>!names.includes(p));
     const unexpected=names.filter(p=>!expected.includes(p));
-    throw new Error('Checksum file set does not match tracked repository files. Missing: '+(missing.join(', ')||'none')+'. Unexpected: '+(unexpected.join(', ')||'none')+'.');
+    throw new Error('Checksum file set does not match release files. Missing: '+(missing.join(', ')||'none')+'. Unexpected: '+(unexpected.join(', ')||'none')+'.');
   }
   for(const {digest,rel} of entries) {
     const actualDigest=sha256(assertSafePath(rel));
@@ -99,12 +149,11 @@ function verifyManifest() {
   console.log('Verified '+entries.length+' file digests in '+MANIFEST+'.');
 }
 
-const command=process.argv[2];
 try {
   if(command==='create')createManifest();
   else if(command==='verify')verifyManifest();
   else {
-    console.error('Usage: node tools/checksums.mjs <create|verify>');
+    console.error('Usage: node tools/checksums.mjs <create|verify> [--root <directory>]');
     process.exitCode=2;
   }
 } catch(error) {
