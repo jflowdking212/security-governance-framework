@@ -26,3 +26,15 @@ test('README license notice matches whether a license file exists',()=>{
  if(hasLicense)assert.ok(!text.includes('No license has been added'));
  else assert.ok(text.includes('No license has been added'));
 });
+
+test('release trust bootstrap documentation and checksum tooling are present',()=>{
+ for(const file of ['SECURITY-ROOT.md','CONSUMING.md','tools/checksums.mjs','tests/checksums.test.mjs','.github/CODEOWNERS','.security/README.md','templates/uss-version.example']) {
+  assert.ok(fs.existsSync(file),'Missing '+file);
+ }
+ const root=fs.readFileSync('SECURITY-ROOT.md','utf8');
+ assert.ok(root.includes('independently trusted source'));
+ assert.ok(root.includes('USS-SHA256SUMS'));
+ const consuming=fs.readFileSync('CONSUMING.md','utf8');
+ assert.ok(consuming.includes('before reading or following'));
+ assert.ok(consuming.includes('sha256sums_sha256'));
+});
