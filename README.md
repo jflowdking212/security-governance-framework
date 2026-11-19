@@ -152,9 +152,11 @@ The deterministic checksum tool creates and verifies a SHA-256 manifest for the 
 ```sh
 node tools/checksums.mjs create
 node tools/checksums.mjs verify
+node tools/checksums.mjs create --root dist/bundles --filesystem
+node tools/checksums.mjs verify --root dist/bundles --filesystem
 ```
 
-For a vendored subtree, use `--root vendor/uss`. Verify the detached SSH signature on `SHA256SUMS` with the independently trusted key fingerprint before trusting the manifest or running the checksum verifier. See [SECURITY-ROOT.md](SECURITY-ROOT.md).
+The first manifest covers Git-tracked source files. The second covers generated task bundles, which are not committed to Git. For a vendored subtree, use `--root vendor/uss`. Verify the detached SSH signature on `SHA256SUMS` with the independently trusted key fingerprint before trusting the manifest or running the checksum verifier. See [SECURITY-ROOT.md](SECURITY-ROOT.md).
 
 ## Core release rules
 
