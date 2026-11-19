@@ -9,7 +9,7 @@
 
 USS is a modular, source-traceable security engineering standard for human developers and AI coding agents. It turns the project's canonical application-security, payment/webhook/tax and agent-execution directives into focused modules that can be selected by task. The aim is to make the right security requirements available at the point of work without forcing every agent to load the entire policy library.
 
-> **Important:** v1.0.0 has received an independent Claude review. The required correction series is being applied and must pass GitHub CI and owner approval before it is treated as an approved production standard.
+> **Important:** v1.0.0 has received an independent Claude review and its correction series is merged into `main`. The latest governance and trust-root changes still require local validation and, when available, hosted GitHub CI. Owner approval and a signed release remain outstanding.
 
 ## What USS provides
 
