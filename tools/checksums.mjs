@@ -91,6 +91,7 @@ function assertNoUnexpectedUntracked() {
   const extras=[...new Set([...ordinary,...ignored])].filter(p=>{
     if(EXCLUDED.has(p))return false;
     if(p==='dist'||p==='dist/bundles'||p.startsWith('dist/bundles/'))return false;
+    if(p==='node_modules'||p.startsWith('node_modules/'))return false;
     return true;
   });
   if(extras.length)throw new Error('Untracked or ignored files outside dist/bundles must be staged or removed: '+extras.join(', '));
