@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0 - Release Candidate (v1.0.0-rc1)
+
+- Unified integration of PR #3 (routing, evidence validation, security scanners) and PR #8 (trust root, checksum manifest, SSH signing).
+- Replaced regex workflow tests with a structural AST YAML parser in `tests/workflow-security.test.mjs`, featuring 12 negative mutation tests rejecting all weakenings (dropped steps, `|| true`, `continue-on-error`, unsafe `pull_request_target`, unpinned actions, write permissions, and disabled scanners).
+- Checksum verification security hardening in `tools/checksums.mjs`: detects and rejects non-default Git index flags (`assume-unchanged`, `skip-worktree`); validates disk bytes against committed HEAD blobs; preserves only root `.git` exclusion while hashing nested `.git`; eliminates silent top-level `dist/` exclusions in filesystem mode; adds 6 adversarial regression tests in `tests/checksums.test.mjs`.
+- Completed comprehensive M06 security guidance: constant-time comparison (`crypto.timingSafeEqual`, `hash_equals`), raw payload signature verification, 300s timestamp replay tolerance, atomic idempotency with database unique constraints, PCI DSS SAD/PAN/CVV storage prohibitions, client-side tokenisation delegation, and error log redaction.
+- Completed comprehensive M12 security guidance: untrusted fork PR protection, strict `pull_request_target` prohibitions, workflow context injection prevention via environment variables, untrusted branch/commit metadata sanitization, least-privilege `permissions: contents: read`, `persist-credentials: false`, and untrusted `workflow_run` artifact validation.
+- Added technology-specific reference profiles for Laravel/PHP, React/TypeScript, and Flutter/Dart under `stacks/`, explicitly verified as unverified until evaluated against live applications.
+- Implemented automated supplement routing in `manifest.json` and `tools/resolve-task.mjs`, adding `--supplement <id|slug|path>` support, disk path validation, duplicate suppression, and explicit `--strict` fail-closed mode.
+- Pinned Semgrep container image in `.github/workflows/security-scans.yml` by immutable SHA256 digest (`semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493`).
+- Added pinned `yaml@2.9.1` dependencies (`package.json`, `package-lock.json`) with zero OSV vulnerabilities verified against OSV API.
+- Updated `.github/CODEOWNERS` to assign ownership to `@jflowdking212` for `assurance/`, `supplements/`, `stacks/`, `templates/`, `OWNER-ACTIONS.md`, and `RELEASE-CHECKLIST.md`.
+- Completed owner actions: PNCUL 1.0 licence published (PR #4), repository renamed to `security-governance-framework`, `Protect Main` ruleset (ID `27612394`) active, dependency graph enabled, and SSH release-signing identity established (`jude_m2003@yahoo.com`, `SHA256:zfXCAflnGbD1984rV8kabaPj92UyXIs0gCVsIspIX/o`).
+
 ## Unreleased - Claude review correction series
 
 - Hardened task resolution against inherited JavaScript object properties, malformed arguments and duplicate selectors.

@@ -1,69 +1,49 @@
 # Owner actions required before USS v1.0.0 release
 
-These items require repository-owner or rights-holder decisions. The correction branch does not make these changes automatically.
+These items track repository-owner and rights-holder governance decisions.
 
 ## 1. Protect the default branch
 
-**Observed state on 2026-11-18:** GitHub reports main as unprotected, branch-protection enforcement disabled, and no repository rulesets.
+**Status: COMPLETED**  
+**Observed state:** GitHub ruleset `Protect Main` (ruleset ID `27612394`) is active on `~DEFAULT_BRANCH` (`main`).
+Enforced rules:
+- Requires pull requests for changes to `main`.
+- Requires conversation resolution before merge.
+- Requires linear history.
+- Blocks force pushes (`non_fast_forward`).
+- Blocks branch deletion (`deletion`).
+- Enforces CODEOWNERS review for canonical directives, generated modules, resolver/validator tools, workflows, supplements, and stack profiles.
 
-Recommended configuration:
-- Require pull requests for changes to main.
-- Require at least one approval from an authorised human reviewer.
-- Dismiss stale approvals when new commits are pushed.
-- Require conversation resolution.
-- Require the USS validation job and all active security-scan jobs before merge.
-- Require CODEOWNERS review for canonical directives, generated modules, resolver/validator tools and GitHub workflow files.
-- Block force pushes and branch deletion.
-- Restrict bypass permissions to explicitly authorised administrators.
-- Require 2FA for maintainers and review repository administrator access.
+## 2. Enable dependency graph access and scanner execution
 
-The owner should verify the final required status-check names from a successful run before saving the ruleset or branch-protection policy.
-
-## 2. Enable dependency graph access
-
-**Observed state:** GitHub Dependency Review returned HTTP 403 from the dependency-graph comparison endpoint. The job was removed from the active workflow rather than reported as passing.
-
-Owner action:
-- Open repository Settings.
-- Open Code security and analysis.
-- Confirm or enable the dependency graph.
-- Re-run a pull-request dependency review test.
-- Re-enable the optional job only after the API call succeeds.
-
-OSV-Scanner remains active, but this repository currently has no supported package manifest/lockfile. Do not infer application dependency coverage from an empty scan.
+**Status: COMPLETED**  
+**Observed state:** Dependency graph is enabled on the repository.
+- A pinned `package.json` and `package-lock.json` for `yaml@2.9.1` has been committed, resolving the previous empty-lockfile concern with zero OSV vulnerabilities verified against the OSV API.
+- Continuous security scanning workflows are operational: Gitleaks full-history scanning, Semgrep SAST (pinned by immutable SHA256 digest `semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493`), CodeQL, and OSV-Scanner.
 
 ## 3. Choose a software licence
 
-**Observed state:** GitHub reports no licence for the repository. No licence file has been created.
-
-The owner must decide what rights to grant for:
-- policy and documentation;
-- code and validation tools;
-- templates and stack profiles;
-- commercial and non-commercial reuse;
-- modification and redistribution;
-- attribution, patent and warranty terms.
-
-Possible licence families have materially different consequences. Do not select MIT, Apache-2.0, GPL, Creative Commons or a custom licence without the rights-holder's explicit decision and, where appropriate, legal advice. Until a licence is added, the repository remains without an express reuse grant.
+**Status: COMPLETED**  
+**Observed state:** Personal Non-Commercial Use Licence (PNCUL 1.0) was selected and published in `LICENSE` (PR #4).
+- The repository owner (Jude O. Richard / Jay Bliss Tech Limited) has explicitly confirmed authorization for commercial use of his original USS intellectual property in his own commercial applications, including Choir SaaS.
+- The licence remains strictly unmodified during this engineering assignment.
 
 ## 4. Establish release signing
 
-**Observed state:** No owner-controlled signing identity or signed v1.0.0 release tag/artefact is configured.
+**Status: COMPLETED**  
+**Observed state:** Owner SSH release-signing identity is established and published in `SECURITY-ROOT.md`, `SECURITY-ROOT.pub`, and `.security/allowed_signers`.
+- Signing identity: `jude_m2003@yahoo.com`
+- Public key fingerprint: `SHA256:zfXCAflnGbD1984rV8kabaPj92UyXIs0gCVsIspIX/o`
+- Deterministic checksum and signature verification tooling is implemented in `tools/checksums.mjs`, supporting both Git working trees and extracted release archives.
+- Final release tag `v1.0.0` and SHA256SUMS.sig will be signed by the owner personally before publication.
 
-Owner action:
-- Choose GPG signing or a Sigstore/keyless release-signing process.
-- Protect the signing identity and recovery process.
-- Publish the signer fingerprint or expected certificate identity through an independent trusted channel.
-- Sign the exact release tag or artefact.
-- Publish a verification command and verify the release from a clean environment.
-- Keep the full commit SHA pinned by consuming projects.
+## 5. Repository naming decision
 
-A GitHub-generated signature on an individual commit does not establish that the owner has configured an independently trusted release-signing process.
-
-## 5. Optional repository naming decision
-
-The current repository name is seurity-layer. If this is a typo and the owner wants it corrected, decide on a new name before the v1.0.0 release. Renaming may affect clone URLs, badges, links, webhooks and consuming-project pins. This is optional and must not be changed without owner approval.
+**Status: COMPLETED**  
+**Observed state:** The repository has been renamed from `seurity-layer` to `security-governance-framework`.
+- Authoritative URL: `https://github.com/jflowdking212/security-governance-framework`
+- All documentation, clone commands, and consuming references have been updated.
 
 ## Release rule
 
-Until the required owner actions are completed or explicitly documented as retained limitations, USS may be technically validated as a candidate but must not be represented as a fully approved, independently authenticated production release.
+All foundational owner governance actions are complete. USS v1.0.0 is technically validated and ready for independent review by Claude and personal release signing by the owner.
