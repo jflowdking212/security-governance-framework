@@ -45,7 +45,7 @@ Do not downgrade a finding because remediation is inconvenient.
 
 
 
-\---
+---
 
 ## Owner-approved policy clarification
 

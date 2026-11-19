@@ -13,11 +13,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 20
       - name: Rebuild source-derived modules
@@ -32,5 +32,7 @@ jobs:
         run: node tools/build-bundles.mjs
       - name: Validate source coverage and policy invariants
         run: node tools/validate.mjs
+      - name: Validate the machine-readable control catalog and evidence template
+        run: node tools/validate-evidence.mjs --file templates/security-evidence.example.json
       - name: Run tests
         run: node --test tests/*.test.mjs

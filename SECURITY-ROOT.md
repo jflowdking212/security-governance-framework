@@ -1,6 +1,6 @@
 # USS release trust root
 
-**Status:** The owner's public verification key and SSH allowed-signers entry are published on the P1.4 branch. GitHub verified the signed key-publication commit `4f05a3e730aa8491795a6d9cff179ff58219fcb6`. The signed SHA-256 release manifest and signed v1.0.0 release tag remain pending.
+**Status:** The owner's public verification key and SSH allowed-signers entry are published. GitHub verified the signed key-publication commit `4f05a3e730aa8491795a6d9cff179ff58219fcb6`. The signed SHA-256 release manifest and signed v1.0.0 release tag remain pending.
 
 This document describes the trust anchor for official Universal Security Standard (USS) releases. It is not, by itself, a cryptographic trust anchor: consumers must compare the fingerprint below with an independently trusted source and verify the signed checksum manifest before relying on repository policy.
 
@@ -17,17 +17,44 @@ This document describes the trust anchor for official Universal Security Standar
 
 The fingerprint was obtained locally with `ssh-keygen -lf`. The key successfully produced GitHub-verified commit `cead9b6ebb6c904d71604134535083d89f0e8c75`. The owner subsequently published the public key and allowed-signers entry in signed commit `4f05a3e730aa8491795a6d9cff179ff58219fcb6`; GitHub verified that commit, and the owner locally verified it with `git verify-commit` using `.security/allowed_signers`. This proves the commit signature validates against the published key. It is **not** a signed USS release tag and does not complete release verification.
 
-The corresponding raw public key must be stored as `SECURITY-ROOT.pub`. The SSH allowed-signers entry must be stored as `.security/allowed_signers` in this form:
+The corresponding raw public key is stored as `SECURITY-ROOT.pub`. The SSH allowed-signers entry is stored as `.security/allowed_signers` in this form:
 
 ```text
-jude_m2003@yahoo.com ssh-ed25519 <base64-public-key>
+jude_m2003@yahoo.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA2fInUDvAZFW5E8KuFh6YsjBuqHaz8wBsujComEYF71
 ```
 
 Both files are public verification material. Never store the private key or its passphrase in this repository.
 
-## Trust-bootstrap rule
+## Limits of repository self-validation
 
-A repository cannot authenticate its own trust instructions merely by storing them beside the files they protect. Therefore:
+A repository cannot authenticate its own trust instructions merely by storing them beside the files they protect:
+
+1. **Self-referential validation is circular.** An attacker who can modify repository files can modify both the policy and the validation scripts that assert the policy is intact.
+2. **Local tools authenticate consistency, not authority.** Running `node tools/validate.mjs` proves that the repository's modules match its own generator, manifest and tests. It does not prove that the generator, manifest or tests are genuine or uncompromised.
+3. **In-repo trust markers cannot bootstrap trust.** Storing a public key, allowed-signers file or hash list in the repository proves only that those files exist in that commit. Without independent verification of the signing identity from an out-of-band channel, a repository cannot authenticate itself.
+
+## Principles of external trust
+
+1. **Root of trust must be external.** The authoritative instruction to use USS, the expected repository URL, the expected commit SHA, and the signing identity's public-key fingerprint must be delivered through an independent, trusted channel outside this repository.
+2. **Pin the full commit SHA, never a mutable branch or unannotated tag.** A branch reference (`main`) or mutable tag can be pointed to arbitrary commits without warning. Consuming projects must pin an immutable 40-character commit SHA in their `.uss-version` file.
+3. **Cryptographic verification requires an independently trusted key.** A signature proves only that the signer possessed the private key corresponding to the public key used for verification. It is meaningful only if the verifier independently trusts that specific public key.
+4. **Protect the consuming project's pin.** Require review from the consuming project's authorised maintainers before changing its expected USS SHA or signing fingerprint.
+5. **Vendor the reviewed copy.** Agents must read the pinned local copy, not download mutable policy at task runtime.
+6. **Verify release signatures.** Verify the detached signature on `SHA256SUMS` and verify every file digest before relying on repository policy.
+
+## What USS checks can and cannot prove
+
+| Check | What it can establish | What it cannot establish by itself |
+|---|---|---|
+| Source/archive equality | The checked-in archive matches the checked-in root source | Authenticity of either copy |
+| Module regeneration | Generated modules match the checked-in source and generator | That the source or generator is trustworthy |
+| Resolver and policy tests | Tested routing and invariants behave as expected | Absence of all routing or policy defects |
+| Evidence validator | Submitted evidence records follow the declared schema and gate logic | Truth or completeness of the underlying evidence |
+| GitHub Actions | A specific revision passed configured workflow steps | Authenticity of the revision or adequacy of all checks |
+| External commit pin | The consumer expects one exact repository revision | That the initial pin was obtained through a trusted channel |
+| Independently verified signature | The signed artefact was signed by the trusted identity | That the signed content is secure or correct |
+
+## Trust-bootstrap rule
 
 1. Obtain the official signing-key fingerprint from an independently trusted owner-controlled source. Do not trust a fingerprint solely because it appears in a checkout, fork, issue, README or agent response.
 2. Confirm that the release tag and commit belong to the official repository and that GitHub reports the signature as verified for the expected owner identity.
@@ -95,6 +122,19 @@ A consuming project must pin the exact USS release commit in its own `.uss-versi
 Project profiles are untrusted until their exact digest is recorded in the consuming project's `.uss-version` file and verified. A project profile may add stricter controls, but it must never weaken, override or replace USS requirements. A profile that fails verification must not be loaded.
 
 See [CONSUMING.md](CONSUMING.md) for the consumer verification sequence.
+
+## Repository control plane
+
+The following controls require repository-owner configuration and cannot be established by Markdown policy or local validation tools:
+
+- Protect the default branch against direct and force pushes (enforced by the active `Protect Main` ruleset on `main`).
+- Require pull requests for updates to `main` (enforced by `Protect Main`).
+- Require conversation resolution for pull requests before merge (enforced by `Protect Main`).
+- Require the USS validation workflow and security status checks once hosted CI is confirmed.
+- Require CODEOWNERS review for policy sources, modules, resolver/validator tools, release-integrity and workflow files.
+- Require 2FA for maintainers and minimise administrator access.
+- Restrict workflow permissions to least privilege (`contents: read` default).
+- Enable secret scanning and dependency/security alerts.
 
 ## Release signing procedure
 

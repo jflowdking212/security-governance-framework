@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased - Claude review correction series
+
+- Hardened task resolution against inherited JavaScript object properties, malformed arguments and duplicate selectors.
+- Added additive task-plus-keyword routing so the general code-change baseline can be widened to specialist security domains.
+- Expanded the default code-change route to include general input/client, API, secrets, data-integrity and supply-chain controls while remaining below the routine routing budget.
+- Removed the clean-checkout test dependency on generated, untracked full-text bundles; tracked task indexes remain covered by unit tests and generated bundle validation remains in CI.
+- Made resolver, routing, manifest and documentation tests independent of the caller's working directory.
+- Added supplemental implementation guidance for OAuth/OIDC/JWT, SSRF, GraphQL/WebSocket/gRPC, cryptographic storage, data lifecycle/privacy, AI agent/tool/RAG security and container/cloud runtime.
+- Added Node.js/Express and Python/FastAPI reference profiles, explicitly marked unverified until tested against named consuming applications.
+- Replaced placeholder control-ID ranges with a machine-readable module-family catalog covering all 22 modules.
+- Added a deterministic evidence validator for scoped control status, evidence references, finding linkage, P0/P1 blockers and time-bounded P2/P3 risk acceptance.
+- Added an evidence-based P0-P3 severity classification rubric aligned with M17 and CVSS v4 context.
+- Added CI validation for the control catalog and example evidence report.
+- Documented the external trust-root model, including the limits of self-validation and the need for independently pinned commits and verified signer identity.
+- Added an owner-action register after verifying that main is unprotected, no repository rulesets exist, no licence is published and the dependency-graph comparison API returns HTTP 403.
+- Added a correction log mapping the latest Claude findings to implementation evidence, remaining gaps and owner-only decisions.
+- Added pinned Gitleaks, Semgrep, CodeQL and OSV-Scanner workflows for the USS repository. GitHub Dependency Review was tested but is deferred because the dependency-graph compare API returned HTTP 403.
+- Added deterministic workflow tests that reject unpinned GitHub Actions and verify scanner fail-closed settings.
+- Added a consumer CI security workflow template with explicit adaptation and repository-protection requirements.
+- Added regression tests for prototype-property task names, malformed CLI arguments, additive routing and baseline module coverage.
+
 ## 1.0.0 - review-ready candidate
 
 - Reorganised the canonical global directive and payment/tax supplement into 22 task-focused modules.

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {renderSourceMarkdown} from './render-source-markdown.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(ROOT);
 const m=JSON.parse(await fs.readFile('manifest.json','utf8')),errors=[];
@@ -45,17 +46,17 @@ const norm1=x=>x.replace(/\s+/g,' ').trim();
 const allModules=norm1(moduleText);
 const titleOnly=new Set(['**# GLOBAL DIRECTIVE: APPLICATION SECURITY & PENETRATION AUDITING PROTOCOL**','**## 1. Defensive Architecture & Hardening Standards**','# GLOBAL PAYMENT WEBHOOK SECURITY & REVENUE TAX COMPLIANCE DIRECTIVE'].map(norm1));
 for(const [label,text] of [['global',global],['payment',await fs.readFile(m.sources.payment.archive,'utf8')]]){
- text.split(/\r?\n/).forEach((line,i)=>{const t=norm1(line);if(t.length<4||titleOnly.has(t))return;if(!allModules.includes(t))errors.push('Source line not present in any module ('+label+':'+(i+1)+'): '+t.slice(0,100))});
+ text.split(/\r?\n/).forEach((line,i)=>{const t=norm1(renderSourceMarkdown(line));if(t.length<4||titleOnly.has(t))return;if(!allModules.includes(t))errors.push('Source line not present in any module ('+label+':'+(i+1)+'): '+t.slice(0,100))});
 }
-const contract=anti.slice(anti.indexOf('## Anti-Gravity Execution Contract'),pos).split(/\r?\n/);
+const contract=renderSourceMarkdown(anti.slice(anti.indexOf('## Anti-Gravity Execution Contract'),pos)).split(/\r?\n/);
 const m22=norm1(await fs.readFile(map.get('M22').path,'utf8'));
 for(const line of contract){const t=norm1(line);if(t.length>3&&!m22.includes(t))errors.push('Execution contract line missing from M22: '+t.slice(0,100))}
 const read=async id=>fs.readFile(map.get(id).path,'utf8');
 const count=(text,re)=>(text.match(re)||[]).length;
 const expectCount=(label,actual,want)=>{if(actual!==want)errors.push(label+': expected '+want+' found '+actual)};
-expectCount('M13 self-audit vectors',count(await read('M13'),/^\d+\\\. \*\*/gm),16);
+expectCount('M13 self-audit vectors',count(await read('M13'),/^\d+\. \*\*/gm),16);
 expectCount('M14 assurance layers',count(await read('M14'),/^\*\*### Layer \d+ /gm),13);
-expectCount('M01 decision principles',count(await read('M01'),/^\d+\\\. \*\*\\\*\\\*/gm),21);
+expectCount('M01 decision principles',count(await read('M01'),/^\d+\. \*\*/gm),21);
 expectCount('M06 payment controls A1-A16',count(await read('M06'),/^## A\d+\./gm),16);
 expectCount('M07 tax controls B1-B12',count(await read('M07'),/^## B\d+\./gm),12);
 expectCount('M22 execution contract items',count(await read('M22'),/^\d+\. /gm),15);
