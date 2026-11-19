@@ -5,7 +5,7 @@
 **Security posture:** FAIL CLOSED & PROVE  
 **Runtime requirement:** Node.js 20 or later for the repository validation tools. No third-party Node packages are required.
 
-[![USS validation](https://github.com/jflowdking212/seurity-layer/actions/workflows/uss-validation.yml/badge.svg?branch=uss%2Fv1.0.0-modular-security-standard)](https://github.com/jflowdking212/seurity-layer/actions/workflows/uss-validation.yml)
+[![USS validation](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml/badge.svg?branch=uss%2Fv1.0.0-modular-security-standard)](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml)
 
 USS is a modular, source-traceable security engineering standard for human developers and AI coding agents. It turns the project's canonical application-security, payment/webhook/tax and agent-execution directives into focused modules that can be selected by task. The aim is to make the right security requirements available at the point of work without forcing every agent to load the entire policy library.
 
@@ -176,4 +176,13 @@ Please do not publish vulnerability details, credentials, exploit instructions o
 
 ## License and reuse
 
-No license has been added to this repository. Public visibility does not by itself grant permission to copy, modify, redistribute or incorporate this material into another product. Obtain permission from the repository owner before reuse until a license is explicitly published.
+This repository is public but is **not open source under an OSI-approved licence**. The software and materials owned by the Rights Holders are provided under the [Personal Non-Commercial Use Licence (PNCUL) 1.0](LICENSE).
+
+- Personal, private, non-commercial use is permitted.
+- Private modifications for your own non-commercial use are permitted.
+- Commercial use, resale, paid services, sublicensing and redistribution of copies or modified versions are not permitted without prior written permission.
+- Copyright and attribution must be retained: **Jude O. Richard and Jay Bliss Tech Limited**.
+
+Public visibility does not grant commercial rights. Third-party materials remain subject to their own licence terms. For commercial licensing, contact the Rights Holders through the repository owner.
+
+The licence is a custom source-available, non-commercial licence. It is not an OSI-approved open-source licence. See [LICENSE](LICENSE) for the complete terms.
