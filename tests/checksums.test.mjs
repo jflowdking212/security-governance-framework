@@ -118,3 +118,14 @@ test('filesystem mode creates and verifies a separate manifest for generated rel
   assert.notEqual(rejected.status,0);
   assert.match(rejected.stderr,/SHA-256 mismatch: payments\.md/);
 });
+
+test('Git-mode verification is stable across Windows CRLF worktree conversion',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  git(cwd,'config','core.autocrlf','true');
+  assert.equal(run(cwd,'create').status,0);
+  git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add checksum manifest');
+  const readme=fs.readFileSync(path.join(cwd,'README.md'),'utf8').replace(/\r?\n/g,'\r\n');
+  fs.writeFileSync(path.join(cwd,'README.md'),readme);
+  const verified=run(cwd,'verify');
+  assert.equal(verified.status,0,verified.stderr);
+});
