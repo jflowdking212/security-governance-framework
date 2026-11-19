@@ -99,3 +99,22 @@ test('root option verifies a vendored USS subtree inside another Git repository'
   const verified=run(cwd,'verify','--root','vendor/uss');
   assert.equal(verified.status,0,verified.stderr);
 });
+
+test('filesystem mode creates and verifies a separate manifest for generated release bundles',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const bundle=path.join(cwd,'dist','bundles');
+  fs.mkdirSync(bundle,{recursive:true});
+  fs.writeFileSync(path.join(bundle,'payments.md'),'compiled payments bundle\n');
+  fs.writeFileSync(path.join(bundle,'full-audit.md'),'compiled audit bundle\n');
+  const created=run(cwd,'create','--root','dist/bundles','--filesystem');
+  assert.equal(created.status,0,created.stderr);
+  const manifest=fs.readFileSync(path.join(bundle,'SHA256SUMS'),'utf8');
+  assert.match(manifest,/payments\.md/);
+  assert.match(manifest,/full-audit\.md/);
+  const verified=run(cwd,'verify','--root','dist/bundles','--filesystem');
+  assert.equal(verified.status,0,verified.stderr);
+  fs.writeFileSync(path.join(bundle,'payments.md'),'tampered bundle\n');
+  const rejected=run(cwd,'verify','--root','dist/bundles','--filesystem');
+  assert.notEqual(rejected.status,0);
+  assert.match(rejected.stderr,/SHA-256 mismatch: payments\.md/);
+});
