@@ -129,3 +129,14 @@ test('Git-mode verification is stable across Windows CRLF worktree conversion',t
   const verified=run(cwd,'verify');
   assert.equal(verified.status,0,verified.stderr);
 });
+
+test('manifest creation rejects ignored untracked files outside dist bundles',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(cwd,'.gitignore'),'secret-local.txt\n');
+  git(cwd,'add','.gitignore');
+  git(cwd,'commit','-m','ignore local secret file');
+  fs.writeFileSync(path.join(cwd,'secret-local.txt'),'untrusted ignored file\n');
+  const result=run(cwd,'create');
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/Untracked or ignored files/);
+});
