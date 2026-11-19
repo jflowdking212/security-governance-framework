@@ -32,7 +32,7 @@
 - [x] CONTRIBUTING.md documents source traceability and required checks.
 - [x] .gitignore excludes generated bundles, local environments and common secret/key files.
 - [x] Pull request template captures traceability, testing and release impact.
-- [x] No license was invented; README explains that reuse permission has not been granted.
+- [x] Custom Personal Non-Commercial Use Licence (PNCUL) 1.0 published in PR #4; permits private non-commercial use and private modifications, prohibits commercial use and redistribution outside applicable GitHub platform permissions.
 
 ## Independent review corrections
 - [x] Mandatory M13 self-audit is reachable from every task through M01.
@@ -54,7 +54,12 @@
 
 ## Main branch publication
 - [x] PR #1 squash-merged into `main` after successful CI and substantive review.
-- [x] Post-merge GitHub Actions passed on Node.js 20.20.2, including all 34 tests.
+- [x] Post-merge GitHub Actions passed on Node.js 20.20.2, including all 34 tests, at commit `dbb45e833bc82ac9435e5b751cea2c5491a29030`.
+- [x] PNCUL 1.0 published by PR #4; repository remains public and proprietary/source-available.
+- [x] Dependabot GitHub Actions updates configured weekly by PR #5; no unused package ecosystems configured.
+- [x] Active `Protect Main` ruleset targets the default branch and requires pull requests, conversation resolution, and blocks deletion/non-fast-forward updates. Required approvals are 0 by owner decision.
+- [ ] Require the `USS validation` status check before merge after hosted CI is available and the exact check name is confirmed.
+- [x] Owner SSH signing key is registered with GitHub; local signing succeeded and GitHub verified test commit `cead9b6ebb6c904d71604134535083d89f0e8c75`.
 
 ## Remaining before final v1.0.0 release
 - [x] Additional substantive review of M06, M07, M08, M10, M12 and M21 completed; no further internal policy contradictions identified.
@@ -62,8 +67,12 @@
 - [x] Claude independent review completed (`REVIEW-CLAUDE.md`, 2026-11-18).
 - [x] Claude findings resolved or explicitly documented in the correction series and review report.
 - [ ] Owner approves final release after GitHub CI and remaining substantive review.
-- [ ] Main branch protection configured with required USS validation checks and review. The repository rulesets query returned no rulesets; classic branch-protection status could not be verified because the connected GitHub integration returned HTTP 403. Owner must confirm in GitHub Settings.
-- [ ] Final release commit/tag created.
-- [ ] Consuming applications pin the released version.
+- [ ] Publish `SECURITY-ROOT.pub` and `.security/allowed_signers` containing the owner's public SSH signing key; verify the fingerprint against the independently trusted value in `SECURITY-ROOT.md`.
+- [ ] Generate and sign `SHA256SUMS` for the exact release candidate using `tools/checksums.mjs`; verify the signature and file set independently.
+- [ ] Create a signed annotated `v1.0.0` tag and independently verify the tag, commit, checksum signature and every file digest.
+- [ ] Require the `USS validation` status check before merge after hosted CI is available and the exact check name is confirmed.
+- [ ] Owner approves the final release after all P0/P1 findings, local validation and hosted CI are complete.
+- [ ] Consuming applications pin the signed release commit in `.uss-version` and verify the checksum-manifest digest and any project-profile digest before loading policy.
+- [ ] P2.10 stack profiles remain NOT VERIFIED until exercised against real applications; do not claim they are verified by documentation alone.
 
-**Current status:** Corrections are merged into `main` at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. GitHub Actions passed on Node.js 20.20.2 with 34 tests. No formal v1.0.0 tag/release has been created. Branch protection and owner approval for the formal release remain outstanding.
+**Current status:** Main contains the correction series and governance updates. The last confirmed hosted CI pass was Node.js 20.20.2 with 34 tests at `dbb45e833bc82ac9435e5b751cea2c5491a29030`. PR #4 added the custom non-commercial licence and PR #5 added Dependabot configuration. Subsequent trust-root work is in progress. No formal signed v1.0.0 tag/release exists. Hosted CI is unavailable until 30 November 2026; local validation is required in the meantime.
