@@ -59,7 +59,7 @@ test('verification rejects files added after the manifest was created',t=>{
   git(cwd,'add','NEW-POLICY.md');git(cwd,'commit','-m','add unlisted file');
   const result=run(cwd,'verify');
   assert.notEqual(result.status,0);
-  assert.match(result.stderr,/Checksum file set does not match tracked repository files/);
+  assert.match(result.stderr,/Checksum file set does not match release files/);
 });
 
 test('manifest creation refuses unstaged untracked files',t=>{
@@ -67,7 +67,7 @@ test('manifest creation refuses unstaged untracked files',t=>{
   fs.writeFileSync(path.join(cwd,'untracked.txt'),'not staged\n');
   const result=run(cwd,'create');
   assert.notEqual(result.status,0);
-  assert.match(result.stderr,/Untracked files must be staged/);
+  assert.match(result.stderr,/Untracked or ignored files outside the separately verified dist\\/ bundle directory must be staged or removed/);
 });
 
 test('verification works on an extracted release snapshot without Git metadata',t=>{
@@ -87,6 +87,7 @@ test('root option verifies a vendored USS subtree inside another Git repository'
   git(cwd,'init','-q');
   git(cwd,'config','user.name','USS Test');
   git(cwd,'config','user.email','uss-test@example.invalid');
+  git(cwd,'config','commit.gpgsign','false');
   fs.mkdirSync(path.join(cwd,'vendor','uss'),{recursive:true});
   fs.writeFileSync(path.join(cwd,'README.md'),'consumer project\n');
   fs.writeFileSync(path.join(cwd,'vendor','uss','KERNEL.md'),'vendored policy\n');
