@@ -1,6 +1,6 @@
 # USS release trust root
 
-**Status:** The owner's SSH signing identity has been verified by GitHub. The public verification key file, signed SHA-256 release manifest and signed v1.0.0 release tag remain pending.
+**Status:** The owner's public verification key and SSH allowed-signers entry are published on the P1.4 branch. GitHub verified the signed key-publication commit `4f05a3e730aa8491795a6d9cff179ff58219fcb6`. The signed SHA-256 release manifest and signed v1.0.0 release tag remain pending.
 
 This document describes the trust anchor for official Universal Security Standard (USS) releases. It is not, by itself, a cryptographic trust anchor: consumers must compare the fingerprint below with an independently trusted source and verify the signed checksum manifest before relying on repository policy.
 
