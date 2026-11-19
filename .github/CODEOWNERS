@@ -1,0 +1,16 @@
+# Ownership routing for security-critical policy and release material.
+# Required code-owner approval remains disabled by owner decision; this file
+# identifies the maintainer responsible for review, but does not require a
+# second GitHub account to approve a pull request.
+
+/AGENTS.md @jflowdking212
+/KERNEL.md @jflowdking212
+/SECURITY-ROOT.md @jflowdking212
+/SHA256SUMS @jflowdking212
+/SHA256SUMS.sig @jflowdking212
+/manifest.json @jflowdking212
+/source/ @jflowdking212
+/modules/ @jflowdking212
+/tools/ @jflowdking212
+/.github/workflows/ @jflowdking212
+/.github/dependabot.yml @jflowdking212
