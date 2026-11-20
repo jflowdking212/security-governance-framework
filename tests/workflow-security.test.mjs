@@ -493,7 +493,7 @@ test('consumer-security-scans.yml template passes structural security validation
   const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
   const parsed = YAML.parse(text);
   validateSecurityScansWorkflow(parsed, 'consumer-security-scans.yml', true);
-  assert.ok(text.includes('semgrep scan --config p/default --error --metrics=off .'));
+  assert.ok(text.includes('semgrep scan --config p/default --error --no-suppress-errors --metrics=off .'));
   const guide = fs.readFileSync(path.join(ROOT, 'templates/ci/README.md'), 'utf8');
   assert.ok(guide.includes('Change the CodeQL languages'));
 });
