@@ -2,7 +2,7 @@
 
 **Profile status:** REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION  
 **Framework scope:** Flutter stable 3.x and Dart 3.x applications for iOS and Android; Flutter 3.50.0 is the stable release listed on 2026-11-20  
-**Related modules:** M01, M02, M04, M05, M08, M09, M12  
+**Related modules:** M01, M02, M03, M04, M05, M06, M08, M09, M10, M12, M21  
 **Companion supplements:** Authentication and federation; API protocol security; cryptography and key management  
 
 This profile defines security standards for mobile applications built with Flutter and Dart, addressing device storage, network transport, reverse engineering, and mobile platform security.
