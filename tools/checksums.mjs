@@ -33,8 +33,25 @@ if(!fs.existsSync(ROOT)||!fs.statSync(ROOT).isDirectory()) {
   console.error('Checksum root does not exist or is not a directory: '+ROOT);
   process.exit(1);
 }
-const gitRootResult=gitAt(START,['rev-parse','--show-toplevel']);
-const GIT_ROOT=gitRootResult.status===0?path.resolve(gitRootResult.stdout.trim()):null;
+// Filesystem snapshots must be self-contained. A root .git directory or gitfile
+// is untrusted executable configuration and must never be silently excluded.
+function assertFilesystemRootHasNoGitMetadata() {
+  if(!FILESYSTEM)return;
+  const metadataPath=path.join(ROOT,'.git');
+  try {
+    fs.lstatSync(metadataPath);
+  } catch(error) {
+    if(error.code==='ENOENT')return;
+    throw error;
+  }
+  throw new Error('Root .git metadata is not allowed in filesystem mode: .git');
+}
+assertFilesystemRootHasNoGitMetadata();
+
+// Filesystem mode deliberately avoids invoking Git at all. In particular, do
+// not let an untrusted snapshot's Git configuration influence verification.
+const gitRootResult=FILESYSTEM?null:gitAt(START,['rev-parse','--show-toplevel']);
+const GIT_ROOT=gitRootResult&&gitRootResult.status===0?path.resolve(gitRootResult.stdout.trim()):null;
 let ROOT_PREFIX='';
 if(GIT_ROOT) {
   const relative=path.relative(GIT_ROOT,ROOT);
@@ -158,18 +175,10 @@ function walkFiles(dir=ROOT,relative='') {
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
     if(entry.name==='.git') {
       if(relative==='') {
-        if(FILESYSTEM) {
-          const hooksPath=path.join(dir,'.git','hooks');
-          if(fs.existsSync(hooksPath)) {
-            const hookFiles=fs.readdirSync(hooksPath).filter(f=>!f.endsWith('.sample'));
-            if(hookFiles.length>0) {
-              throw new Error('Active Git hooks detected in filesystem mode: '+hookFiles.join(', '));
-            }
-          }
-        }
+        if(FILESYSTEM)throw new Error('Root .git metadata is not allowed in filesystem mode: .git');
         continue;
       }
-      throw new Error('Unexpected nested .git directory detected in release content: '+(relative?relative+'/.git':'.git'));
+      throw new Error('Unexpected nested .git entry detected in release content: '+(relative?relative+'/.git':'.git'));
     }
     const rel=relative?relative+'/'+entry.name:entry.name;
     if(EXCLUDED.has(rel))continue;
