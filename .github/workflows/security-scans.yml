@@ -137,7 +137,7 @@ jobs:
       - name: Run open-source security rules
         env:
           SEMGREP_SEND_METRICS: "off"
-        run: semgrep scan --config p/default --error --no-suppress-errors --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
+        run: semgrep scan --config p/default --error --strict --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
 
   codeql:
     name: CodeQL JavaScript/TypeScript and GitHub Actions analysis
