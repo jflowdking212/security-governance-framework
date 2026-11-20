@@ -76,4 +76,4 @@ The release candidate `v1.0.0-rc.1` is fully implemented and tested. To finalize
 
 ## Release rule
 
-All technical audit remediations are complete and verified in `v1.0.0-rc.1`. Final v1.0.0 release is pending owner signing ceremony.
+The `v1.0.0-rc.1` implementation candidate has passed its current hosted CI checks, including 136 automated tests and the configured security scans. Claude's second independent audit is still pending. This candidate is not a final release. The U-01 signing ceremony remains owner-only, and the U-08 required-status-check decision remains with the owner.
