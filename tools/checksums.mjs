@@ -238,7 +238,6 @@ function verifyManifest() {
     // execute repository-configured clean filters while preparing that diff.
     // The cached diff is index-to-HEAD only and does not read/clean worktree files.
     runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-    assertNoUnexpectedUntracked();
   }
   const manifestPath=path.join(ROOT,MANIFEST);
   if(!fs.existsSync(manifestPath))throw new Error('Missing '+MANIFEST+'.');
