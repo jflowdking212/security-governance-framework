@@ -260,3 +260,69 @@ test('adversarial: rejects unexpected untracked files in dist outside bundles',t
   assert.notEqual(result.status,0,'Manifest creation must reject unexpected files in dist');
   assert.match(result.stderr,/Untracked or ignored files/);
 });
+
+
+test('adversarial: Git-mode checksum operations do not execute repository-configured fsmonitor commands',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const hookDir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-fsmonitor-hook-'));
+  t.after(()=>fs.rmSync(hookDir,{recursive:true,force:true}));
+  const marker=path.join(hookDir,'executed.txt');
+  const hook=path.join(hookDir,'fsmonitor.cjs');
+  fs.writeFileSync(hook,
+    `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'executed');process.stdout.write('0\\n');\\n`);
+  const command='"'+process.execPath+'" "'+hook+'"';
+  git(cwd,'config','core.fsmonitor',command);
+
+  const created=run(cwd,'create');
+  assert.equal(created.status,0,created.stderr);
+  assert.equal(fs.existsSync(marker),false,'Checksum creation must not execute repository core.fsmonitor');
+  const verified=run(cwd,'verify');
+  assert.equal(verified.status,0,verified.stderr);
+  assert.equal(fs.existsSync(marker),false,'Checksum verification must not execute repository core.fsmonitor');
+});
+
+test('adversarial: Git-mode checksum operations do not execute repository-configured clean filters',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(cwd,'.gitattributes'),'*.uss-filtered filter=uss-audit\\n');
+  fs.writeFileSync(path.join(cwd,'policy.uss-filtered'),'trusted policy bytes\\n');
+  git(cwd,'add','.gitattributes','policy.uss-filtered');
+  git(cwd,'commit','-m','add filtered policy fixture');
+
+  const hookDir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-clean-filter-'));
+  t.after(()=>fs.rmSync(hookDir,{recursive:true,force:true}));
+  const marker=path.join(hookDir,'executed.txt');
+  const hook=path.join(hookDir,'clean-filter.cjs');
+  fs.writeFileSync(hook,
+    `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'executed');process.stdin.pipe(process.stdout);\\n`);
+  const command='"'+process.execPath+'" "'+hook+'"';
+  git(cwd,'config','filter.uss-audit.clean',command);
+
+  const created=run(cwd,'create');
+  assert.equal(created.status,0,created.stderr);
+  assert.equal(fs.existsSync(marker),false,'Checksum creation must not execute configured clean filters');
+  const verified=run(cwd,'verify');
+  assert.equal(verified.status,0,verified.stderr);
+  assert.equal(fs.existsSync(marker),false,'Checksum verification must not execute configured clean filters');
+});
+
+test('adversarial: rejects a tracked file reached through a symbolic-link parent directory',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const policyDir=path.join(cwd,'policy');
+  fs.mkdirSync(policyDir);
+  fs.writeFileSync(path.join(policyDir,'README.md'),'trusted nested policy\\n');
+  git(cwd,'add','policy/README.md');
+  git(cwd,'commit','-m','add nested policy fixture');
+  assert.equal(run(cwd,'create').status,0);
+  git(cwd,'add','SHA256SUMS');
+  git(cwd,'commit','-m','add checksum manifest');
+
+  const target=fs.mkdtempSync(path.join(os.tmpdir(),'uss-parent-symlink-target-'));
+  t.after(()=>fs.rmSync(target,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(target,'README.md'),'trusted nested policy\\n');
+  fs.rmSync(policyDir,{recursive:true,force:true});
+  fs.symlinkSync(target,policyDir,process.platform==='win32'?'junction':'dir');
+
+  const result=run(cwd,'verify');
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/symbolic-link parent/);
+});
