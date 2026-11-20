@@ -174,21 +174,35 @@ test('adversarial: rejects uncommitted working tree modifications in Git mode',t
   assert.match(result.stderr,/Repository has changes outside|Working-tree bytes differ|SHA-256 mismatch/);
 });
 
-test('adversarial: does not exclude nested .git directories in filesystem mode',t=>{
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-nested-git-'));
+test('adversarial: rejects nested .git directories in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-nested-git-fs-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
   fs.mkdirSync(path.join(dir,'sub','.git'),{recursive:true});
   fs.writeFileSync(path.join(dir,'sub','.git','config'),'sub git config\n');
   const created=run(dir,'create','--filesystem');
-  assert.equal(created.status,0,created.stderr);
-  const manifest=fs.readFileSync(path.join(dir,'SHA256SUMS'),'utf8');
-  assert.match(manifest,/sub\/\.git\/config/,'Manifest must include nested .git files');
-  assert.equal(run(dir,'verify','--filesystem').status,0);
-  fs.writeFileSync(path.join(dir,'sub','.git','config'),'tampered sub git config\n');
-  const tampered=run(dir,'verify','--filesystem');
-  assert.notEqual(tampered.status,0);
-  assert.match(tampered.stderr,/SHA-256 mismatch: sub\/\.git\/config/);
+  assert.notEqual(created.status,0,'Creation must fail when nested .git directory exists in filesystem mode');
+  assert.match(created.stderr,/Unexpected nested \.git directory/);
+});
+
+test('adversarial: rejects nested .git directories in Git mode',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  fs.mkdirSync(path.join(cwd,'sub','.git'),{recursive:true});
+  fs.writeFileSync(path.join(cwd,'sub','.git','config'),'sub git config\n');
+  const created=run(cwd,'create');
+  assert.notEqual(created.status,0,'Creation must fail when nested .git directory exists in Git mode');
+  assert.match(created.stderr,/Unexpected nested \.git directory/);
+});
+
+test('adversarial: rejects active root .git/hooks in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-hooks-fs-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
+  fs.mkdirSync(path.join(dir,'.git','hooks'),{recursive:true});
+  fs.writeFileSync(path.join(dir,'.git','hooks','pre-commit'),'#!/bin/sh\nexit 1\n');
+  const created=run(dir,'create','--filesystem');
+  assert.notEqual(created.status,0,'Creation must fail when active hooks exist in .git/hooks in filesystem mode');
+  assert.match(created.stderr,/Active Git hooks detected in filesystem mode/);
 });
 
 test('adversarial: does not silently exclude top-level dist directory in filesystem mode',t=>{

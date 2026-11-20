@@ -25,6 +25,10 @@ for(let i=1;i<argv.length;i++) {
 }
 const START=process.cwd();
 const ROOT=path.resolve(START,rootArg);
+if(ROOT.split(path.sep).includes('.git')) {
+  console.error('Checksum root cannot be inside a .git directory: '+ROOT);
+  process.exit(1);
+}
 if(!fs.existsSync(ROOT)||!fs.statSync(ROOT).isDirectory()) {
   console.error('Checksum root does not exist or is not a directory: '+ROOT);
   process.exit(1);
@@ -97,11 +101,30 @@ function assertNoUnexpectedUntracked() {
   if(extras.length)throw new Error('Untracked or ignored files outside dist/bundles must be staged or removed: '+extras.join(', '));
 }
 
+function assertNoNestedGit(dir=ROOT,relative='') {
+  for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
+    if(entry.name==='.git') {
+      if(relative!=='') {
+        throw new Error('Unexpected nested .git directory detected in release content: '+(relative?relative+'/.git':'.git'));
+      }
+    } else if(entry.isDirectory()) {
+      const rel=relative?relative+'/'+entry.name:entry.name;
+      if(rel!=='node_modules'&&!rel.startsWith('node_modules/')) {
+        assertNoNestedGit(path.join(dir,entry.name),rel);
+      }
+    }
+  }
+}
+
 function assertSafePath(rel) {
   if(!rel||rel.includes('\n')||rel.includes('\r')||rel.includes('\\')||rel.startsWith('/')||/^[A-Za-z]:/.test(rel)||rel.split('/').some(p=>p==='..'||p==='.'||p==='')) {
     throw new Error('Unsafe or unsupported repository path: '+JSON.stringify(rel));
   }
-  const absolute=path.resolve(ROOT,...rel.split('/'));
+  const parts=rel.split('/');
+  if(parts.includes('.git')) {
+    throw new Error('Unexpected .git entry detected in release path: '+rel);
+  }
+  const absolute=path.resolve(ROOT,...parts);
   const relative=path.relative(ROOT,absolute);
   if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('Path escapes checksum root: '+rel);
   const stat=fs.lstatSync(absolute);
@@ -133,8 +156,21 @@ function sha256ForPath(rel) {
 function walkFiles(dir=ROOT,relative='') {
   const out=[];
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
-    // Only exclude repository root .git directory when relative is empty
-    if(entry.isDirectory()&&entry.name==='.git'&&relative==='')continue;
+    if(entry.name==='.git') {
+      if(relative==='') {
+        if(FILESYSTEM) {
+          const hooksPath=path.join(dir,'.git','hooks');
+          if(fs.existsSync(hooksPath)) {
+            const hookFiles=fs.readdirSync(hooksPath).filter(f=>!f.endsWith('.sample'));
+            if(hookFiles.length>0) {
+              throw new Error('Active Git hooks detected in filesystem mode: '+hookFiles.join(', '));
+            }
+          }
+        }
+        continue;
+      }
+      throw new Error('Unexpected nested .git directory detected in release content: '+(relative?relative+'/.git':'.git'));
+    }
     const rel=relative?relative+'/'+entry.name:entry.name;
     if(EXCLUDED.has(rel))continue;
     const full=path.join(dir,entry.name);
@@ -153,6 +189,7 @@ function trackedFiles() {
 
 function createManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
+    assertNoNestedGit();
     assertNoNonDefaultIndexFlags();
     runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
     runGit(['diff','--cached','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
@@ -167,6 +204,7 @@ function createManifest() {
 
 function verifyManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
+    assertNoNestedGit();
     assertNoNonDefaultIndexFlags();
     runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
     runGit(['diff','--cached','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
