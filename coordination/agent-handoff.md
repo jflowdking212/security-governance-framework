@@ -671,3 +671,67 @@ At the verified head `a52b22e337a3fc44f5cb0931004e63c1a2f77068`, hosted validati
 4. Claude independently audits A2-02 and A2-03 at the exact integrated SHA. A different reviewer must assess Claude's own implementation changes; Claude must not certify its own fixes.
 5. Re-run all validation and security scans on the combined candidate.
 6. Keep PR #9 open. Do not merge to `main`, alter rulesets, sign a release manifest, create a signed release tag or publish v1.0.0 until the owner authorises the release ceremony.
+
+
+---
+
+## 13. ChatGPT Live Supervisory Review and Gemini Follow-up — 2026-11-20
+
+**Reviewer:** ChatGPT, using the authenticated owner GitHub connection.  
+**Repository:** `jflowdking212/security-governance-framework`  
+**PR:** #9, must remain OPEN and UNMERGED.  
+**Live PR head before this handoff update:** `4fff3c7e87fc52350392bc9e4eec4d82cba8280e`.
+
+### 13.1 Source-of-truth reconciliation
+
+- The newly supplied Gemini handback reports implementation commit `33186db096265b1affe908931132dfefa1a5f646`.
+- Live GitHub PR metadata reports current head `4fff3c7e87fc52350392bc9e4eec4d82cba8280e`; the PR description still contains an older head reference `7e12fe6`.
+- The current head commit is a documentation/handoff update. The live A2-02/A2-07 source files were fetched directly at the current PR head.
+- Therefore, the supplied report describes the first implementation, not proof that the follow-up mutation gaps are closed. Do not use the report's old SHA as the current branch SHA or as evidence for later code.
+- Current PR review submissions and inline review threads returned empty in the connector inspection. This is not a substitute for Claude's independent audit.
+
+### 13.2 Independent findings from current source
+
+The following gaps remain in `tests/workflow-security.test.mjs` and its scanner-specific validation:
+
+1. Untrusted expression checks inspect `step.run`, but not workflow-, job- or step-level `env` values.
+2. Runner checks accept arrays containing `ubuntu-latest` with extra labels and do not fail closed on object-form or dynamic runner selectors.
+3. OSV validation does not enforce a closed reusable-workflow input allowlist; unsafe `scan-args`, `runs-on`, `ref` or unknown input overrides are not rejected.
+4. Semgrep validation does not enforce the exact approved `p/default` rule configuration and does not comprehensively reject alternate/duplicate configs or weakening environment values.
+5. Gitleaks validation does not comprehensively lock configuration, ignore/allowlist and artifact-output settings.
+6. The consumer template receives generic validation and a Semgrep substring assertion, not the full scanner-specific invariants applied to the first-party workflow.
+7. Trigger validation checks names but not required branch/event filters. The live security workflow has `pull_request.branches: [main]`, while PR #9 targets `integration/uss-pr3-pr8-hardening`. Gemini must explicitly verify and enforce the intended coverage for the active integration target and main, and prevent push-scan narrowing to main-only.
+8. Existing error-suppression tests do not cover all relevant shell no-op and errexit-disabling variants.
+
+These are implementation gaps, not speculative claims that a live exploit has occurred. The acceptance mutations are recorded in the Gemini prompt addendum.
+
+### 13.3 CI evidence independently checked
+
+The latest hosted CI evidence recorded in the prior handoff was independently checked by fetching both workflow runs and their job lists:
+
+- Validation run `44714438971`, job `136214089559`: SUCCESS. All listed steps, including source generation, generated-file drift checks, validation and tests, completed successfully.
+- Security scans run `44714439491`: all four jobs SUCCESS:
+  - Semgrep `136214090698`
+  - CodeQL `136214091187`
+  - Gitleaks `136214091207`
+  - OSV `136214091438`
+
+This evidence is for commit `a52b22e337a3fc44f5cb0931004e63c1a2f77068`, not the subsequently observed PR head `4fff3c7e87fc52350392bc9e4eec4d82cba8280e`. Do not attribute these run results to a different SHA. A fresh complete validation and scan run is required after the Gemini follow-up is integrated.
+
+### 13.4 Next instruction issued to Gemini
+
+The Gemini prompt was updated with the explicit supervisory addendum and acceptance tests.
+
+- File: `coordination/prompts/GEMINI-A2-02-A2-07.md`
+- Owner-issued prompt update commit: `d24ed3c1b22a5ed7f929e978bc5d8a877ca2c07a`
+- Scope: A2-02/A2-07 only; workflow AST/schema validator, adversarial tests, first-party scanner workflow and consumer template.
+- Expected result: fail-closed validation of environment expressions, runner selectors, OSV inputs, Semgrep configuration, Gitleaks settings, consumer-template scanner invariants and branch/event coverage.
+- Acceptance: every specified mutation must be rejected; untouched workflows and consumer template must pass; targeted tests, full suite, repository validation, scanner coverage and hosted CI evidence must be supplied.
+- Gemini must fetch the latest branch SHA before editing and return an exact patch/commit identity. It must not edit this shared handoff.
+
+### 13.5 Remaining parallel work and release posture
+
+- Claude remains responsible for A2-06, A2-11 and A2-12. Its implementation handback is still not evidenced on the live PR branch in this review.
+- ChatGPT will independently inspect Gemini's actual follow-up patch, reproduce the bypass mutations, review Claude's patch, continue A2-03/A2-09/A2-04/A2-10 supervisory ownership and record verified corrections here.
+- No finding is CLOSED merely because code or tests were added. Use IMPLEMENTED, VERIFIED and CLOSED as separate states.
+- PR #9 remains OPEN and UNMERGED. U-01 signing remains owner-only. No v1.0.0 release, signed tag, manifest signing, main merge or ruleset modification is authorised.
