@@ -27,7 +27,7 @@ for(let i=1;i<argv.length;i++) {
 }
 const START=process.cwd();
 const ROOT=path.resolve(START,rootArg);
-if(ROOT.split(path.sep).includes('.git')) {
+if(ROOT.split(path.sep).some(part=>part.toLowerCase()==='.git')) {
   console.error('Checksum root cannot be inside a .git directory: '+ROOT);
   process.exit(1);
 }
@@ -39,14 +39,8 @@ if(!fs.existsSync(ROOT)||!fs.statSync(ROOT).isDirectory()) {
 // is untrusted executable configuration and must never be silently excluded.
 function assertFilesystemRootHasNoGitMetadata() {
   if(!FILESYSTEM)return;
-  const metadataPath=path.join(ROOT,'.git');
-  try {
-    fs.lstatSync(metadataPath);
-  } catch(error) {
-    if(error.code==='ENOENT')return;
-    throw error;
-  }
-  throw new Error('Root .git metadata is not allowed in filesystem mode: .git');
+  const gitEntry=fs.readdirSync(ROOT).find(name=>name.toLowerCase()==='.git');
+  if(gitEntry)throw new Error('Root .git metadata is not allowed in filesystem mode: '+gitEntry);
 }
 assertFilesystemRootHasNoGitMetadata();
 
@@ -122,9 +116,12 @@ function assertNoUnexpectedUntracked() {
 
 function assertNoNestedGit(dir=ROOT,relative='') {
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
-    if(entry.name==='.git') {
-      if(relative!=='') {
-        throw new Error('Unexpected nested .git directory detected in release content: '+(relative?relative+'/.git':'.git'));
+    if(entry.name.toLowerCase()==='.git') {
+      // Only the selected repository's own metadata is allowed. When --root
+      // selects a vendored subdirectory, a .git entry at that selected root
+      // is nested metadata and must be rejected too.
+      if(relative!==''||!GIT_ROOT||ROOT_PREFIX!=='') {
+        throw new Error('Unexpected nested .git directory or gitfile detected in release content: '+(relative?relative+'/.git':'.git'));
       }
     } else if(entry.isDirectory()) {
       const rel=relative?relative+'/'+entry.name:entry.name;
@@ -140,7 +137,7 @@ function assertSafePath(rel) {
     throw new Error('Unsafe or unsupported repository path: '+JSON.stringify(rel));
   }
   const parts=rel.split('/');
-  if(parts.includes('.git')) {
+  if(parts.some(part=>part.toLowerCase()==='.git')) {
     throw new Error('Unexpected .git entry detected in release path: '+rel);
   }
   const absolute=path.resolve(ROOT,...parts);
@@ -186,9 +183,8 @@ function sha256ForPath(rel) {
 function walkFiles(dir=ROOT,relative='') {
   const out=[];
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
-    if(entry.name==='.git') {
-      if(relative==='') {
-        if(FILESYSTEM)throw new Error('Root .git metadata is not allowed in filesystem mode: .git');
+    if(entry.name.toLowerCase()==='.git') {
+      if(relative===''&&GIT_ROOT&&ROOT_PREFIX==='') {
         continue;
       }
       throw new Error('Unexpected nested .git directory or gitfile detected in release content: '+(relative?relative+'/.git':'.git'));
