@@ -439,8 +439,8 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
     assert.ok(!semgrepStep.run.includes('--exclude'), 'Semgrep scan must not use --exclude argument to weaken scan');
   }
   const expectedSemgrepCommand = consumerTemplate
-    ? 'semgrep scan --config p/default --error --no-suppress-errors --metrics=off .'
-    : 'semgrep scan --config p/default --error --no-suppress-errors --metrics=off --verbose tools/ tests/ .github/workflows/ templates/';
+    ? 'semgrep scan --config p/default --error --strict --metrics=off .'
+    : 'semgrep scan --config p/default --error --strict --metrics=off --verbose tools/ tests/ .github/workflows/ templates/';
   assert.equal(semgrepStep.run.trim(), expectedSemgrepCommand, label + ' Semgrep must use the exact approved ruleset, flags and target scope');
   assertExactObject(semgrepStep.env, { SEMGREP_SEND_METRICS: 'off' }, label + ' Semgrep environment');
   if (!consumerTemplate) {
@@ -493,7 +493,7 @@ test('consumer-security-scans.yml template passes structural security validation
   const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
   const parsed = YAML.parse(text);
   validateSecurityScansWorkflow(parsed, 'consumer-security-scans.yml', true);
-  assert.ok(text.includes('semgrep scan --config p/default --error --no-suppress-errors --metrics=off .'));
+  assert.ok(text.includes('semgrep scan --config p/default --error --strict --metrics=off .'));
   const guide = fs.readFileSync(path.join(ROOT, 'templates/ci/README.md'), 'utf8');
   assert.ok(guide.includes('Change the CodeQL languages'));
 });
