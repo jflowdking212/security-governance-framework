@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "standard_version": "1.0.0",
+  "standard_version": "1.0.0-rc.1",
   "project": {
     "repository": "example/consumer-application",
     "commit": "0000000000000000000000000000000000000000",

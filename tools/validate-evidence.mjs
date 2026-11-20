@@ -27,13 +27,44 @@ function validDate(value){
  return calendar.getUTCFullYear()===year&&calendar.getUTCMonth()===month-1&&calendar.getUTCDate()===day&&(match[4]===undefined||Number(match[4])<24)&&(match[5]===undefined||Number(match[5])<60);
 }
 const EVIDENCE_KINDS=['test','code-review','configuration','infrastructure','log','external-attestation','build-artifact'];
+const SUCCESS_RESULTS=['passed','verified','compliant','ok','success'];
+const FAILURE_RESULTS=['failed','non-compliant','violation','fail','failure'];
+const EVIDENCE_RESULTS=[...SUCCESS_RESULTS,...FAILURE_RESULTS];
+
+function isPlaceholderReference(value){
+ if(!nonEmpty(value))return true;
+ const norm=value.trim().toLowerCase();
+ return ['n/a','na','none','unknown','tbd','-','--','null','undefined','?'].includes(norm)||/^-+$/.test(norm);
+}
+
 // Shared by control evidence and finding verification_evidence so a VERIFIED finding cannot rest on free text.
-function checkEvidenceItem(label,evidence){
+function checkEvidenceItem(label,evidence,parentStatus=null,assessedAt=null){
  if(!isObject(evidence)){addError(label+' contains a non-object evidence item.');return;}
  if(!EVIDENCE_KINDS.includes(evidence.kind))addError(label+' has invalid evidence kind '+String(evidence.kind));
  if(!nonEmpty(evidence.reference))addError(label+' evidence reference must be non-empty.');
+ else if(isPlaceholderReference(evidence.reference))addError(label+' evidence reference cannot be a placeholder ('+String(evidence.reference)+').');
  if(!validDate(evidence.observed_at))addError(label+' evidence observed_at must be a valid ISO 8601 date/time.');
+ else{
+  const obsTime=Date.parse(evidence.observed_at);
+  if(obsTime>Date.now())addError(label+' evidence observed_at cannot be in the future: '+String(evidence.observed_at));
+  if(assessedAt&&validDate(assessedAt)&&obsTime>Date.parse(assessedAt)){
+   addError(label+' evidence observed_at ('+String(evidence.observed_at)+') cannot be later than the assessment date ('+String(assessedAt)+').');
+  }
+ }
  if(!nonEmpty(evidence.result))addError(label+' evidence result must be non-empty.');
+ else{
+  const res=String(evidence.result).trim().toLowerCase();
+  if(!EVIDENCE_RESULTS.includes(res)){
+   addError(label+' has invalid evidence result: '+String(evidence.result)+' (must be one of: '+EVIDENCE_RESULTS.join(', ')+').');
+  }else{
+   if(parentStatus==='PASS'&&!SUCCESS_RESULTS.includes(res)){
+    addError(label+' marked PASS cannot be supported by non-passing or failed evidence result: '+String(evidence.result));
+   }
+   if(parentStatus==='VERIFIED'&&!SUCCESS_RESULTS.includes(res)){
+    addError(label+' marked VERIFIED cannot be supported by non-passing or failed verification evidence result: '+String(evidence.result));
+   }
+  }
+ }
 }
 function addError(message){
  errors.push(message);
@@ -110,6 +141,7 @@ else{
  for(const field of ['repository','scope','reviewer'])if(!nonEmpty(project[field]))addError('project.'+field+' must be a non-empty string.');
  if(!/^[a-f0-9]{7,64}$/i.test(project.commit??''))addError('project.commit must be a pinned hexadecimal Git commit SHA (7-64 characters).');
  if(!validDate(project.assessed_at))addError('project.assessed_at must be a valid ISO date/time.');
+ else if(Date.parse(project.assessed_at)>Date.now())addError('Assessment date project.assessed_at cannot be in the future: '+project.assessed_at);
 }
 const assessmentType=assessment?.assessment_type;
 if(!['routine','full-audit','production-release'].includes(assessmentType))addError('assessment_type must be routine, full-audit or production-release.');
@@ -137,9 +169,14 @@ for(const control of controlEntries){
  if(!['PASS','FAIL','UNKNOWN','NOT_APPLICABLE'].includes(control.status))addError('Control '+id+' has invalid status '+String(control.status));
  if(!Array.isArray(control.evidence))addError('Control '+id+' evidence must be an array.');
  else{
-  for(const evidence of control.evidence)checkEvidenceItem('Control '+id,evidence);
+  for(const evidence of control.evidence)checkEvidenceItem('Control '+id,evidence,control.status,project?.assessed_at);
  }
- if(control.status==='PASS'&&(!Array.isArray(control.evidence)||control.evidence.length===0))addError('PASS control '+id+' requires at least one evidence item.');
+ if(control.status==='PASS'){
+  if(!Array.isArray(control.evidence)||control.evidence.length===0)addError('PASS control '+id+' requires at least one evidence item.');
+  else if(control.evidence.some(e=>!SUCCESS_RESULTS.includes(String(e?.result).trim().toLowerCase()))){
+   addError('PASS control '+id+' must be supported by successful evidence results only.');
+  }
+ }
  if(control.status==='NOT_APPLICABLE'){
   if(!nonEmpty(control.rationale)||!nonEmpty(control.approved_by)||!validDate(control.approved_at))addError('NOT_APPLICABLE control '+id+' requires rationale, approved_by and approved_at.');
  }
@@ -163,7 +200,7 @@ for(const finding of findingEntries){
  if(!nonEmpty(finding.severity_rationale))addError('Finding '+finding.id+' requires a severity_rationale (impact, reachability, blast radius and confidence; see assurance/severity-classification.md).');
  if(finding.status==='VERIFIED'){
   if(!Array.isArray(finding.verification_evidence)||finding.verification_evidence.length===0)addError('VERIFIED finding '+finding.id+' requires verification_evidence.');
-  else for(const evidence of finding.verification_evidence)checkEvidenceItem('Finding '+finding.id+' verification',evidence);
+  else for(const evidence of finding.verification_evidence)checkEvidenceItem('Finding '+finding.id+' verification',evidence,'VERIFIED',project?.assessed_at);
  }
  if(finding.status==='ACCEPTED'){
   if(['P0','P1'].includes(finding.severity))addError('P0/P1 finding '+finding.id+' cannot be risk-accepted.');

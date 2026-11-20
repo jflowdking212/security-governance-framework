@@ -202,6 +202,68 @@ test('release assessments reject template placeholder metadata and routine type'
 test('NOT_APPLICABLE requires rationale, approver and approval date',()=>{
  expectInvalid(r=>{r.controls[0].status='NOT_APPLICABLE';r.controls[0].evidence=[];},/NOT_APPLICABLE control/);
 });
+test('evidence results must belong to the closed allowlist and match control status',()=>{
+ expectInvalid(r=>{r.controls[0].evidence[0].result='nonsense';},/invalid evidence result/);
+ expectInvalid(r=>{r.controls[0].evidence[0].result='failed';},/marked PASS cannot be supported by non-passing or failed evidence result/);
+ expectInvalid(r=>{r.controls[0].evidence[0].result='non-compliant';},/marked PASS cannot be supported by non-passing or failed evidence result/);
+});
+test('evidence references cannot be placeholders',()=>{
+ for(const ph of ['n/a','na','none','unknown','tbd','-','--','null','undefined','?']) {
+  expectInvalid(r=>{r.controls[0].evidence[0].reference=ph;},/cannot be a placeholder/);
+ }
+});
+test('future dates in assessment or evidence are rejected',()=>{
+ expectInvalid(r=>{r.project.assessed_at='2099-01-01T00:00:00Z';},/cannot be in the future/);
+ expectInvalid(r=>{r.controls[0].evidence[0].observed_at='2099-01-01T00:00:00Z';},/cannot be in the future/);
+});
+test('evidence observed after assessment date is rejected',()=>{
+ expectInvalid(r=>{
+  r.project.assessed_at='2026-11-18T00:00:00Z';
+  r.controls[0].evidence[0].observed_at='2026-11-18T01:00:00Z';
+ },/cannot be later than the assessment date/);
+});
+test('valid FAIL evidence for a FAIL control is accepted structurally',()=>{
+ const fixture=withReport(report=>{
+  markAllPass(report);
+  report.controls[0].status='FAIL';
+  report.controls[0].evidence=[{
+   kind:'test',
+   reference:'tests/failing-check.test.mjs#L10',
+   observed_at:'2026-11-18T00:00:00Z',
+   result:'failed'
+  }];
+  report.controls[0].finding_ids=['F-001'];
+  report.findings=[{
+   id:'F-001',
+   severity:'P2',
+   status:'OPEN',
+   title:'Failing control detected by test',
+   severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',
+   control_ids:[report.controls[0].control_id]
+  }];
+ });
+ try{
+  const result=run(fixture.file);
+  assert.equal(result.status,0,result.stderr);
+ }finally{fixture.cleanup();}
+});
+test('a VERIFIED finding cannot rest on non-passing verification evidence',()=>{
+ expectInvalid(r=>{
+  const id=r.controls[0].control_id;
+  r.controls[0].status='FAIL';
+  r.controls[0].evidence=[];
+  r.controls[0].finding_ids=['F-019'];
+  r.findings=[{
+   id:'F-019',
+   severity:'P2',
+   status:'VERIFIED',
+   title:'x',
+   severity_rationale:'r',
+   control_ids:[id],
+   verification_evidence:[{kind:'test',reference:'tests/t.mjs#L1',observed_at:'2026-11-18T00:00:00Z',result:'failed'}]
+  }];
+ },/marked VERIFIED cannot be supported by non-passing or failed verification evidence result/);
+});
 test('evidence validator rejects malformed top-level input safely',()=>{
  for(const content of ['[]','null','"x"','{}','{"schema_version":"1.0.0"']){
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-evidence-bad-'));
