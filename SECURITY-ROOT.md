@@ -95,7 +95,7 @@ The `--filesystem` mode is for generated artifacts such as `dist/bundles/`, extr
 
 The manifest records relative file paths and file bytes only. Empty directories, executable permission bits, ownership, timestamps and other filesystem metadata are not represented. A consumer that depends on those properties must verify them through a separate trusted packaging or deployment control. The signature must be verified separately before trusting the checksum file.
 
-In Git mode, the manifest covers Git-tracked files (except the manifest and signature). Tracked files under `node_modules/` or `dist/bundles/`, if any, are still included. Untracked or ignored workspace content under those two directories is tolerated as local build/dependency noise by the dirty-worktree check, but is not thereby included in the manifest. Other unexpected untracked or ignored files cause creation/verification to fail.
+In Git mode, the manifest covers Git-tracked files (except the manifest and signature). Tracked files under `node_modules/` or `dist/bundles/`, if any, are still included. Untracked or ignored workspace content under those two directories is tolerated as local build/dependency noise by the dirty-worktree check, but is not thereby included in the manifest. Other unexpected untracked or ignored files cause creation/verification to fail. To avoid executing repository-local Git configuration during verification, the tool disables `core.fsmonitor`, compares tracked working-tree files directly with their committed `HEAD` blobs, and uses only an index-to-`HEAD` cached diff; it does not run a worktree `git diff` that could invoke configured clean filters.
 
 ### Owner workstation test evidence (2026-11-19)
 
