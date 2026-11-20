@@ -76,3 +76,20 @@ test('M21 documents current Local Network Access terminology and does not requir
  assert.doesNotMatch(m21,/must explicitly inspect and validate incoming \`Access-Control-Request-Private-Network\` preflight headers/);
  assert.doesNotMatch(m21,/unconditionally respond with \`Access-Control-Allow-Private-Network: true\`/);
 });
+
+
+test('all eight stack profiles require an application-specific verification record',()=>{
+ const profiles=['nodejs-express.md','python-fastapi.md','laravel-php.md','react-typescript.md','flutter-dart.md','go.md','rust.md','java-spring.md'];
+ for(const name of profiles){
+  const profile=read('stacks/'+name);
+  assert.match(profile,/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/,'Profile must remain reference-only: '+name);
+  assert.match(profile,/Verification record required before marking this profile validated/,'Profile needs an application-specific verification record: '+name);
+ }
+});
+
+test('Laravel and Flutter profiles cover the previously identified stack-specific security gaps',()=>{
+ const laravel=read('stacks/laravel-php.md');
+ for(const term of ['Blade','{!!','Livewire','Inertia','Horizon','Telescope','Debugbar','ShouldBeUnique','afterCommit','signed URL','SSRF','Laravel 13'])assert.ok(laravel.includes(term),'Laravel profile missing '+term);
+ const flutter=read('stacks/flutter-dart.md');
+ for(const term of ['WebView','addJavascriptInterface','FCM','android:exported','allowBackup','Play Integrity','App Attest','Keychain','PKCE','ThisDeviceOnly'])assert.ok(flutter.includes(term),'Flutter profile missing '+term);
+});
