@@ -65,6 +65,21 @@ Every engineering agent (Gemini, Claude, ChatGPT, or future automated contributo
 - If no distinct agent identity has write permission to the repository, preserve the work locally, report the exact access blocker, and request that the owner provision or authorise an agent identity. Do not spoof author metadata or silently push agent work as the owner.
 - A commit made by the owner through the owner's authenticated account must be clearly identified in the handoff as an owner-issued change, not an implementation-agent commit.
 
+
+## 2B. Active parallel remediation allocation
+
+For the USS v1.0.0-rc.1 second-audit remediation, work is divided by engineering strength and file ownership. The current authoritative assignment and exact finding IDs are recorded in `coordination/agent-handoff.md` Section 9.
+
+- **ChatGPT:** owns checksum tooling and tests (A2-03), checksum threat-model/consumer documentation (A2-09), release-status documentation (A2-04), and collaboration-protocol clarification (A2-10). It also performs supervisory diff review of Gemini and Claude deliverables.
+- **Gemini:** owns workflow-security AST validation and mutation tests (A2-02), plus CI/scanner configuration and provenance evidence (A2-07). It must not modify checksum or evidence-validator files.
+- **Claude:** is explicitly authorised to implement evidence-validator hardening (A2-06), review/correct all eight reference stack profiles (A2-11), and verify/update PNA / Local Network Access terminology (A2-12). It must not modify workflow or checksum files.
+
+The independent-auditor read-only default in Section 2A is overridden only for the specifically assigned Claude implementation tasks above. Claude cannot independently approve or certify its own A2-06, A2-11 or A2-12 changes. ChatGPT must inspect the diffs and test evidence, and a separate independent review is required for final assurance of Claude-authored changes.
+
+Agents must not edit files owned by another workstream. Only ChatGPT updates the shared `coordination/agent-handoff.md` ledger while these parallel assignments are active. Each agent must return exact changed paths, base and result SHAs, executed commands, test output, limitations and rollback considerations.
+
+The connected `jayblisstech-bot` account currently has read-only access to this repository. No agent may push using the owner's identity or spoof author metadata. Until a distinct authenticated write-enabled identity is provisioned, Gemini and Claude must prepare patches in their authorised workspaces and return them for owner-authorised integration. Owner-issued integration commits must be explicitly identified as such.
+
 ## 3. Governance Policy Limitation
 
 > **Note on Scope:** This protocol governs multi-agent collaboration within the Universal Security Standard repository (`security-governance-framework`). A comprehensive organisation-wide automation policy will eventually be deployed from a central organization repository under JayBlissTech. Until formal organization-level deployment is authorized by the owner, this USS-specific policy serves as the binding operational protocol.
