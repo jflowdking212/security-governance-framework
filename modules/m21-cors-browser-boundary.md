@@ -256,7 +256,11 @@ A CORS allowlist is a browser response-sharing control. The real security bounda
 
 **Primary sources checked 2026-11-20:**
 
-- WICG, [Local Network Access specification](https://wicg.github.io/local-network-access/), Draft Community Group Report, 7 August 2026.
-- Chrome for Developers, [New permission prompt for Local Network Access](https://developer.chrome.com/blog/local-network-access), including the notice that LNA supersedes the paused PNA preflight effort and the Chrome 142 launch information.
-- Chrome for Developers, [Local Network Access implementation guidance](https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access), including secure-context, permission, address-space and legacy-header guidance.
-- Chrome Enterprise, [Chrome 145 release notes](https://support.google.com/chrome/a/answer/10314655?hl=en), including the Chrome 145 permission split and the stated Chrome 147 WebSocket/WebTransport expansion.
+- WICG, [Local Network Access specification](https://wicg.github.io/local-network-access/), Draft Community Group Report, 7 August 2026. This is a draft specification, not a W3C Recommendation.
+- Chrome for Developers, [New permission prompt for Local Network Access](https://developer.chrome.com/blog/local-network-access), including the Chrome 142 launch and the move away from the paused legacy PNA preflight approach.
+- Chrome for Developers, [Local Network Access implementation guidance](https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access), last updated 7 October 2026, covering secure contexts, granular permissions, address spaces, WebSocket/WebTransport behaviour and legacy-header guidance.
+- Chrome for Developers, [Chrome 145 release notes](https://developer.chrome.com/release-notes/145), documenting the split from the legacy `local-network-access` permission into `local-network` and `loopback-network`.
+- Chrome for Developers, [Chrome 147 release notes](https://developer.chrome.com/release-notes/147), documenting LNA restrictions for WebSockets and WebTransport. The same release notes separately describe the limited `WindowClient.navigate()` behaviour: the restriction applies to subframe navigations, not main-frame navigations.
+- Chrome for Developers, [Chrome 147 beta announcement](https://developer.chrome.com/blog/chrome-147-beta), corroborating the WebSocket and WebTransport rollout.
+
+**Version-scope caution:** These are Chromium/Chrome implementation statements, not a cross-browser guarantee. Verify the exact supported browser build, platform, API and enterprise-policy configuration in each consuming application.
