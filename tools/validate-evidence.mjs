@@ -45,15 +45,15 @@ const EVIDENCE_RESULTS=[...SUCCESS_RESULTS,...FAILURE_RESULTS];
 
 function isPlaceholderReference(value){
  if(!nonEmpty(value))return true;
- const norm=value.trim().toLowerCase().replace(/\\s+/g,' ');
+ const norm=value.trim().toLowerCase().replace(/\s+/g,' ');
  return ['n/a','n / a','na','none','unknown','tbd','todo','pending','x','.','see above','http://','https://','-','--','null','undefined','?'].includes(norm)||/^-+$/.test(norm);
 }
 
 function validEvidenceReference(value){
  if(!nonEmpty(value)||isPlaceholderReference(value))return false;
  const reference=value.trim();
- if(/^run:[1-9]\\d{4,19}$/i.test(reference))return true;
- if(/^https:\\/\\//i.test(reference)){
+ if(/^run:[1-9]\d{4,19}$/i.test(reference))return true;
+ if(/^https:\/\//i.test(reference)){
   try{
    const url=new URL(reference);
    return url.protocol==='https:'&&Boolean(url.hostname)&&!url.username&&!url.password;
@@ -63,7 +63,7 @@ function validEvidenceReference(value){
  if(separator<=0||separator===reference.length-1)return false;
  const relativePath=reference.slice(0,separator);
  const anchor=reference.slice(separator+1);
- if(relativePath.startsWith('/')||relativePath.includes('\\\\')||relativePath.split('/').some(part=>!part||part==='.'||part==='..'))return false;
+ if(relativePath.startsWith('/')||relativePath.includes('\\')||relativePath.split('/').some(part=>!part||part==='.'||part==='..'))return false;
  return /^[A-Za-z0-9._/-]+$/.test(relativePath)&&/^[A-Za-z0-9._:-]+$/.test(anchor);
 }
 
