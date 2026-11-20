@@ -778,3 +778,94 @@ The test creates a parent Git fixture, selects `vendor/uss` using `--root`, then
 - Required next step: obtain fresh hosted USS validation and security-scan results for the updated PR head. If hosted CI is unavailable, the owner/Gemini must run the exact local validation and full test suite, returning raw command output and exit codes.
 - State: **IMPLEMENTED, NOT YET VERIFIED, NOT CLOSED.**
 
+
+
+---
+
+## 15. Live Cross-Agent Implementation Review — 2026-11-20
+
+**Reviewer:** ChatGPT  
+**Repository:** `jflowdking212/security-governance-framework`  
+**PR:** #9, `fix/uss-final-audit-remediation` → `integration/uss-pr3-pr8-hardening`  
+**Live implementation HEAD inspected:** `f57d6ce600538736925b4af62321a715db49d16c`  
+**PR state at inspection:** OPEN, UNMERGED.  
+**Comparison:** 54 commits ahead of the prior supervisory checkpoint `2864a15fe23b5b1ff42e29d3986f11617285bfd2`; 94 commits ahead of Claude's audited SHA `7e12fe60498551bd29807c37efe70966cc6b3b92`.
+
+### 15.1 Claude audit versus Claude-assigned implementation
+
+The supplied Claude report at `7e12fe60498551bd29807c37efe70966cc6b3b92` explicitly states that it was a READ-ONLY audit. It did not modify or push code. It found A2-06, A2-11 and A2-12 open and assigned those bounded implementation areas separately.
+
+The current live branch now contains substantive changes in Claude's assigned file areas after that audit SHA:
+
+- A2-06: `tools/validate-evidence.mjs`, `tests/evidence.test.mjs`, evidence template and related documentation.
+- A2-11: six stack profile files changed (Flutter/Dart, Go, Java/Spring, Laravel/PHP, React/TypeScript, Rust); Node/Express and Python/FastAPI remain present and were not changed in this diff. `stacks/README.md` lists all eight.
+- A2-12: `modules/m21-cors-browser-boundary.md` now includes a substantial Local Network Access section distinguishing LNA from legacy PNA.
+
+**Attribution caveat:** the current code is present on the live PR branch, but the shared handoff does not contain a separate Claude implementation handback with its exact patch/commit identity, per-stack review matrix and executed test evidence. Do not automatically attribute owner-account commits to Claude. Treat these changes as IMPLEMENTED IN BRANCH, AUTHORSHIP/HANDBACK NOT FULLY RECONCILED, and NOT INDEPENDENTLY VERIFIED.
+
+### 15.2 A2-06 evidence validator review
+
+The current `tools/validate-evidence.mjs` includes these substantive controls:
+
+- strict reference forms: HTTPS URL, repository-relative `path#anchor`, or `run:<numeric-id>`;
+- full 40-character lowercase commit SHA for `project.commit`;
+- `--release` requires `--expected-commit` and binds the assessment commit to that exact value;
+- stable issuer-scoped reviewer/approver identity fields and self-approval rejection;
+- future approval timestamps and approval-after-assessment rejection;
+- risk-acceptance expiry must be after approval and assessment; expired acceptance is rejected for release;
+- no invented numeric maximum evidence age or P2/P3 acceptance duration, consistent with the owner clarification;
+- P0/P1 findings remain non-waivable.
+
+The latest hosted validation log includes passing tests for full commit binding, independent approval identities, future approval timestamps and the no-invented-duration rule. The 23 failures in that run were workflow-security tests; no evidence-suite failure appeared in the run.
+
+**Status:** IMPLEMENTED IN BRANCH; evidence tests passed within the observed full run; independent code review and a clean full-suite pass still required. Note that a URL being HTTPS does not itself prove that its contents are immutable or truthful; the validator checks reference shape, not remote evidence authenticity.
+
+### 15.3 A2-11 stack profiles
+
+All eight profiles are listed in `stacks/README.md` and remain explicitly REFERENCE ONLY / not validated against a named consuming application. Six profile files have substantive additions. Notable coverage now visible includes Laravel Blade/Livewire/Inertia output boundaries, queue/Horizon concerns, Flutter WebView/native bridge handling, Play Integrity, FCM and OAuth PKCE, plus new Go, Rust and Java/Spring guidance.
+
+No profile is marked VALIDATED, which is correct. However, the required per-stack implementation handback is missing: there is no complete eight-row matrix of original gaps, exact corrections, universal module references, primary version/source references and unresolved issues. The unchanged Node/Express and Python/FastAPI profiles also need an explicit review disposition rather than being assumed complete because they were not modified.
+
+**Status:** SUBSTANTIAL DOCUMENTATION IMPLEMENTATION PRESENT; REVIEW TRACEABILITY/ACCEPTANCE EVIDENCE PENDING. Keep all eight REFERENCE ONLY.
+
+### 15.4 A2-12 PNA / Local Network Access
+
+The current M21 section correctly distinguishes the permission-based Local Network Access model from the earlier Private Network Access preflight approach, describes secure-context and user-permission requirements, separates CORS from authorization/CSRF/tenant controls, and warns against claiming universal browser coverage.
+
+The document currently lists the WICG LNA draft and Chrome's LNA announcement as primary sources. Its specific Chrome 145 granular-permission and Chrome 147 WebSocket/WebTransport claims should also link directly to the corresponding official Chrome release/enterprise notes and current Chrome Modern Web Guidance. These official sources are available for supervisory verification:
+- WICG LNA draft: `https://wicg.github.io/local-network-access/`
+- Chrome LNA launch: `https://developer.chrome.com/blog/local-network-access`
+- Chrome 145 permission split: `https://support.google.com/chrome/a/answer/10314655`
+- Chrome 147 WebSocket/WebTransport rollout: `https://developer.chrome.com/release-notes/147`
+- Current Chrome implementation guidance: `https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access`
+
+**Status:** TECHNICAL UPDATE PRESENT; SOURCE TRACEABILITY SHOULD BE COMPLETED. Do not treat this as application-level LNA verification.
+
+### 15.5 Gemini A2-02 / A2-07 current hosted regression
+
+At PR HEAD `f57d6ce600538736925b4af62321a715db49d16c`:
+
+- Validation run `44737872939`, job `136293734824`: FAILURE. Test output: 177 total, 154 pass, 23 fail.
+- The first-party security workflow has only `gitleaks`, `codeql` and `osv` job IDs. It has no separate `semgrep` job, although the workflow-security validator expects one.
+- The `gitleaks` job actually invokes the Semgrep CLI on `ubuntu-latest`; the job log shows `semgrep: command not found`, exit 127. The Gitleaks action itself is absent from the current workflow. Therefore this run did not execute a Gitleaks secret scan and did not execute Semgrep successfully.
+- Consumer template has the same topology mismatch: a `secrets` job invokes Semgrep on a bare Ubuntu runner, while the tests expect separate Gitleaks and Semgrep scanner jobs.
+- Multiple workflow mutation tests fail with TypeErrors because they mutate `jobs.semgrep` or related steps that do not exist in the parsed baseline. These are test-fixture/topology defects in addition to the missing scanner execution.
+- Security scan run `44737873441`: OSV job `136293737960` SUCCESS; CodeQL job `136293738010` SUCCESS; secret-scan-labelled job `136293737777` FAILURE. There is no separate successful Semgrep job and no successful Gitleaks job.
+
+**Status:** A2-02/A2-07 NOT VERIFIED; scanner topology is currently regressed and blocks release readiness.
+
+### 15.6 Next instruction issued to Gemini
+
+The Gemini prompt was updated with a new urgent addendum.
+
+- File: `coordination/prompts/GEMINI-A2-02-A2-07.md`
+- Prompt update commit: `1df0bd28acb209a6da930c01c89d54066050dff2`
+- Required fix: restore distinct Gitleaks and Semgrep jobs in both first-party workflow and consumer template; restore the pinned Gitleaks action; run Semgrep in its pinned digest container (or another explicitly pinned and verified installation method); align the validator and mutation fixtures to the actual job topology; ensure missing scanner jobs fail with clean assertions rather than TypeErrors.
+- Acceptance: all 177+ workflow/security tests pass; full repository tests and validation pass; fresh hosted CI has four distinct successful scanner jobs (Gitleaks, Semgrep, CodeQL, OSV), with exact run/job IDs and actual logs.
+- Gemini must sync to the latest branch head before editing and return exact SHA, changed files, commands, exit codes and scanner evidence. It must not edit the shared handoff ledger.
+
+### 15.7 Current release decision
+
+PR #9 is **NOT APPROVED FOR RELEASE**. Reasons include the current 23 failing tests, the missing Gitleaks execution and failed Semgrep invocation, incomplete independent verification of Claude-assigned changes, the open owner-only U-01 signing ceremony, and outstanding traceability/owner decisions. Passing OSV and CodeQL does not offset missing scanner coverage.
+
+Do not merge, tag, sign, publish or change repository settings. Keep the PR open and unmerged until the corrected implementation passes fresh validation and all required independent reviews are complete.
