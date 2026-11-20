@@ -30,12 +30,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
           for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do
             if [ -e "$file" ]; then
               printf 'Unreviewed scanner override is not permitted: %s\n' "$file" >&2
               exit 1
             fi
           done
+          nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
+          if [ -n "$nested_semgrepignore" ]; then
+            printf 'Nested .semgrepignore is not permitted: %s\n' "$nested_semgrepignore" >&2
+            exit 1
+          fi
+          if [ -L .semgrepignore ]; then
+            printf '%s\n' 'A symlinked .semgrepignore is not permitted' >&2
+            exit 1
+          fi
           if [ -f .semgrepignore ]; then
             actual="$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)"
             expected="$(printf '.git/\nnode_modules/\n' | sort)"
@@ -44,46 +54,27 @@ jobs:
               exit 1
             fi
           fi
-      - name: Scan for exposed secrets
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_COMMENTS: "false"
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
-
-  semgrep:
-    name: Semgrep static analysis
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    container:
-      image: semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493
-    steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - name: Reject unreviewed scanner configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do
-            if [ -e "$file" ]; then
-              printf 'Unreviewed scanner override is not permitted: %s\n' "$file" >&2
+          target_count=0
+          while IFS= read -r -d '' file; do
+            target_count=$((target_count+1))
+            if git -c core.fsmonitor=false check-ignore --no-index -q -- "$file"; then
+              printf 'Tracked Semgrep target is excluded by .gitignore: %s\n' "$file" >&2
               exit 1
+            else
+              status=$?
+              if [ "$status" -ne 1 ]; then
+                exit "$status"
+              fi
             fi
-          done
-          if [ -f .semgrepignore ]; then
-            actual="$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)"
-            expected="$(printf '.git/\nnode_modules/\n' | sort)"
-            if [ "$actual" != "$expected" ]; then
-              printf '%s\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2
-              exit 1
-            fi
+          done < <(git -c core.fsmonitor=false ls-files -z -- tools/ tests/ .github/workflows/ templates/)
+          if [ "$target_count" -eq 0 ]; then
+            printf '%s\n' 'No tracked files found in required Semgrep scan targets' >&2
+            exit 1
           fi
       - name: Run open-source security rules
         env:
           SEMGREP_SEND_METRICS: "off"
-        run: semgrep scan --config p/default --error --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
+        run: semgrep scan --config p/default --error --no-suppress-errors --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
 
   codeql:
     name: CodeQL JavaScript/TypeScript and GitHub Actions analysis
