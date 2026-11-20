@@ -51,11 +51,13 @@ function annotateRiskAcceptanceClause(text,anchor){
 
 const m06PaymentGuidance=`
 
-## Payment cardholder data protection, tokenisation and timing-safe verification
+## USS implementation guidance: Payment cardholder data protection, tokenisation and timing-safe verification
+
+> This section provides implementation and verification guidance authored specifically for the Universal Security Standard. It supplements the foundational controls above.
 
 - **Timing-safe comparison:** Always use constant-time string and buffer comparison functions (such as \`crypto.timingSafeEqual\` in Node.js or \`hash_equals\` in PHP/Laravel) for webhook HMAC signatures, API authentication tokens, and cryptographic message authenticators. Never use variable-time comparison operators (\`==\` or \`===\`) on secret-derived values, which expose timing side-channels.
 - **Secure webhook signature verification:** Calculate HMAC digests over the raw, untouched request byte stream before any JSON parsing or middleware decoding occurs. Verify that webhook signatures match expected provider signing secrets across all incoming payment events.
-- **Replay protection:** Require and verify a signed timestamp header with every incoming webhook. Enforce a strict time tolerance window (maximum 300 seconds / 5 minutes) against server clock time to reject replayed transactions.
+- **Replay protection and timestamp verification:** Where the payment provider supplies a signed timestamp (such as Stripe's \`t=\` parameter in the \`Stripe-Signature\` header or provider-signed payload metadata), verify the timestamp and enforce a strict tolerance window (maximum 300 seconds / 5 minutes) against server clock time to reject replayed transactions. For providers that do not supply a timestamp header or payload field, enforce idempotency token uniqueness and rejection of replayed event IDs at the data layer.
 - **Atomic idempotency & deduplication:** Process incoming payment notifications with atomic idempotency. Store unique event identifiers (\`event_id\`) with database unique constraints or distributed locks within transactional boundaries. Ensure duplicate webhook deliveries are safely acknowledged without re-executing business logic.
 - **PCI DSS cardholder data minimisation:** Strictly prohibit storing Primary Account Numbers (PAN), Sensitive Authentication Data (SAD), Card Verification Values (CVV/CVC/CID), or PINs in application databases, temporary logs, or caches after transaction authorisation.
 - **Payment provider tokenisation:** Delegate raw card collection to client-side tokenisation (such as Stripe Elements or hosted payment fields). Application backends must handle only opaque provider tokens (\`tok_...\`, \`pm_...\`) and truncated display identifiers (last4, card brand).
@@ -63,7 +65,9 @@ const m06PaymentGuidance=`
 
 const m12SupplyChainGuidance=`
 
-## CI/CD supply chain hardening, pull-request safety and workflow security
+## USS implementation guidance: CI/CD supply chain hardening, pull-request safety and workflow security
+
+> This section provides implementation and verification guidance authored specifically for the Universal Security Standard. It supplements the foundational controls above.
 
 - **Untrusted pull requests & fork contributions:** Workflows triggered by external forks or untrusted pull requests must never be granted access to production secrets, repository write tokens, or privileged self-hosted runners. Enforce maintainer approval requirements before running CI workflows on pull requests from first-time or untrusted contributors.
 - **pull_request_target risks and prohibition:** Prohibit using \`pull_request_target\` unless an explicitly approved, vetted design is implemented. Never check out untrusted pull-request head commits (\`ref: \${{ github.event.pull_request.head.sha }}\`) in a workflow that holds repository secrets or write permissions. Use standard \`pull_request\` triggers with read-only permissions for untrusted code execution.
@@ -73,6 +77,17 @@ const m12SupplyChainGuidance=`
 - **Least-privilege GitHub permissions:** Enforce least-privilege workflow permissions by setting top-level workflow defaults to \`permissions: contents: read\`. Grant elevated scopes (such as \`security-events: write\`) only to the specific jobs requiring them.
 - **Checkout credential persistence:** Explicitly configure \`persist-credentials: false\` on all \`actions/checkout\` steps to prevent post-build steps or third-party dependencies from accessing the ephemeral repository token from \`.git/config\`.
 - **Secure workflow_run handling:** Treat artifacts and metadata downloaded from \`workflow_run\` events as untrusted data. Validate artifact integrity, verify commit SHAs, and strictly parse structured inputs before processing in downstream release workflows.`;
+
+const m21BrowserBoundaryGuidance=`
+
+## USS implementation guidance: W3C Private Network Access (PNA) and cross-origin boundary controls
+
+> This section provides implementation and verification guidance authored specifically for the Universal Security Standard. It supplements the foundational controls above.
+
+- **W3C Private Network Access (PNA) protection:** Public web applications must never initiate unauthenticated or unrestricted requests from public web origins to private network endpoints (such as \`localhost\`, \`127.0.0.1\`, \`10.0.0.0/8\`, \`172.16.0.0/12\`, or \`192.168.0.0/16\`).
+- **PNA preflight verification:** Local agent interfaces, background daemons, and internal microservices that bind to loopback or intranet interfaces must explicitly inspect and validate incoming \`Access-Control-Request-Private-Network\` preflight headers.
+- **Strict loopback origin checks:** Internal services listening on \`localhost\` or internal networks must never return wildcard (\`*\`) CORS headers or unconditionally respond with \`Access-Control-Allow-Private-Network: true\`. Only pre-registered, trusted origin allow-lists and cryptographically authenticated tokens may be permitted to access local or private endpoints.
+- **DNS rebinding prevention:** Enforce strict \`Host\` and \`Origin\` header verification on loopback servers to prevent DNS rebinding attacks from routing malicious public requests to local machine APIs.`;
 
 function moduleText(id,title,refs,body){
  return '# '+id+' '+title+'\n\n**Source sections:** '+refs.join(', ')+'  \n**Generated from:** preserved canonical directives. Do not edit extracted requirements independently; update the source and rebuild.\n\n---\n\n'+renderSourceMarkdown(body)+'\n';
@@ -98,7 +113,7 @@ const specs=[
 ['m18-public-security-communication.md','M18','Public security communication',['GLOBAL:10'],between(g,'10. Public Security Communication','11. Monitoring, Incident Response & Vulnerability Management')],
 ['m19-financial-release-gate.md','M19','Financial integration and revenue compliance release gate',['GLOBAL:16','PAYMENT:GLOBAL-FINANCIAL-RELEASE-GATE'],annotateRiskAcceptanceClause(between(g,'16. Financial Integration & Revenue Compliance Release Gate','17. Secret Management & Rotation Release Gate')+'\n\n'+between(p,'# GLOBAL FINANCIAL RELEASE GATE','$END'),'No unresolved applicable Critical/High vulnerability may be silently approved without mitigation or explicit risk acceptance.')],
 ['m20-audit-first-remediation.md','M20','Audit-first, risk-prioritised engineering and remediation',['GLOBAL:19','GLOBAL:19.8-superseded-in-part','OWNER:RELEASE-POLICY'],annotateRiskAcceptance(between(g,'19. Audit-First, Risk-Prioritized Engineering & Remediation Control','20. CORS & Browser Cross-Origin Trust Boundary'))+'\n\n## Owner-approved policy clarification\n\nP0 and P1 findings are non-waivable production-release blockers. Risk acceptance under the source section on risk acceptance applies only to non-blocking findings. No agent or project operator may use the risk-acceptance process to waive, downgrade, or silently accept a P0/P1 finding.'],
-['m21-cors-browser-boundary.md','M21','CORS and browser cross-origin trust boundary',['GLOBAL:20'],between(g,'20. CORS & Browser Cross-Origin Trust Boundary','21. Dependency, Lockfile & Software Supply-Chain Maintenance Control')],
+['m21-cors-browser-boundary.md','M21','CORS and browser cross-origin trust boundary',['GLOBAL:20'],between(g,'20. CORS & Browser Cross-Origin Trust Boundary','21. Dependency, Lockfile & Software Supply-Chain Maintenance Control')+m21BrowserBoundaryGuidance],
 ['m22-agent-execution-contract.md','M22','Agent execution contract and policy adherence',['ANTIGRAVITY:EXECUTION-CONTRACT'],between(a,'## Anti-Gravity Execution Contract','# EMBEDDED CANONICAL GLOBAL DIRECTIVE')]
 ];
 const manifest=JSON.parse(await fs.readFile('manifest.json','utf8'));

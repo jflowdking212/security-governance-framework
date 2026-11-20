@@ -222,3 +222,12 @@ A CORS allowlist is a browser response-sharing control. The real security bounda
 
 
 ---
+
+## USS implementation guidance: W3C Private Network Access (PNA) and cross-origin boundary controls
+
+> This section provides implementation and verification guidance authored specifically for the Universal Security Standard. It supplements the foundational controls above.
+
+- **W3C Private Network Access (PNA) protection:** Public web applications must never initiate unauthenticated or unrestricted requests from public web origins to private network endpoints (such as `localhost`, `127.0.0.1`, `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`).
+- **PNA preflight verification:** Local agent interfaces, background daemons, and internal microservices that bind to loopback or intranet interfaces must explicitly inspect and validate incoming `Access-Control-Request-Private-Network` preflight headers.
+- **Strict loopback origin checks:** Internal services listening on `localhost` or internal networks must never return wildcard (`*`) CORS headers or unconditionally respond with `Access-Control-Allow-Private-Network: true`. Only pre-registered, trusted origin allow-lists and cryptographically authenticated tokens may be permitted to access local or private endpoints.
+- **DNS rebinding prevention:** Enforce strict `Host` and `Origin` header verification on loopback servers to prevent DNS rebinding attacks from routing malicious public requests to local machine APIs.
