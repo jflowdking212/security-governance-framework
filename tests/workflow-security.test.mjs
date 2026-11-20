@@ -30,6 +30,28 @@ const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_
 // Covers dot notation, bracket notation, and nested paths.
 const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
 
+const SCANNER_CONFIG_GUARD_RUN = String.raw\`set -euo pipefail
+for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do
+  if [ -e "$file" ]; then
+    printf 'Unreviewed scanner override is not permitted: %s\\n' "$file" >&2
+    exit 1
+  fi
+done
+if [ -f .semgrepignore ]; then
+  actual="$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)"
+  expected="$(printf '.git/\\nnode_modules/\\n' | sort)"
+  if [ "$actual" != "$expected" ]; then
+    printf '%s\\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2
+    exit 1
+  fi
+fi\`;
+
+function assertScannerConfigGuard(step, label) {
+  assert.equal(step.name, 'Reject unreviewed scanner configuration', label + ' must include the scanner configuration guard');
+  assert.equal(step.shell, 'bash', label + ' scanner configuration guard must use bash');
+  assert.equal(step.run?.trim(), SCANNER_CONFIG_GUARD_RUN.trim(), label + ' must execute the exact fail-closed scanner configuration guard');
+}
+
 // Narrow allowlist of approved job-level write permissions:
 // Only CodeQL and OSV jobs may request security-events: write
 const APPROVED_JOB_WRITE_PERMISSIONS = {
@@ -337,11 +359,12 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   if (!consumerTemplate) assertNoGitleaksOverrideFiles(ROOT);
   assertExactObject(gitleaksJob.permissions, { contents: 'read', 'pull-requests': 'read' }, label + ' Gitleaks permissions');
   const gitleaksSteps = gitleaksJob.steps || [];
-  assert.equal(gitleaksSteps.length, 2, label + ' Gitleaks job must contain exactly checkout and scan steps');
+  assert.equal(gitleaksSteps.length, 3, label + ' Gitleaks job must contain exactly checkout, config guard and scan steps');
   const gitleaksCheckout = gitleaksSteps[0];
   assert.equal(gitleaksCheckout.uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', label + ' Gitleaks checkout must use the approved pinned action');
   assertExactObject(gitleaksCheckout.with, { 'fetch-depth': 0, 'persist-credentials': false }, label + ' Gitleaks checkout inputs');
-  const gitleaksAction = gitleaksSteps[1];
+  assertScannerConfigGuard(gitleaksSteps[1], label + ' Gitleaks');
+  const gitleaksAction = gitleaksSteps[2];
   assert.equal(gitleaksAction.uses, 'gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e', label + ' Gitleaks must use the approved pinned action');
   assert.strictEqual(String(gitleaksAction.env?.GITLEAKS_ENABLE_COMMENTS), 'false', label + ' Gitleaks must disable PR comments');
   assert.strictEqual(String(gitleaksAction.env?.GITLEAKS_ENABLE_UPLOAD_ARTIFACT), 'false', label + ' Gitleaks must disable artifact uploads');
@@ -360,8 +383,9 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
     image: 'semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493'
   }, label + ' Semgrep container');
   const semgrepSteps = semgrepJob.steps || [];
-  assert.equal(semgrepSteps.length, 2, label + ' Semgrep job must contain exactly checkout and scan steps');
-  const semgrepStep = semgrepSteps[1];
+  assert.equal(semgrepSteps.length, 3, label + ' Semgrep job must contain exactly checkout, config guard and scan steps');
+  assertScannerConfigGuard(semgrepSteps[1], label + ' Semgrep');
+  const semgrepStep = semgrepSteps[2];
   assert.ok(semgrepStep.run && semgrepStep.run.includes('semgrep scan'), label + ' Semgrep job must execute a scan');
   assert.ok(semgrepStep.run.includes('--error'), 'Semgrep scan must fail on findings with --error');
   if (!consumerTemplate) {
@@ -779,25 +803,25 @@ test('negative: rejects OSV reusable-workflow input overrides and unknown keys',
 
 test('negative: rejects Semgrep alternate config, duplicate config, excludes and weakening environment values', () => {
   const alternate = YAML.parse(read('security-scans.yml'));
-  alternate.jobs.semgrep.steps[1].run += ' --config custom.yml';
+  alternate.jobs.semgrep.steps[2].run += ' --config custom.yml';
   assert.throws(() => validateSecurityScansWorkflow(alternate), /exact approved ruleset/);
 
   const duplicate = YAML.parse(read('security-scans.yml'));
-  duplicate.jobs.semgrep.steps[1].run += ' --config p/owasp-top-ten';
+  duplicate.jobs.semgrep.steps[2].run += ' --config p/owasp-top-ten';
   assert.throws(() => validateSecurityScansWorkflow(duplicate), /exact approved ruleset/);
 
   const weakenedEnv = YAML.parse(read('security-scans.yml'));
-  weakenedEnv.jobs.semgrep.steps[1].env.SEMGREP_RULES = 'custom.yml';
+  weakenedEnv.jobs.semgrep.steps[2].env.SEMGREP_RULES = 'custom.yml';
   assert.throws(() => validateSecurityScansWorkflow(weakenedEnv), /Semgrep environment must match the exact approved configuration/);
 });
 
 test('negative: rejects Gitleaks config overrides and artifact upload', () => {
   const configOverride = YAML.parse(read('security-scans.yml'));
-  configOverride.jobs.gitleaks.steps[1].env.GITLEAKS_CONFIG = '.gitleaks.toml';
+  configOverride.jobs.gitleaks.steps[2].env.GITLEAKS_CONFIG = '.gitleaks.toml';
   assert.throws(() => validateSecurityScansWorkflow(configOverride), /Gitleaks environment must match the exact approved configuration/);
 
   const artifactUpload = YAML.parse(read('security-scans.yml'));
-  artifactUpload.jobs.gitleaks.steps[1].env.GITLEAKS_ENABLE_UPLOAD_ARTIFACT = 'true';
+  artifactUpload.jobs.gitleaks.steps[2].env.GITLEAKS_ENABLE_UPLOAD_ARTIFACT = 'true';
   assert.throws(() => validateSecurityScansWorkflow(artifactUpload), /Gitleaks must disable artifact uploads/);
 });
 
@@ -842,18 +866,18 @@ test('negative: rejects pull-request and push branch filters that skip required 
 test('negative: rejects additional error-masking shell variants', () => {
   for (const suffix of [' || :', ' || /bin/true', '; echo ignored', 'set +o errexit']) {
     const parsed = YAML.parse(read('security-scans.yml'));
-    parsed.jobs.semgrep.steps[1].run += suffix;
+    parsed.jobs.semgrep.steps[2].run += suffix;
     assert.throws(() => validateSecurityScansWorkflow(parsed), /suppresses errors with/);
   }
 });
 
 test('negative: consumer template receives scanner-specific validation, not only generic YAML checks', () => {
   const upload = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
-  upload.jobs.secrets.steps[1].env.GITLEAKS_ENABLE_UPLOAD_ARTIFACT = 'true';
+  upload.jobs.secrets.steps[2].env.GITLEAKS_ENABLE_UPLOAD_ARTIFACT = 'true';
   assert.throws(() => validateSecurityScansWorkflow(upload, 'consumer-security-scans.yml', true), /Gitleaks must disable artifact uploads/);
 
   const semgrep = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
-  semgrep.jobs.semgrep.steps[1].run += ' --exclude=src/';
+  semgrep.jobs.semgrep.steps[2].run += ' --exclude=src/';
   assert.throws(() => validateSecurityScansWorkflow(semgrep, 'consumer-security-scans.yml', true), /must not use --exclude/);
 
   const osv = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
@@ -871,6 +895,17 @@ test('negative: mandatory scanner jobs and steps cannot be made conditional or o
   assert.throws(() => validateSecurityScansWorkflow(dependency), /mandatory job codeql must not depend on optional jobs/);
 
   const stepConditional = YAML.parse(read('security-scans.yml'));
-  stepConditional.jobs.semgrep.steps[1].if = "\${{ github.event_name == 'push' }}";
+  stepConditional.jobs.semgrep.steps[2].if = "\${{ github.event_name == 'push' }}";
   assert.throws(() => validateSecurityScansWorkflow(stepConditional), /must not be conditional/);
+});
+
+
+test('negative: consumer template cannot omit or weaken the runtime scanner configuration guard', () => {
+  const missing = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  missing.jobs.secrets.steps.splice(1, 1);
+  assert.throws(() => validateSecurityScansWorkflow(missing, 'consumer-security-scans.yml', true), /Gitleaks job must contain exactly checkout, config guard and scan steps/);
+
+  const weakened = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  weakened.jobs.semgrep.steps[1].run = 'echo scanner config check skipped';
+  assert.throws(() => validateSecurityScansWorkflow(weakened, 'consumer-security-scans.yml', true), /must execute the exact fail-closed scanner configuration guard/);
 });
