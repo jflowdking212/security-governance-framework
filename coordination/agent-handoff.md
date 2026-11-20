@@ -571,7 +571,7 @@ Re-fetch before reporting completion. PR #9 remains NOT APPROVED FOR RELEASE. No
 **Snapshot date:** 2026-11-20  
 **Author:** ChatGPT, through the repository owner's authenticated GitHub connection.  
 **PR:** #9, OPEN, base `integration/uss-pr3-pr8-hardening`.  
-**Verified code/documentation head before this handoff update:** `f7ff86b9877fd635ccafe5aefd7544541eaac811`.  
+**Verified code/documentation head before this handoff update:** `a52b22e337a3fc44f5cb0931004e63c1a2f77068`.  
 **Release posture:** NOT APPROVED FOR RELEASE.
 
 This section supersedes older status snapshots above where they conflict. The current GitHub branch is the source of truth. All agents must fetch the latest remote SHA before resuming.
@@ -661,7 +661,7 @@ At `f7ff86b9877fd635ccafe5aefd7544541eaac811`:
 - CodeQL job `136211220562`: 18/18 JavaScript and 2/2 Actions workflow files scanned.
 - OSV job `136211220658`: no issues found.
 
-The handoff update commit `05e54c714bc50f2abf10111a13bfc824786ff63d` is documentation-only and its hosted validation/security checks completed successfully: USS validation run `44714172730` passed 155/155 tests and security-scans run `44714173223` passed all reported checks. This is the latest verified documentation head at the time of this note.
+At the verified head `a52b22e337a3fc44f5cb0931004e63c1a2f77068`, hosted validation run `44714438971` passed 155/155 tests (0 failed, 0 skipped) and security-scans run `44714439491` passed all 7 reported checks. Semgrep scanned 26 tracked files with 237 rules, 0 findings and no skipped files; CodeQL scanned 18/18 JavaScript and 2/2 GitHub Actions files; OSV reported no issues; Gitleaks reported no leaks. This evidence is for the exact SHA above.
 
 ### 12.5 Required next actions
 
