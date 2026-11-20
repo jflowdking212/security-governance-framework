@@ -562,3 +562,112 @@ At branch HEAD `f0f318159099f80e77ce27bb9b76f25bd94dc147`:
 - Semgrep: QUEUED, job `136200948085`, run `121019872615`.
 
 Re-fetch before reporting completion. PR #9 remains NOT APPROVED FOR RELEASE. No merge, signing or tagging is authorised by this prompt publication.
+
+
+---
+
+## 12. Supervisory Execution Update — Current Workstream
+
+**Snapshot date:** 2026-11-20  
+**Author:** ChatGPT, through the repository owner's authenticated GitHub connection.  
+**PR:** #9, OPEN, base `integration/uss-pr3-pr8-hardening`.  
+**Verified code/documentation head before this handoff update:** `f7ff86b9877fd635ccafe5aefd7544541eaac811`.  
+**Release posture:** NOT APPROVED FOR RELEASE.
+
+This section supersedes older status snapshots above where they conflict. The current GitHub branch is the source of truth. All agents must fetch the latest remote SHA before resuming.
+
+### 12.1 ChatGPT implementation completed in this work period
+
+**A2-03 — checksum integrity and path safety**
+
+Owner-issued commits:
+- `d4cec88d9c887cff6696008b7dd1735df86970f3` — disable repository-configured fsmonitor, remove worktree diff that can execute clean filters, compare tracked files with committed HEAD blobs, reject symlinked parent components.
+- `4d349043bfea9553101b2f260af2734fce240b6f` — add three adversarial regression tests.
+- `0282759e8e7034c0df79950b2686eec1cd467a03` — correct test fixture source generation.
+- `2cc43f01214f34a1f0bd0aa272955fdd62eb9687` — validate tracked paths before the untracked-path scan.
+- `8359028abf36e637762c1c590b1f39cfe4962726` — defer untracked-path rejection until after tracked-file verification so parent-symlink substitution is rejected at the tracked-path boundary.
+
+Security rationale:
+- Repository-local `core.fsmonitor` is executable configuration. All Git invocations now pass `-c core.fsmonitor=false`.
+- A worktree `git diff` can invoke a repository-configured clean filter. It has been removed from checksum create/verify; working-tree bytes are compared directly with `git show HEAD:<path>`, and the cached index-to-HEAD diff is retained.
+- `assertSafePath` now lstat-checks every parent component, not only the leaf, preventing a tracked file from being read through a symlinked directory.
+
+New adversarial tests:
+1. Git-mode create/verify must not execute a configured `core.fsmonitor` command.
+2. Git-mode create/verify must not execute a configured clean filter.
+3. A tracked file reached through a symlinked parent directory must be rejected.
+
+**Hosted verification:** current candidate validation at `f7ff86b9877fd635ccafe5aefd7544541eaac811`, run `44713599897`, job `136211219639`: **155/155 tests passed, 0 failed, 0 skipped**. All three new checksum tests passed. Claude's independent re-audit of A2-03 is still required before closure.
+
+**A2-09 — checksum documentation**
+
+Owner-issued commits:
+- `3447cd57b26de88836d07f67a15e590040fb7cb3` — consuming guidance for safe Git-mode verification.
+- `4c8dec3e9fabfec52343d5f3892df5a75dba2c3a` — release trust and checksum coverage documentation.
+
+The docs now distinguish tracked files from untracked/ignored content tolerated under `node_modules/` and `dist/bundles/`, explain the separate generated-bundle manifest, and state that empty directories and filesystem metadata such as executable bits, ownership and timestamps are not represented. Symlinks, special files and nested Git metadata remain rejected. Documentation cross-review is pending.
+
+**A2-04 — release-status documentation**
+
+Owner-issued commit `4721444495ce8f59ce54361bdfe7f3aeec024727` clarifies that `REVIEW-CLAUDE.md` is the initial 2026-11-18 report and `REVIEW-CORRECTION-LOG.md` records the second 2026-11-20 audit. README states PR #9's integration target and retains the not-approved-for-release warning. The eight-stack catalogue and current branch badge were checked against the live branch.
+
+**A2-10 — collaboration protocol**
+
+Owner-issued commit `49711e3231e4bee97b8b3ab024d34830d3281224` clarifies active agent roles and file boundaries. Only ChatGPT updates the shared `coordination/agent-handoff.md` ledger during parallel work. Gemini and Claude must include severity, reproduction steps, changed files, test output and exact SHAs in their own handovers, then provide them to ChatGPT for ledger integration.
+
+### 12.2 Gemini A2-02 / A2-07 first implementation and supervisory findings
+
+Gemini committed `33186db096265b1affe908931132dfefa1a5f646` modifying:
+- `.github/workflows/security-scans.yml`
+- `templates/ci/consumer-security-scans.yml`
+- `tests/workflow-security.test.mjs`
+
+The current candidate's hosted scans verify:
+- Gitleaks: no leaks.
+- Semgrep: 26 tracked targets, 237 rules, 0 findings, 0 skipped files, no partial-parse errors, approximately 100% parsed lines.
+- CodeQL: 18/18 JavaScript files and 2/2 GitHub Actions workflow files analyzed.
+- OSV: one package in `package-lock.json`, no issues found.
+
+Supervisory review found additional mutation-guard gaps requiring follow-up. PR comment `7036410191` instructs Gemini to harden:
+- OSV reusable-workflow input overrides (`scan-args`, `runs-on`, `ref`);
+- Semgrep rule-config replacement;
+- Gitleaks config/ignore and artifact-output overrides;
+- untrusted GitHub context passed through workflow/job/step `env`;
+- dynamic or object-form runner selectors;
+- narrowing push scans to only `main`;
+- scanner-specific validation and mutation tests for the consumer template;
+- additional error-suppression variants.
+
+**CodeQL correction:** Initial supervisory concern about Actions coverage was corrected in PR comment `7036436127` after direct job-log inspection. The current hosted CodeQL job proves 2/2 workflow files were analyzed. Do not change language configuration blindly; preserve and document this evidence.
+
+Gemini's follow-up implementation and mutation tests are pending. A green run on the first commit does not close A2-02/A2-07 while these identified bypasses remain.
+
+### 12.3 Claude A2-06 / A2-11 / A2-12 status
+
+Claude's assigned implementation scope remains:
+- A2-06: evidence validator and adversarial evidence tests;
+- A2-11: all eight reference stack profiles;
+- A2-12: PNA / Local Network Access standards guidance.
+
+No Claude implementation commit or patch was present on the authoritative PR branch at the snapshot. Claude must fetch the latest branch before editing and return actual changed files, tests, primary source references and exact commit/patch identity. A later independent audit of Gemini's A2-02 and ChatGPT's A2-03 must be performed against the exact integrated SHA, not against stale local code.
+
+### 12.4 Current hosted CI evidence at the verified candidate head
+
+At `f7ff86b9877fd635ccafe5aefd7544541eaac811`:
+- USS validation run `44713599897`, job `136211219639`: SUCCESS, 155/155 tests.
+- USS security scans run `44713600302`: all reported checks SUCCESS.
+- Gitleaks job `136211220215`: no leaks.
+- Semgrep job `136211220728`: 26 targets, 237 rules, 0 findings, 0 skipped.
+- CodeQL job `136211220562`: 18/18 JavaScript and 2/2 Actions workflow files scanned.
+- OSV job `136211220658`: no issues found.
+
+The current handoff update itself is documentation-only. Re-fetch the branch and checks after this commit before claiming that its new head has passed CI.
+
+### 12.5 Required next actions
+
+1. Gemini implements the requested A2-02/A2-07 follow-up mutations and tests, then updates its handoff with exact CI evidence.
+2. Claude completes A2-06/A2-11/A2-12 and supplies its patch and source evidence.
+3. ChatGPT independently inspects both actual diffs, checks the live remote SHAs, integrates only authorised work and updates this ledger.
+4. Claude independently audits A2-02 and A2-03 at the exact integrated SHA. A different reviewer must assess Claude's own implementation changes; Claude must not certify its own fixes.
+5. Re-run all validation and security scans on the combined candidate.
+6. Keep PR #9 open. Do not merge to `main`, alter rulesets, sign a release manifest, create a signed release tag or publish v1.0.0 until the owner authorises the release ceremony.
