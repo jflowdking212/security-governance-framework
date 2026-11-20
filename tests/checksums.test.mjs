@@ -194,15 +194,45 @@ test('adversarial: rejects nested .git directories in Git mode',t=>{
   assert.match(created.stderr,/Unexpected nested \.git directory/);
 });
 
-test('adversarial: rejects active root .git/hooks in filesystem mode',t=>{
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-hooks-fs-'));
+test('adversarial: rejects all root .git directory metadata in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-git-dir-fs-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
+
+  const initial=run(dir,'create','--filesystem');
+  assert.equal(initial.status,0,initial.stderr);
   fs.mkdirSync(path.join(dir,'.git','hooks'),{recursive:true});
+  fs.writeFileSync(path.join(dir,'.git','config'),'[core]\n  fsmonitor = ./malicious-monitor\n');
   fs.writeFileSync(path.join(dir,'.git','hooks','pre-commit'),'#!/bin/sh\nexit 1\n');
+  const verified=run(dir,'verify','--filesystem');
+  assert.notEqual(verified.status,0,'Verification must fail when root .git/config is introduced after manifest creation');
+  assert.match(verified.stderr,/Root \.git metadata is not allowed in filesystem mode/);
+
+  fs.rmSync(path.join(dir,'.git'),{recursive:true,force:true});
+  fs.mkdirSync(path.join(dir,'.git'),{recursive:true});
+  fs.writeFileSync(path.join(dir,'.git','config'),'[core]\n  fsmonitor = ./malicious-monitor\n');
   const created=run(dir,'create','--filesystem');
-  assert.notEqual(created.status,0,'Creation must fail when active hooks exist in .git/hooks in filesystem mode');
-  assert.match(created.stderr,/Active Git hooks detected in filesystem mode/);
+  assert.notEqual(created.status,0,'Creation must fail when root .git directory metadata exists');
+  assert.match(created.stderr,/Root \.git metadata is not allowed in filesystem mode/);
+});
+
+test('adversarial: rejects root .git gitfiles in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-git-file-fs-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
+
+  const initial=run(dir,'create','--filesystem');
+  assert.equal(initial.status,0,initial.stderr);
+  fs.writeFileSync(path.join(dir,'.git'),'gitdir: ../attacker-controlled-gitdir\n');
+  const verified=run(dir,'verify','--filesystem');
+  assert.notEqual(verified.status,0,'Verification must fail when a root .git gitfile is introduced after manifest creation');
+  assert.match(verified.stderr,/Root \.git metadata is not allowed in filesystem mode/);
+
+  fs.rmSync(path.join(dir,'.git'),{force:true});
+  fs.writeFileSync(path.join(dir,'.git'),'gitdir: ../attacker-controlled-gitdir\n');
+  const created=run(dir,'create','--filesystem');
+  assert.notEqual(created.status,0,'Creation must fail when a root .git gitfile exists');
+  assert.match(created.stderr,/Root \.git metadata is not allowed in filesystem mode/);
 });
 
 test('adversarial: does not silently exclude top-level dist directory in filesystem mode',t=>{
