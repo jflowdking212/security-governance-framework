@@ -526,3 +526,39 @@ At `6138f7e103a2ba748c2c180b85967748d4e8fc0a`:
 - CodeQL job `136196822764`: IN PROGRESS.
 
 Re-fetch the latest branch head and checks before making any subsequent completion claim.
+
+
+---
+
+## 11. Agent Execution Prompts Published
+
+**Published:** 2026-11-20  
+**Code baseline before prompt-only commits:** `13e17461b1dd77cfee82bdc9041e0ad8223a4548`  
+**Branch:** `fix/uss-final-audit-remediation`  
+**PR:** #9, still open and unmerged.
+
+The detailed execution prompts have been committed under `coordination/prompts/`:
+
+1. **Gemini:** [A2-02 workflow security and A2-07 scanner assurance](prompts/GEMINI-A2-02-A2-07.md)  
+   Prompt commit: `11877e27ea1a7a418345736afc81d1ae80c51a9b`
+
+2. **Claude:** [A2-06 evidence validation, A2-11 stack profiles and A2-12 browser standards](prompts/CLAUDE-A2-06-A2-11-A2-12.md)  
+   Prompt commit: `72530f166df9a5b4d2214215c5f78ecfdd5acd30`
+
+3. **ChatGPT supervisory execution:** [A2-03/A2-09/A2-04/A2-10 and cross-agent integration](prompts/CHATGPT-SUPERVISOR.md)  
+   Prompt commit: `f0f318159099f80e77ce27bb9b76f25bd94dc147`
+
+The prompts specify exact finding ownership, allowed file paths, exclusions, attack cases, implementation requirements, testing, provenance restrictions and handback evidence. The newer Section 9 allocation is authoritative over the older broader Gemini assignment in Section 8.3 where the two differ.
+
+**Delivery status:** These prompts are published in the repository and ready for the owner to provide to Gemini and Claude. No claim is made that either external agent has received or acknowledged them; this repository connection cannot directly message those agent sessions. Agents must return actual patches and evidence, not merely a plan or summary.
+
+### CI at prompt publication
+
+At branch HEAD `f0f318159099f80e77ce27bb9b76f25bd94dc147`:
+- USS validation: IN PROGRESS, job `136200941051`, run `121019871328`.
+- OSV: QUEUED, job `136200953827`, run `121019872615`.
+- CodeQL: QUEUED, job `136200948545`, run `121019872615`.
+- Secret scan: QUEUED, job `136200948439`, run `121019872615`.
+- Semgrep: QUEUED, job `136200948085`, run `121019872615`.
+
+Re-fetch before reporting completion. PR #9 remains NOT APPROVED FOR RELEASE. No merge, signing or tagging is authorised by this prompt publication.
