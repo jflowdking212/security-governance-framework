@@ -869,3 +869,87 @@ The Gemini prompt was updated with a new urgent addendum.
 PR #9 is **NOT APPROVED FOR RELEASE**. Reasons include the current 23 failing tests, the missing Gitleaks execution and failed Semgrep invocation, incomplete independent verification of Claude-assigned changes, the open owner-only U-01 signing ceremony, and outstanding traceability/owner decisions. Passing OSV and CodeQL does not offset missing scanner coverage.
 
 Do not merge, tag, sign, publish or change repository settings. Keep the PR open and unmerged until the corrected implementation passes fresh validation and all required independent reviews are complete.
+
+
+---
+
+## 16. Supervisory execution update — scanner repair, Claude-workstream takeover and next actions
+
+**Date:** 2026-11-20  
+**PR:** #9, OPEN and UNMERGED  
+**Branch:** `fix/uss-final-audit-remediation`  
+**Latest pre-documentation owner-issued implementation HEAD:** `570b36185c1e4e2e50a8c4a6898e07c429c1c3b4`  
+**Latest prompt-document HEAD:** `b70209d11510fb4a17cff42317841eadc8058455`
+
+### 16.1 Gemini scanner regression: corrected in branch and hosted CI verified
+
+Gemini's scanner repair is now present in the live branch. The implementation changes between `f57d6ce` and `ee0f935` restore distinct scanner jobs in both the first-party workflow and consumer template, with a pinned Gitleaks action and a pinned Semgrep container.
+
+At `ee0f93590610dea443a42c8243b125f8129e7dab`, hosted validation and all four scanner jobs completed successfully:
+
+| Check | Run / Job | Result |
+|---|---|---|
+| USS validation | Run `44738816829`, job `136296922059` | SUCCESS; **177/177 tests passed**, 0 failed |
+| Gitleaks | Run `44738817171`, job `136296923791` | SUCCESS; pinned Gitleaks action executed; 30 commits scanned; no leaks found |
+| Semgrep | Run `44738817171`, job `136296923464` | SUCCESS; 26 tracked files scanned, 237 rules run, 0 findings, approximately 100% parsed lines; no skipped targets or partial parse errors reported |
+| CodeQL | Run `44738817171`, job `136296923218` | SUCCESS |
+| OSV | Run `44738817171`, job `136296923730` | SUCCESS; scanner ran and SARIF upload completed |
+
+This resolves the immediate regression recorded in Section 15. The earlier `f57d6ce` failure (154/177 tests, Semgrep command-not-found and missing Gitleaks action) is superseded by the successful `ee0f935` run. Do not continue reporting the old scanner topology as current.
+
+**Current disposition:** Scanner execution and current hosted tests are IMPLEMENTED AND CI-VERIFIED at `ee0f935`. A2-02/A2-07 are not yet CLOSED: final adversarial coverage matrix, complete scanner-guard review and OSV pin provenance handback remain required.
+
+### 16.2 Gemini's next instruction
+
+The Gemini implementation prompt now includes a final adversarial coverage review assignment.
+
+- Prompt: `coordination/prompts/GEMINI-A2-02-A2-07.md`
+- Prompt update commit: `b70209d11510fb4a17cff42317841eadc8058455`
+- Required next task: synchronise to the latest branch; produce a requirement-to-test matrix for every A2-02/A2-07 item; verify workflow permissions, triggers, expression movement into env/with, runner selectors, job/step conditions, error suppression, scanner config guards, scheduled Gitleaks history, Semgrep scope, CodeQL Actions coverage, OSV input restrictions and consumer-template parity; add only missing tests/fixes; return fresh hosted evidence and exact provenance.
+- Gemini must not edit the shared handoff ledger or files owned by other workstreams.
+
+The prompt was published to the repository. It has not been directly delivered through a separate Gemini messaging channel; the agent must fetch/read the updated prompt or the owner can share the link.
+
+### 16.3 ChatGPT takeover of Claude-assigned work
+
+The owner directed ChatGPT to progress the A2-06/A2-11/A2-12 implementation and review rather than waiting for Claude credits. Claude's eventual role is independent review of work it did not implement, plus correction of anything it finds. ChatGPT must not claim independent approval of its own work.
+
+**A2-06 — evidence validator review**
+
+The current validator and tests were inspected directly. Implemented controls include full 40-character SHA validation and `--expected-commit` binding for release assessments; strict reference shapes; stable issuer-scoped identities; self-approval rejection; strict ISO/calendar date validation; future and assessment-order checks; risk-acceptance expiry ordering; P0/P1 non-waivability; and no invented maximum evidence age or acceptance duration.
+
+The hosted 177-test run passed. This is not yet a full independent closure: external HTTPS evidence authenticity and immutability are not established by URL-shape validation, and the declared issuer-scoped identity is not authenticated by this validator. Keep these limitations explicit for independent review.
+
+**A2-11 — eight stack profiles cross-reviewed**
+
+All eight profile files and the index were inspected. All remain explicitly REFERENCE ONLY, correctly avoiding a claim that documentation review proves application security. ChatGPT made bounded improvements:
+
+- `stacks/nodejs-express.md`: added official Node.js, Express, proxy and Helmet primary references.
+- `stacks/python-fastapi.md`: added official FastAPI security/proxy/error and Starlette middleware references, with a warning not to trust arbitrary forwarded headers.
+- `stacks/laravel-php.md`: corrected webhook timestamp guidance to validate provider-signed timestamps only when the provider supplies them, using the provider's documented tolerance; do not invent a separate timestamp header.
+
+The remaining profiles were reviewed for scope and visible security coverage: React/TypeScript, Flutter/Dart, Go, Rust and Java/Spring Boot. No profile is marked VALIDATED. Their framework/runtime versions and application-specific assumptions still require consuming-application verification. A complete line-by-line comparison against Claude's original scratch report is still needed before A2-11 can be closed.
+
+**A2-12 — browser standards source traceability**
+
+ChatGPT updated the M21 primary-source list with direct official links for Chrome 145 granular permissions, Chrome 147 WebSocket/WebTransport restrictions and current Chrome LNA implementation guidance. The section now explicitly distinguishes Chromium-specific behaviour from cross-browser guarantees and identifies the limited subframe navigation scope.
+
+Owner-issued commits for this work:
+- `4abd7367414460d466206206cfd1e063a9bf6261` — M21 primary-source traceability.
+- `c21f8ee76fe00a705322097366960fc6ff317ceb` — Node.js/Express primary references.
+- `00c0b195d7734c368b047c4a42c97f9e1c0a60af` — FastAPI/Starlette primary references.
+- `570b36185c1e4e2e50a8c4a6898e07c429c1c3b4` — Laravel provider-specific webhook timestamp clarification.
+
+### 16.4 Current verification boundary and next sequence
+
+The `ee0f935` CI evidence predates ChatGPT's subsequent documentation-only edits. Fresh CI was triggered by the owner-issued updates at `570b361`; it was still in progress when this section was prepared. A later prompt-only commit `b70209d` may also trigger checks. Re-fetch the current PR head and its workflow runs before claiming those edits are verified.
+
+Next sequence:
+1. Allow Gemini to complete the final A2-02/A2-07 coverage matrix and close any remaining mutation gaps.
+2. Inspect Gemini's actual diff and handback against live GitHub, not its report alone.
+3. Continue ChatGPT's A2-06/A2-11/A2-12 adversarial and source review, fixing safe in-scope gaps without waiting for Claude.
+4. Re-run fresh hosted validation and all four scanners on the combined exact head.
+5. Give Claude the exact combined SHA for read-only independent review of Gemini's A2-02 and ChatGPT's A2-03 work, and ask Claude to independently review ChatGPT's A2-06/A2-11/A2-12 work as a separate review of work it did not author.
+6. Claude must return findings and fix any remaining issues within its available capacity; the owner then decides final release/merge readiness.
+
+PR #9 remains OPEN and UNMERGED. No release signing, tag creation, merge, ruleset change or publication is authorised. U-01 remains owner-only.
