@@ -8,8 +8,10 @@ const MANIFEST='SHA256SUMS';
 const SIGNATURE='SHA256SUMS.sig';
 const EXCLUDED=new Set([MANIFEST,SIGNATURE]);
 
-function gitAt(cwd,args) {
-  const r=spawnSync('git',args,{cwd,encoding:'utf8',stdio:['ignore','pipe','pipe']});
+function gitAt(cwd,args,{encoding='utf8'}={}) {
+  // Repository-local core.fsmonitor is executable configuration. Disable it for
+  // every Git invocation made by this verifier, including index enumeration.
+  const r=spawnSync('git',['-c','core.fsmonitor=false',...args],{cwd,encoding,stdio:['ignore','pipe','pipe']});
   if(r.error)throw new Error('Unable to run git: '+r.error.message);
   return r;
 }
@@ -144,6 +146,17 @@ function assertSafePath(rel) {
   const absolute=path.resolve(ROOT,...parts);
   const relative=path.relative(ROOT,absolute);
   if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('Path escapes checksum root: '+rel);
+  // lstat every parent as well as the leaf. lstat(leaf) follows symlinks in
+  // parent components, so checking only the final file would miss a directory
+  // replaced by a symlink to attacker-controlled content.
+  let parent=ROOT;
+  for(const part of parts.slice(0,-1)) {
+    parent=path.join(parent,part);
+    const parentStat=fs.lstatSync(parent);
+    if(!parentStat.isDirectory()||parentStat.isSymbolicLink()) {
+      throw new Error('Path traverses a non-directory or symbolic-link parent: '+rel);
+    }
+  }
   const stat=fs.lstatSync(absolute);
   if(!stat.isFile()||stat.isSymbolicLink())throw new Error('Only regular files can be checksummed: '+rel);
   return absolute;
@@ -154,7 +167,7 @@ function sha256ForPath(rel) {
   const diskBytes=fs.readFileSync(absolute);
   if(GIT_ROOT&&!FILESYSTEM) {
     const gitPath=ROOT_PREFIX+rel;
-    const r=spawnSync('git',['show','HEAD:'+gitPath],{cwd:GIT_ROOT,encoding:null});
+    const r=gitAt(GIT_ROOT,['show','HEAD:'+gitPath],{encoding:null});
     if(r.error||r.status!==0)throw new Error('Unable to read committed file from HEAD: '+rel);
     const headBytes=r.stdout;
     if(diskBytes.equals(headBytes)) {
@@ -200,8 +213,11 @@ function createManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
     assertNoNestedGit();
     assertNoNonDefaultIndexFlags();
-    runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-    runGit(['diff','--cached','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
+    // Compare each worktree file directly with its committed HEAD blob in
+    // sha256ForPath(). Do not run "git diff" against the worktree here: Git may
+    // execute repository-configured clean filters while preparing that diff.
+    // The cached diff is index-to-HEAD only and does not read/clean worktree files.
+    runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
     assertNoUnexpectedUntracked();
   }
   const files=trackedFiles();
@@ -215,8 +231,11 @@ function verifyManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
     assertNoNestedGit();
     assertNoNonDefaultIndexFlags();
-    runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-    runGit(['diff','--cached','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
+    // Compare each worktree file directly with its committed HEAD blob in
+    // sha256ForPath(). Do not run "git diff" against the worktree here: Git may
+    // execute repository-configured clean filters while preparing that diff.
+    // The cached diff is index-to-HEAD only and does not read/clean worktree files.
+    runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
     assertNoUnexpectedUntracked();
   }
   const manifestPath=path.join(ROOT,MANIFEST);
