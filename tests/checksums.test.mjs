@@ -332,3 +332,27 @@ test('adversarial: rejects a tracked file reached through a symbolic-link parent
   assert.notEqual(result.status,0);
   assert.match(result.stderr,/symbolic-link parent/);
 });
+
+
+test('adversarial: rejects .git metadata at the selected vendored root in Git mode',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const vendor=path.join(cwd,'vendor','uss');
+  fs.mkdirSync(vendor,{recursive:true});
+  fs.writeFileSync(path.join(vendor,'KERNEL.md'),'vendored policy content'+String.fromCharCode(10));
+  git(cwd,'add','vendor/uss/KERNEL.md');
+  git(cwd,'commit','-m','add vendored USS fixture');
+
+  // A selected subdirectory is not the outer repository root. Its own .git
+  // directory must therefore be treated as nested, untrusted Git metadata.
+  fs.mkdirSync(path.join(vendor,'.git','hooks'),{recursive:true});
+  fs.writeFileSync(path.join(vendor,'.git','config'),'[core]'+String.fromCharCode(10));
+  const directoryResult=run(cwd,'create','--root','vendor/uss');
+  assert.notEqual(directoryResult.status,0,'Creation must reject .git directory at selected vendored root');
+  assert.match(directoryResult.stderr,/Unexpected nested \.git directory or gitfile/);
+
+  fs.rmSync(path.join(vendor,'.git'),{recursive:true,force:true});
+  fs.writeFileSync(path.join(vendor,'.git'),'gitdir: ../../.git/modules/uss'+String.fromCharCode(10));
+  const gitfileResult=run(cwd,'verify','--root','vendor/uss');
+  assert.notEqual(gitfileResult.status,0,'Verification must reject .git gitfile at selected vendored root');
+  assert.match(gitfileResult.stderr,/Unexpected nested \.git directory or gitfile/);
+});
