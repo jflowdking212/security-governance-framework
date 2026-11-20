@@ -30,21 +30,23 @@ const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_
 // Covers dot notation, bracket notation, and nested paths.
 const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
 
-const SCANNER_CONFIG_GUARD_RUN = String.raw\`set -euo pipefail
-for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do
-  if [ -e "$file" ]; then
-    printf 'Unreviewed scanner override is not permitted: %s\\n' "$file" >&2
-    exit 1
-  fi
-done
-if [ -f .semgrepignore ]; then
-  actual="$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)"
-  expected="$(printf '.git/\\nnode_modules/\\n' | sort)"
-  if [ "$actual" != "$expected" ]; then
-    printf '%s\\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2
-    exit 1
-  fi
-fi\`;
+const SCANNER_CONFIG_GUARD_RUN = [
+  'set -euo pipefail',
+  'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do',
+  '  if [ -e "$file" ]; then',
+  '    printf \\'Unreviewed scanner override is not permitted: %s\\\\n\\' "$file" >&2',
+  '    exit 1',
+  '  fi',
+  'done',
+  'if [ -f .semgrepignore ]; then',
+  '  actual="$(awk \\'NF && $1 !~ /^#/ { print $1 }\\' .semgrepignore | sort)"',
+  '  expected="$(printf \\'.git/\\\\nnode_modules/\\\\n\\' | sort)"',
+  '  if [ "$actual" != "$expected" ]; then',
+  '    printf \\'%s\\\\n\\' \\'.semgrepignore may exclude only .git/ and node_modules/\\' >&2',
+  '    exit 1',
+  '  fi',
+  'fi'
+].join('\\n');
 
 function assertScannerConfigGuard(step, label) {
   assert.equal(step.name, 'Reject unreviewed scanner configuration', label + ' must include the scanner configuration guard');
