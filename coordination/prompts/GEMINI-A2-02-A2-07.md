@@ -319,3 +319,48 @@ Two subsequent Semgrep execution issues were also corrected:
 2. The Semgrep 1.186.0 image does not support `--no-suppress-errors` on `semgrep scan`. The supported scan-specific `--strict` option is now used alongside `--error`; the validator rejects `--no-error`, `--no-strict` and `--suppress-errors` mutations.
 
 At commit `b0bf7bdf`, USS validation passed 177/177 tests, including the runtime guard integration test. That result predates the final Semgrep CLI correction. The latest validation and scanner runs after the correction are pending and must be checked before reporting the current head as green. Do not reuse the older topology-failure note as the current branch status.
+
+
+---
+
+## Final adversarial coverage review after scanner topology repair
+
+**Issued:** 2026-11-20  
+**Latest PR HEAD to synchronise from:** `570b36185c1e4e2e50a8c4a6898e07c429c1c3b4`  
+**Previous scanner-repair head with successful hosted checks:** `ee0f93590610dea443a42c8243b125f8129e7dab`
+
+The scanner topology regression has been corrected in the branch. At `ee0f935`, the hosted validation suite passed **177/177 tests**, and the four distinct scanner jobs completed successfully:
+
+- Gitleaks: pinned action actually ran; 30 commits scanned; no leaks found.
+- Semgrep: 26 tracked files scanned, 237 rules run, 0 findings, 0 skipped targets reported, approximately 100% parsed lines.
+- CodeQL: successful analysis, including GitHub Actions workflow files.
+- OSV: successful scan and SARIF upload.
+
+Do not repeat the earlier claim that Gitleaks/Semgrep are absent. The new task is to establish whether the remaining A2-02/A2-07 mutation and provenance requirements are actually complete.
+
+### Required work
+
+1. Synchronise to the latest remote head before inspection. Note that ChatGPT has since made owner-issued documentation-only updates to M21 and the Node.js, FastAPI and Laravel stack profiles. Do not overwrite or revert them.
+2. Build a requirement-to-test matrix from the full A2-02/A2-07 assignment and original Claude A2-02/A2-07 findings. For each requirement, identify the exact validator function and negative test that rejects the mutation.
+3. Recheck actual parsed YAML validation for:
+   - workflow and job permissions, including exact exceptions for CodeQL/OSV;
+   - all unapproved triggers and branch/event narrowing;
+   - direct untrusted expressions in dot and bracket notation, plus expression movement into workflow/job/step `env` and action `with`;
+   - dynamic runner selectors, arrays and object selectors;
+   - disabled/conditional mandatory jobs and steps, optional dependencies and `continue-on-error`;
+   - missing, reordered or replaced validation/scanner steps;
+   - shell error suppression, command substitution and unsafe credential exposure;
+   - checkout credential persistence and mutable action pins;
+   - Gitleaks config/ignore overrides and complete-history scheduled scanning;
+   - Semgrep config replacement, duplicate config, ignore/exclude weakening, image digest and exact scan targets;
+   - CodeQL path/config overrides and the actual Actions workflow coverage;
+   - OSV `runs-on`, `ref`, `scan-args`, inputs and permissions;
+   - consumer template independently enforcing the same scanner controls.
+4. Specifically test the scanner configuration guard against symlinked config/ignore files, nested ignore files, tracked scan targets excluded by `.gitignore`, and malicious Git configuration. Do not rely on a job name or YAML shape alone as proof that the executable scanner ran.
+5. Verify the OSV reusable-workflow SHA against the official upstream repository and immutable release/tag provenance. Record the URL, tag and commit relationship. Verify Gitleaks full-history behaviour for the scheduled trigger and commit-range behaviour for push/PR.
+6. Add only missing negative mutation tests or narrow validator fixes. Do not weaken existing checks, change scanner versions/pins, or edit files outside A2-02/A2-07 ownership.
+7. Run targeted tests, all repository tests, project validation and generated-file drift checks on the exact latest source. Obtain fresh hosted CI on the resulting head and record run/job IDs and logs.
+
+### Required handback
+
+Return a complete matrix with PASS / GAP / NOT VERIFIED for every requirement, exact test names, source line/function references, changed files, final SHA, commands and exit codes. Report Semgrep scanned/skipped/partial-parse counts and the Gitleaks scanned commit count. If no additional code change is necessary, say so explicitly and provide the evidence. Do not edit the shared handoff ledger. Do not merge, sign, tag or publish a release.
