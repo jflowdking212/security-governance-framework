@@ -4,7 +4,7 @@
 **Base Authoritative Commit:** `58afa246b2c0d0601a5f3945d72bc3243e657c01` (on `integration/uss-pr3-pr8-hardening`)  
 **Current Working Branch:** `fix/uss-final-audit-remediation`  
 **Current Milestone:** USS v1.0.0-rc.1 Independent Audit Findings Remediation  
-**Last Update:** 2026-11-20T05:20:00Z  
+**Last Update:** 2026-11-20 (latest supervisory review; see Section 6)  
 **Implementation Engineer:** Gemini  
 **Supervisory Reviewer:** ChatGPT  
 **Independent Reviewer:** Claude  
@@ -192,3 +192,97 @@ This section records independent findings from direct GitHub repository, PR, rul
 - **SUP-02 (Ruleset Settings):** No repository settings were modified. The option of requiring `USS validation` as a status check is documented for the owner's explicit decision.
 
 
+
+
+---
+
+## 6. ChatGPT Supervisory Verification of Gemini Remediation
+
+**Review date:** 2026-11-20  
+**PR:** [#9](https://github.com/jflowdking212/security-governance-framework/pull/9)  
+**Branch:** `fix/uss-final-audit-remediation`  
+**Pre-documentation-correction head reviewed:** `b8713dcc3074d3e82b02560c4d6ab6465ebb66c2`  
+**Documentation correction commits:** `47869c545b09ceedbcc7a36b77068f150fea7d94` and `866dcba89106b6cc4194a72a17058f9bf08f6254`.
+
+### 6.1 Independent GitHub verification
+
+The following were independently checked against GitHub, not accepted solely from the implementation handover:
+
+- PR #9 remains OPEN, unmerged, targets `integration/uss-pr3-pr8-hardening`, and was mergeable at the reviewed head.
+- The branch at `b8713dcc3074d3e82b02560c4d6ab6465ebb66c2` contained 10 commits and 43 changed files, and was 10 commits ahead of and 0 commits behind the stated base.
+- The seven check runs at that head completed successfully.
+- USS validation job `136109571816`: 136 tests passed, 0 failed.
+- Semgrep job `136109572437`: 18 tracked files scanned, 18 targets scanned, 0 findings, and no skipped files.
+- Gitleaks job `136109572446`: log reports no leaks found.
+- CodeQL job `136109572326`: completed successfully.
+- OSV job `136109572537`: scanned `package-lock.json`, found 1 package, reported no issues, and exited 0.
+- `.semgrepignore` contains only `node_modules/` and `.git/`; the workflow runs Semgrep with `--verbose` against `tools/` and `tests/`.
+- `package.json` and `package-lock.json` both use version `1.0.0-rc.1`; `yaml@2.9.1` is a devDependency and the lockfile marks it `"dev": true`.
+- The live `Protect Main` ruleset is ID `27612394`; it requires pull requests and review-thread resolution, blocks deletion and force-pushes, and has 0 required approvals, no CODEOWNERS requirement, and no required status check.
+- Main remained at `a616ade2963bc69dd2140a65016d0756c13399d8` during this review.
+
+### 6.2 Additional documentation discrepancies corrected
+
+The following small documentation defects were found during the supervisory check and corrected without changing implementation code:
+
+1. The PR description listed `waived` as a `SUCCESS_RESULTS` value, but the actual validator allowlist does not contain `waived`. The PR description now matches the implementation.
+2. `REVIEW-CORRECTION-LOG.md` incorrectly claimed that the active ruleset enforces linear history. It now records the live ruleset parameters accurately and distinguishes pull-request requirements from approval requirements.
+3. The PR description referenced non-existent `tools/bundle.mjs`. It now references the existing `tools/build-bundles.mjs`.
+4. The PR description called `"SEE LICENSE IN LICENSE"` SPDX metadata. It is now accurately described as a package license-file pointer.
+5. `OWNER-ACTIONS.md` now explicitly states that the candidate has passed its current CI, while Claude's second independent audit remains pending. It no longer implies that independent verification or final release approval has already occurred.
+
+These documentation corrections were committed on the same remediation branch. The PR description was also corrected. The latest branch head after these updates must be fetched from GitHub before any further work; do not rely on the pre-correction SHA above.
+
+### 6.3 Current release and merge gates
+
+- **U-01:** Final release manifest signing and signed `v1.0.0` tag remain exclusively the owner's responsibility.
+- **U-08 / SUP-02:** Whether to add `USS validation` as a required status check remains an owner decision. Do not change the ruleset without explicit approval.
+- PR #9 must remain open and unmerged pending Claude's second independent audit and the owner's decision.
+- Passing CI is evidence that the configured jobs passed. It is not proof that every security property is correct and does not replace adversarial independent review.
+
+---
+
+## 7. Claude Second Independent Audit Assignment
+
+**Auditor:** Claude  
+**Target:** The latest published head of `fix/uss-final-audit-remediation` on GitHub at the time the audit begins.  
+**Base:** `integration/uss-pr3-pr8-hardening` at `58afa246b2c0d0601a5f3945d72bc3243e657c01`.  
+**Mode:** Independent, adversarial review. Do not trust this handoff, PR description, Gemini report, or ChatGPT verification as proof. Reproduce the evidence.
+
+### Required audit procedure
+
+1. Read `automation.md`, `AGENTS.md`, `KERNEL.md`, the original Claude findings, this handoff, and `REVIEW-CORRECTION-LOG.md`. Fetch the latest remote branch and record its exact SHA before inspecting code.
+2. Compare the remediation branch to the stated base. Verify that the branch does not silently omit or revert original policy, source material, modules, generated bundles, or tests.
+3. Re-run clean-checkout installation with `npm ci --ignore-scripts`, the complete test suite, `tools/validate.mjs`, evidence validation, all module/index/bundle generators, and generated-file drift checks. Record exact commands and outputs.
+4. Adversarially review U-02: result allowlists, PASS/FAIL evidence coherence, VERIFIED finding linkage, placeholder rejection, temporal ordering, malformed inputs, unknown values, and whether failure evidence remains valid for correctly marked FAIL controls. Test bypasses, not just happy paths.
+5. Adversarially review U-03: parse the actual workflow YAML and mutate triggers, permissions, expression interpolation, checkout credentials, pinned action references, timeouts, error suppression, dependency installation, and required validation gates. Confirm the tests reject each weakened workflow.
+6. Adversarially review U-04: test Git and filesystem checksum modes, nested `.git` directories, active hooks, unsafe path segments, symlinks and path traversal, manifest tampering, file tampering, and signature verification boundaries.
+7. Review U-05 and SUP-03: verify action pin provenance and scanner scope. Reproduce Semgrep against `tools/` and `tests/`, inspect ignore behavior, and prove every intended tracked file is included. Confirm Gitleaks' actual PR versus scheduled scan scope, CodeQL coverage, and OSV lockfile coverage.
+8. Review U-06 and SUP-04: prove the runtime tools have no external runtime dependencies, `yaml` is test-only, lockfile metadata is consistent, and clean `npm ci --ignore-scripts` succeeds.
+9. Review U-07: verify generated module traceability and zero drift, preservation of original source material, provider-specific webhook timestamp wording in M06, and PNA guidance in M21.
+10. Review U-08 and SUP-02 against the live GitHub ruleset API. Do not change settings. Confirm that documentation accurately describes the ruleset and preserves the owner's decision on approvals and required status checks.
+11. Review U-09: search the entire repository for version mismatches, including package metadata, lockfile, manifests, templates, bundles, and release documentation.
+12. Review U-10: test resolver empty invocation, invalid arguments, stack ID/slug/path routing, reference-only profile declarations, license metadata, third-party notices, CODEOWNERS coverage, and allowed-signers namespace restrictions.
+13. Reassess the full 13-Layer Assurance Model and original findings. Identify any regression, missing security control, false-positive test, untested boundary, misleading documentation, or unsupported completion claim.
+
+### Required audit report
+
+For every finding, provide:
+- Unique finding ID and severity (P0-P3).
+- Exact file path and line or symbol.
+- Security impact and realistic attack scenario.
+- Reproduction steps and test output.
+- Whether it is a new issue, a reopened original finding, or a documentation-only issue.
+- Required correction and a clear pass/fail/unknown disposition.
+
+Conclude with a traceable U-01 through U-10 and SUP-01 through SUP-06 matrix. Explicitly distinguish implementation evidence, CI evidence, independent audit evidence, and owner-only actions.
+
+### Non-negotiable boundaries
+
+- Do not merge PR #9 or merge the integration branch into `main`.
+- Do not publish a release, create a signed release tag, generate the final release signature, or access the owner's private signing key.
+- Do not alter the live GitHub ruleset, branch protection, repository settings, or licensing.
+- Do not mark findings resolved without reproduced evidence.
+- Do not implement your own proposed fixes during this audit. Return findings for supervisory triage and Gemini implementation.
+
+**Expected outcome:** An independent, reproducible security audit of the exact latest published remediation head, with no reliance on self-reported completion claims and with all owner-only decisions clearly separated.
