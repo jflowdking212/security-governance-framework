@@ -151,3 +151,16 @@ Hosted CI passing does not close the mutation-guard findings. Supervisory review
 - A2-03/A2-04/A2-09/A2-10 owner-issued changes are implemented and current-head CI verified; independent review of the checksum changes and documentation cross-review remain outstanding.
 - A2-08 remains an owner identity/provenance decision. No agent may impersonate the owner.
 - No merge, signing ceremony, signed release manifest or release tag has been performed.
+
+
+### Current documentation-head CI confirmation
+
+The handoff/documentation commit `05e54c714bc50f2abf10111a13bfc824786ff63d` has now completed its own hosted checks successfully:
+- USS validation run `44714172730`, job `136213175868`: SUCCESS, 155/155 tests, 0 failed, 0 skipped.
+- Security scans run `44714173223`: all reported check runs SUCCESS.
+- Semgrep job `136213177225`: 26 tracked targets, 237 rules, 0 findings, 0 skipped, no partial parse errors.
+- CodeQL job `136213177138`: 18/18 JavaScript files and 2/2 GitHub Actions files scanned.
+- OSV job `136213177328`: one package scanned, no issues found.
+- Gitleaks job `136213176665`: no leaks detected.
+
+This confirms the current documentation and supervisory handoff state at `05e54c7`; it does not resolve the further A2-02/A2-07 mutation weaknesses listed above or replace Claude's independent review.
