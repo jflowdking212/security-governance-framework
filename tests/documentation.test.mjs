@@ -31,7 +31,7 @@ test('supplement index links resolve and every implementation supplement is inde
  for(const name of ['authentication-federation.md','ssrf-outbound-requests.md','api-graphql-websocket-grpc.md','cryptography-key-management.md','data-lifecycle-privacy.md','container-cloud-runtime.md','ai-agent-security.md'])assert.ok(index.includes(name),'Supplement index missing '+name);
 });
 test('stack profiles remain explicitly unverified until application evidence exists',()=>{
- for(const file of ['stacks/nodejs-express.md','stacks/python-fastapi.md','stacks/laravel-php.md','stacks/react-typescript.md','stacks/flutter-dart.md'])assert.match(read(file),/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/);
+ for(const file of ['stacks/nodejs-express.md','stacks/python-fastapi.md','stacks/laravel-php.md','stacks/react-typescript.md','stacks/flutter-dart.md','stacks/go.md','stacks/rust.md','stacks/java-spring.md'])assert.match(read(file),/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/);
 });
 test('review correction log records unresolved owner-only release blockers',()=>{
  const log=read('REVIEW-CORRECTION-LOG.md');
@@ -62,4 +62,34 @@ test('release trust bootstrap documentation and checksum tooling are present',()
  const consuming=read('CONSUMING.md');
  assert.ok(consuming.includes('Do not read or follow a vendored'));
  assert.ok(consuming.includes('sha256sums_sha256'));
+});
+
+
+test('M21 documents current Local Network Access terminology and does not require legacy PNA preflight headers',()=>{
+ const m21=read('modules/m21-cors-browser-boundary.md');
+ assert.match(m21,/Local Network Access \(LNA\)/);
+ assert.match(m21,/Draft Community Group Report dated 7 August 2026/);
+ assert.match(m21,/\`local-network\`/);
+ assert.match(m21,/\`loopback-network\`/);
+ assert.match(m21,/MUST NOT rely on those legacy headers/);
+ assert.match(m21,/wicg\.github\.io\/local-network-access/);
+ assert.doesNotMatch(m21,/must explicitly inspect and validate incoming \`Access-Control-Request-Private-Network\` preflight headers/);
+ assert.doesNotMatch(m21,/unconditionally respond with \`Access-Control-Allow-Private-Network: true\`/);
+});
+
+
+test('all eight stack profiles require an application-specific verification record',()=>{
+ const profiles=['nodejs-express.md','python-fastapi.md','laravel-php.md','react-typescript.md','flutter-dart.md','go.md','rust.md','java-spring.md'];
+ for(const name of profiles){
+  const profile=read('stacks/'+name);
+  assert.match(profile,/REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION/,'Profile must remain reference-only: '+name);
+  assert.match(profile,/Verification record required before marking this profile validated/,'Profile needs an application-specific verification record: '+name);
+ }
+});
+
+test('Laravel and Flutter profiles cover the previously identified stack-specific security gaps',()=>{
+ const laravel=read('stacks/laravel-php.md');
+ for(const term of ['Blade','{!!','Livewire','Inertia','Horizon','Telescope','Debugbar','ShouldBeUnique','afterCommit','signed URL','SSRF','Laravel 13'])assert.ok(laravel.includes(term),'Laravel profile missing '+term);
+ const flutter=read('stacks/flutter-dart.md');
+ for(const term of ['WebView','addJavascriptInterface','FCM','android:exported','allowBackup','Play Integrity','App Attest','Keychain','PKCE','ThisDeviceOnly','M03','M06','M10'])assert.ok(flutter.includes(term),'Flutter profile missing '+term);
 });

@@ -20,8 +20,10 @@ The fingerprint was obtained locally with `ssh-keygen -lf`. The key successfully
 The corresponding raw public key is stored as `SECURITY-ROOT.pub`. The SSH allowed-signers entry is stored as `.security/allowed_signers` in this form:
 
 ```text
-jude_m2003@yahoo.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA2fInUDvAZFW5E8KuFh6YsjBuqHaz8wBsujComEYF71
+jude_m2003@yahoo.com namespaces="git,USS-SHA256SUMS" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA2fInUDvAZFW5E8KuFh6YsjBuqHaz8wBsujComEYF71
 ```
+
+The `namespaces` directive restricts key validity strictly to `git` (for commit and tag verification) and `USS-SHA256SUMS` (for release checksum manifests), enforcing signature domain separation and preventing cross-protocol signature reuse.
 
 Both files are public verification material. Never store the private key or its passphrase in this repository.
 
@@ -89,7 +91,11 @@ node tools/checksums.mjs verify --root dist/bundles --filesystem
 
 In Git mode, the tool hashes committed Git blob bytes from `HEAD`, not the platform-dependent working-tree representation, so Windows CRLF checkout settings do not change the digest. The repository must be clean and all release files must already be committed before creating the source manifest.
 
-The `--filesystem` mode is for generated artifacts such as `dist/bundles/`, which are intentionally not Git-tracked. It hashes every regular file in the selected directory. The signature must be verified separately before trusting the checksum file.
+The `--filesystem` mode is for generated artifacts such as `dist/bundles/`, extracted release snapshots and other self-contained directories that are intentionally verified by file contents rather than Git object identity. It hashes every regular file under the selected root, excluding only `SHA256SUMS` and `SHA256SUMS.sig`. It rejects a root `.git` directory or gitfile, any nested `.git` entry, symbolic links and unsupported filesystem entries. It does not invoke Git in filesystem mode, so untrusted snapshot Git configuration cannot influence verification.
+
+The manifest records relative file paths and file bytes only. Empty directories, executable permission bits, ownership, timestamps and other filesystem metadata are not represented. A consumer that depends on those properties must verify them through a separate trusted packaging or deployment control. The signature must be verified separately before trusting the checksum file.
+
+In Git mode, the manifest covers Git-tracked files (except the manifest and signature). Tracked files under `node_modules/` or `dist/bundles/`, if any, are still included. Untracked or ignored workspace content under those two directories is tolerated as local build/dependency noise by the dirty-worktree check, but is not thereby included in the manifest. Other unexpected untracked or ignored files cause creation/verification to fail. To avoid executing repository-local Git configuration during verification, the tool disables `core.fsmonitor`, compares tracked working-tree files directly with their committed `HEAD` blobs, and uses only an index-to-`HEAD` cached diff; it does not run a worktree `git diff` that could invoke configured clean filters.
 
 ### Owner workstation test evidence (2026-11-19)
 
@@ -135,6 +141,16 @@ The following controls require repository-owner configuration and cannot be esta
 - Require 2FA for maintainers and minimise administrator access.
 - Restrict workflow permissions to least privilege (`contents: read` default).
 - Enable secret scanning and dependency/security alerts.
+
+### Pinned scanner and CI action provenance
+
+All actions and reusable workflows in `.github/workflows/` are pinned to immutable 40-character commit SHAs or container image digests. Their provenance is verified against upstream canonical sources:
+- `google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@d3c1414ded37de590f207572e37a7d180f1d0ef7`: verified as official commit on `google/osv-scanner-action` main branch (reviewed 2026-11-11).
+- `actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803`: official release commit for GitHub Checkout action.
+- `actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38`: official release commit for Node.js setup action.
+- `gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e`: official release commit for Gitleaks action.
+- `github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066` and `analyze@33d7b85da1a04171e211befe2c739303b9a4c066`: official CodeQL v4.39.3 action commits.
+- `semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493`: official Semgrep immutable image digest.
 
 ## Release signing procedure
 

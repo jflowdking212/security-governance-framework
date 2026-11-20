@@ -361,7 +361,9 @@ Review protected branches, mandatory status checks, immutable/pinned workflow de
 
 A successful `git push` only proves the remote received the commit. It does NOT prove CI, security review, deployment, or production health succeeded.
 
-## CI/CD supply chain hardening, pull-request safety and workflow security
+## USS implementation guidance: CI/CD supply chain hardening, pull-request safety and workflow security
+
+> This section provides implementation and verification guidance authored specifically for the Universal Security Standard. It supplements the foundational controls above.
 
 - **Untrusted pull requests & fork contributions:** Workflows triggered by external forks or untrusted pull requests must never be granted access to production secrets, repository write tokens, or privileged self-hosted runners. Enforce maintainer approval requirements before running CI workflows on pull requests from first-time or untrusted contributors.
 - **pull_request_target risks and prohibition:** Prohibit using `pull_request_target` unless an explicitly approved, vetted design is implemented. Never check out untrusted pull-request head commits (`ref: ${{ github.event.pull_request.head.sha }}`) in a workflow that holds repository secrets or write permissions. Use standard `pull_request` triggers with read-only permissions for untrusted code execution.

@@ -1,6 +1,13 @@
 # USS v1.0.0 Release Verification Checklist
 
-This checklist tracks the release-readiness of the Universal Security Standard (USS) v1.0.0.
+**Current release candidate:** v1.0.0-rc.1  
+This checklist tracks the release-readiness of the Universal Security Standard (USS) v1.0.0. The candidate version is `v1.0.0-rc.1`; the final `v1.0.0` release tag and release artefacts will be created during the owner's personal cryptographic signing ceremony.
+
+## Clean checkout and test execution requirements
+- [x] Run `npm ci --ignore-scripts` before executing automated test suites.
+- [x] Verify zero dependencies required for core tools (`resolve-task.mjs`, `checksums.mjs`, `validate.mjs`, `validate-evidence.mjs`).
+- [x] Verify `yaml@2.9.1` is used exclusively for workflow AST security tests.
+- [x] Enforce `--ignore-scripts` to prohibit arbitrary lifecycle script execution during dependency installation.
 
 ## Review and provenance
 - [x] Initial full-audit draft completed against the preserved source directives.

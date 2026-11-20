@@ -222,3 +222,45 @@ A CORS allowlist is a browser response-sharing control. The real security bounda
 
 
 ---
+
+## USS implementation guidance: Local Network Access (LNA), legacy Private Network Access (PNA), and browser trust boundaries
+
+> This section provides implementation and verification guidance authored specifically for the Universal Security Standard. It supplements the foundational CORS requirements above.
+
+**Terminology and status (reviewed 2026-11-20):**
+
+- **Local Network Access (LNA)** is the current permission-based browser proposal for restricting website access to local-network and loopback destinations. The WICG LNA specification is a **Draft Community Group Report dated 7 August 2026**, not a W3C Recommendation. Treat its requirements as a developing specification and distinguish them from each browser's shipped implementation.
+- **Private Network Access (PNA 1.0)** refers to the earlier special-preflight approach using `Access-Control-Request-Private-Network` and `Access-Control-Allow-Private-Network`. Chrome put that rollout on hold and subsequently moved to the permission-based LNA approach. New implementations MUST NOT rely on those legacy headers as the browser's access-control mechanism. Existing devices may retain legacy header handling for compatibility, but it is not a substitute for current browser permission controls or server-side security.
+- **Chromium implementation is version-specific.** Chrome 142 introduced the permission-gated LNA restriction; Chrome 145 split the permission into `local-network` and `loopback-network`; Chrome 147 release material describes expansion to WebSocket and WebTransport connections. Do not assume that every browser, version, API or request type implements the same restrictions. Verify the supported browser/version matrix for the consuming application.
+- The current WICG draft notes that Chromium's implemented checks cover public-to-local and public-to-loopback requests, and that cross-origin local-to-local checks are not currently enforced. Do not claim complete protection for every private-network communication path.
+
+**LNA implementation requirements:**
+
+- **Secure contexts and permission:** Where the browser implements LNA, local-network requests require a secure context and the applicable user permission. The current permission names are `local-network` for local address space and `loopback-network` for loopback. The former combined `local-network-access` permission remains an alias in Chromium. Apply `Permissions-Policy` deliberately; do not delegate these capabilities to untrusted embedded origins.
+- **Address-space boundaries:** Treat public, local and loopback as distinct address spaces. Review public-to-local, public-to-loopback and local-to-loopback paths separately. Do not assume that a hostname alone proves the destination's address space; DNS resolution, redirects, proxies and address changes can affect the final destination.
+- **User mediation:** Explain why local-device or companion-service access is needed and request it only in the expected user flow. In Chromium, the initial permission-triggering request should be initiated from a document with an explicit user action, not silently from page load or a service/shared worker. Handle denied or unavailable permissions without weakening server controls.
+- **CORS remains separate:** LNA permission does not authenticate the user, authorise an operation, establish tenant ownership or make a response readable by JavaScript. Apply normal CORS origin/method/header policy for response access, and independently enforce authentication, authorisation, CSRF protection, tenant isolation and request validation on the server. A cross-origin request can still cause a state change even when the browser prevents the caller from reading its response.
+- **Mixed content and target classification:** Chrome documents specific cases in which known local targets (such as private IP literals, `.local` hostnames, or an explicitly declared `targetAddressSpace: "local"`) receive special mixed-content treatment. This is browser-specific behaviour, not a universal permission to use insecure transport. Do not generalise it to other browsers or arbitrary public hostnames.
+- **Local and loopback services:** Local companion APIs, agents, daemons, routers and internal services MUST still require appropriate authentication and authorisation. Bind only to intended interfaces, minimise exposed routes, validate `Host` and `Origin` where applicable, defend against DNS rebinding and CSRF, and never treat a request as trusted merely because it arrived from a private IP address.
+- **Workers and non-Fetch APIs:** Check the current browser support for service workers, shared workers, WebSockets, WebTransport, WebRTC, navigations and embedded frames individually. Do not infer support for one API from another or claim cross-browser coverage without current evidence.
+
+**Required verification:**
+
+- Test allowed and denied local-network and loopback permission states in each supported browser/version.
+- Test public-to-local and public-to-loopback requests separately, including private IPv4, IPv6 local/loopback and `.local` names where relevant.
+- Test permission denial, revocation, insecure top-level contexts, embedded-frame Permissions Policy and worker-initiated requests.
+- Test CORS response readability separately from whether a state-changing request was sent or processed.
+- Test DNS rebinding, unexpected `Host` values, redirects and proxy resolution against local services.
+- Test WebSocket, WebTransport, WebRTC and navigation behaviour only where the consuming browser/version claims support; record unsupported or unverified cases explicitly.
+- Do not mark LNA/PNA protection as verified from a static configuration review alone. Record the browser, exact version, operating system, test origin, target address space, permission state and observed result.
+
+**Primary sources checked 2026-11-20:**
+
+- WICG, [Local Network Access specification](https://wicg.github.io/local-network-access/), Draft Community Group Report, 7 August 2026. This is a draft specification, not a W3C Recommendation.
+- Chrome for Developers, [New permission prompt for Local Network Access](https://developer.chrome.com/blog/local-network-access), including the Chrome 142 launch and the move away from the paused legacy PNA preflight approach.
+- Chrome for Developers, [Local Network Access implementation guidance](https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access), last updated 7 October 2026, covering secure contexts, granular permissions, address spaces, WebSocket/WebTransport behaviour and legacy-header guidance.
+- Chrome for Developers, [Chrome 145 release notes](https://developer.chrome.com/release-notes/145), documenting the split from the legacy `local-network-access` permission into `local-network` and `loopback-network`.
+- Chrome for Developers, [Chrome 147 release notes](https://developer.chrome.com/release-notes/147), documenting LNA restrictions for WebSockets and WebTransport. The same release notes separately describe the limited `WindowClient.navigate()` behaviour: the restriction applies to subframe navigations, not main-frame navigations.
+- Chrome for Developers, [Chrome 147 beta announcement](https://developer.chrome.com/blog/chrome-147-beta), corroborating the WebSocket and WebTransport rollout.
+
+**Version-scope caution:** These are Chromium/Chrome implementation statements, not a cross-browser guarantee. Verify the exact supported browser build, platform, API and enterprise-policy configuration in each consuming application.

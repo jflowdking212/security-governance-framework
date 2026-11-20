@@ -8,8 +8,10 @@ const MANIFEST='SHA256SUMS';
 const SIGNATURE='SHA256SUMS.sig';
 const EXCLUDED=new Set([MANIFEST,SIGNATURE]);
 
-function gitAt(cwd,args) {
-  const r=spawnSync('git',args,{cwd,encoding:'utf8',stdio:['ignore','pipe','pipe']});
+function gitAt(cwd,args,{encoding='utf8'}={}) {
+  // Repository-local core.fsmonitor is executable configuration. Disable it for
+  // every Git invocation made by this verifier, including index enumeration.
+  const r=spawnSync('git',['-c','core.fsmonitor=false',...args],{cwd,encoding,stdio:['ignore','pipe','pipe']});
   if(r.error)throw new Error('Unable to run git: '+r.error.message);
   return r;
 }
@@ -25,12 +27,27 @@ for(let i=1;i<argv.length;i++) {
 }
 const START=process.cwd();
 const ROOT=path.resolve(START,rootArg);
+if(ROOT.split(path.sep).some(part=>part.toLowerCase()==='.git')) {
+  console.error('Checksum root cannot be inside a .git directory: '+ROOT);
+  process.exit(1);
+}
 if(!fs.existsSync(ROOT)||!fs.statSync(ROOT).isDirectory()) {
   console.error('Checksum root does not exist or is not a directory: '+ROOT);
   process.exit(1);
 }
-const gitRootResult=gitAt(START,['rev-parse','--show-toplevel']);
-const GIT_ROOT=gitRootResult.status===0?path.resolve(gitRootResult.stdout.trim()):null;
+// Filesystem snapshots must be self-contained. A root .git directory or gitfile
+// is untrusted executable configuration and must never be silently excluded.
+function assertFilesystemRootHasNoGitMetadata() {
+  if(!FILESYSTEM)return;
+  const gitEntry=fs.readdirSync(ROOT).find(name=>name.toLowerCase()==='.git');
+  if(gitEntry)throw new Error('Root .git metadata is not allowed in filesystem mode: '+gitEntry);
+}
+assertFilesystemRootHasNoGitMetadata();
+
+// Filesystem mode deliberately avoids invoking Git at all. In particular, do
+// not let an untrusted snapshot's Git configuration influence verification.
+const gitRootResult=FILESYSTEM?null:gitAt(START,['rev-parse','--show-toplevel']);
+const GIT_ROOT=gitRootResult&&gitRootResult.status===0?path.resolve(gitRootResult.stdout.trim()):null;
 let ROOT_PREFIX='';
 if(GIT_ROOT) {
   const relative=path.relative(GIT_ROOT,ROOT);
@@ -97,13 +114,46 @@ function assertNoUnexpectedUntracked() {
   if(extras.length)throw new Error('Untracked or ignored files outside dist/bundles must be staged or removed: '+extras.join(', '));
 }
 
+function assertNoNestedGit(dir=ROOT,relative='') {
+  for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
+    if(entry.name.toLowerCase()==='.git') {
+      // Only the selected repository's own metadata is allowed. When --root
+      // selects a vendored subdirectory, a .git entry at that selected root
+      // is nested metadata and must be rejected too.
+      if(relative!==''||!GIT_ROOT||ROOT_PREFIX!=='') {
+        throw new Error('Unexpected nested .git directory or gitfile detected in release content: '+(relative?relative+'/.git':'.git'));
+      }
+    } else if(entry.isDirectory()) {
+      const rel=relative?relative+'/'+entry.name:entry.name;
+      if(rel!=='node_modules'&&!rel.startsWith('node_modules/')) {
+        assertNoNestedGit(path.join(dir,entry.name),rel);
+      }
+    }
+  }
+}
+
 function assertSafePath(rel) {
   if(!rel||rel.includes('\n')||rel.includes('\r')||rel.includes('\\')||rel.startsWith('/')||/^[A-Za-z]:/.test(rel)||rel.split('/').some(p=>p==='..'||p==='.'||p==='')) {
     throw new Error('Unsafe or unsupported repository path: '+JSON.stringify(rel));
   }
-  const absolute=path.resolve(ROOT,...rel.split('/'));
+  const parts=rel.split('/');
+  if(parts.some(part=>part.toLowerCase()==='.git')) {
+    throw new Error('Unexpected .git entry detected in release path: '+rel);
+  }
+  const absolute=path.resolve(ROOT,...parts);
   const relative=path.relative(ROOT,absolute);
   if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('Path escapes checksum root: '+rel);
+  // lstat every parent as well as the leaf. lstat(leaf) follows symlinks in
+  // parent components, so checking only the final file would miss a directory
+  // replaced by a symlink to attacker-controlled content.
+  let parent=ROOT;
+  for(const part of parts.slice(0,-1)) {
+    parent=path.join(parent,part);
+    const parentStat=fs.lstatSync(parent);
+    if(!parentStat.isDirectory()||parentStat.isSymbolicLink()) {
+      throw new Error('Path traverses a non-directory or symbolic-link parent: '+rel);
+    }
+  }
   const stat=fs.lstatSync(absolute);
   if(!stat.isFile()||stat.isSymbolicLink())throw new Error('Only regular files can be checksummed: '+rel);
   return absolute;
@@ -114,7 +164,7 @@ function sha256ForPath(rel) {
   const diskBytes=fs.readFileSync(absolute);
   if(GIT_ROOT&&!FILESYSTEM) {
     const gitPath=ROOT_PREFIX+rel;
-    const r=spawnSync('git',['show','HEAD:'+gitPath],{cwd:GIT_ROOT,encoding:null});
+    const r=gitAt(GIT_ROOT,['show','HEAD:'+gitPath],{encoding:null});
     if(r.error||r.status!==0)throw new Error('Unable to read committed file from HEAD: '+rel);
     const headBytes=r.stdout;
     if(diskBytes.equals(headBytes)) {
@@ -133,8 +183,12 @@ function sha256ForPath(rel) {
 function walkFiles(dir=ROOT,relative='') {
   const out=[];
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
-    // Only exclude repository root .git directory when relative is empty
-    if(entry.isDirectory()&&entry.name==='.git'&&relative==='')continue;
+    if(entry.name.toLowerCase()==='.git') {
+      if(relative===''&&GIT_ROOT&&ROOT_PREFIX==='') {
+        continue;
+      }
+      throw new Error('Unexpected nested .git directory or gitfile detected in release content: '+(relative?relative+'/.git':'.git'));
+    }
     const rel=relative?relative+'/'+entry.name:entry.name;
     if(EXCLUDED.has(rel))continue;
     const full=path.join(dir,entry.name);
@@ -153,24 +207,33 @@ function trackedFiles() {
 
 function createManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
+    assertNoNestedGit();
     assertNoNonDefaultIndexFlags();
-    runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-    runGit(['diff','--cached','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-    assertNoUnexpectedUntracked();
+    // Compare each worktree file directly with its committed HEAD blob in
+    // sha256ForPath(). Do not run "git diff" against the worktree here: Git may
+    // execute repository-configured clean filters while preparing that diff.
+    // The cached diff is index-to-HEAD only and does not read/clean worktree files.
+    runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
   }
   const files=trackedFiles();
   if(!files.length)throw new Error('No tracked files found to checksum.');
   const lines=files.map(rel=>{assertSafePath(rel);return sha256ForPath(rel)+'  '+rel;});
+  // Validate unexpected untracked content after tracked-path checks so a
+  // tracked path replaced by a symlinked parent is reported at that boundary.
+  if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
   fs.writeFileSync(path.join(ROOT,MANIFEST),lines.join('\n')+'\n',{encoding:'utf8'});
   console.log('Created '+MANIFEST+' for '+files.length+' files (excluding '+MANIFEST+' and '+SIGNATURE+').');
 }
 
 function verifyManifest() {
   if(GIT_ROOT&&!FILESYSTEM) {
+    assertNoNestedGit();
     assertNoNonDefaultIndexFlags();
-    runGit(['diff','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-    runGit(['diff','--cached','--quiet','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-    assertNoUnexpectedUntracked();
+    // Compare each worktree file directly with its committed HEAD blob in
+    // sha256ForPath(). Do not run "git diff" against the worktree here: Git may
+    // execute repository-configured clean filters while preparing that diff.
+    // The cached diff is index-to-HEAD only and does not read/clean worktree files.
+    runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
   }
   const manifestPath=path.join(ROOT,MANIFEST);
   if(!fs.existsSync(manifestPath))throw new Error('Missing '+MANIFEST+'.');
@@ -197,6 +260,7 @@ function verifyManifest() {
     const actualDigest=sha256ForPath(rel);
     if(actualDigest!==digest)throw new Error('SHA-256 mismatch: '+rel);
   }
+  if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
   console.log('Verified '+entries.length+' file digests in '+MANIFEST+'.');
 }
 

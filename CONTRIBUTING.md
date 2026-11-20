@@ -22,9 +22,12 @@ Thank you for helping improve the Universal Security Standard. Changes must pres
 
 ## Required local checks
 
-Use Node.js 20 or later. No third-party packages are required.
+Use Node.js 20 or later. Core repository tools require zero external dependencies. Running the automated test suite requires installing the pinned `yaml@2.9.1` test dependency using `npm ci --ignore-scripts`:
 
 ```sh
+# Install test dependency with script execution disabled
+npm ci --ignore-scripts
+
 node tools/build-modules.mjs
 git diff --exit-code -- modules/
 node tools/build-bundles.mjs
@@ -32,6 +35,8 @@ node tools/validate.mjs
 node tools/validate-evidence.mjs --file templates/security-evidence.example.json
 node --test tests/*.test.mjs
 ```
+
+The `--ignore-scripts` flag is mandatory to prevent execution of npm lifecycle hook scripts.
 
 GitHub Actions also runs full-history secret scanning, Semgrep, CodeQL and OSV-Scanner. GitHub Dependency Review is optional until dependency-graph API access is confirmed. Keep third-party actions pinned to full commit SHAs. Review scanner output and false positives; do not suppress findings merely to make CI green.
 

@@ -55,6 +55,9 @@ These examples are illustrative, not automatic mappings. A defect's actual impac
 
 - P0/P1 cannot be accepted, waived, relabelled or silently downgraded. Release remains blocked until remediation and evidence-based verification.
 - P2/P3 risk acceptance must identify the owner, affected assets and scope, rationale, residual risk, verified compensating controls, approval date and expiry date.
+- The assessor and approver must be distinct actors. Record stable issuer-scoped identities in `project.reviewer_identity` and `approved_by_identity` (for example, `github:250312186` or an issuer-scoped OIDC subject). Display names alone are not sufficient to establish independence. The validator compares the declared identities; the consuming organisation must independently authenticate those identity claims.
+- `approved_at` must not be in the future or later than the assessment date. `expires_at` must be later than both the approval date and assessment date.
+- USS v1.0.0-rc.1 defines no numeric maximum for evidence age or P2/P3 acceptance duration. Do not invent one in tooling. A numeric cap requires a separately approved, versioned owner-policy decision. Evidence must still be validly dated, not later than the assessment, and relevant to the control being assessed.
 - Acceptance must be time-bounded and reviewed when the system, threat or mitigation changes.
 - A remediation marked complete is not VERIFIED until a retest or equivalent evidence demonstrates that the original attack path no longer works and no regression was introduced.
 - A report may be structurally valid while the assessment remains NOT_READY. The evidence validator does not replace severity review or human release approval.
@@ -72,7 +75,7 @@ For each finding, retain:
 - CVSS version, score and vector where available.
 - Verified mitigations and residual risk.
 - Remediation owner, due date, retest evidence and final status.
-- For P2/P3 acceptance: approver, rationale, compensating controls and expiry.
+- For P2/P3 acceptance: approver name and stable identity, rationale, compensating controls, approval date and expiry; approver identity must differ from the assessor identity.
 
 ## Primary reference
 

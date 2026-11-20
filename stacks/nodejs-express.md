@@ -55,3 +55,12 @@ This profile is a practical review checklist, not a tested framework preset or a
 ## Verification record required before marking this profile validated
 
 Record the consuming repository and commit, Node.js version, Express version, reverse-proxy configuration, relevant middleware versions, commands and test results, deployment configuration reviewed, known exceptions and reviewer. Until this evidence exists, keep the profile status as NOT VERIFIED.
+
+## Primary references
+
+- [Node.js Security Best Practices](https://nodejs.org/en/learn/getting-started/security-best-practices)
+- [Express Production Best Practices: Security](https://expressjs.com/en/advanced/best-practice-security/)
+- [Express: Behind Proxies](https://expressjs.com/en/guide/behind-proxies.html)
+- [Helmet documentation](https://helmetjs.github.io/)
+
+Check the current supported Node.js release line and Express security advisories at the time of the consuming-application review. These references do not replace version-specific verification.

@@ -8,10 +8,16 @@ const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(ROOT);
 const manifest=JSON.parse(await fs.readFile('manifest.json','utf8'));
 const args=process.argv.slice(2);
-const usage='Usage: node tools/resolve-task.mjs [--task <key>] [--module <Mxx>] [--keywords "domain terms"] [--supplement <id|slug|path>] [--strict]';
+const usage='Usage: node tools/resolve-task.mjs [--task <key>] [--module <Mxx>] [--keywords "domain terms"] [--supplement <id|slug|path>] [--stack <id|slug|path>] [--strict]';
 
 function fail(message){
  console.error(message);
+ process.exit(2);
+}
+
+if(args.length===0){
+ console.error(usage);
+ console.error('Tasks: '+Object.keys(manifest.tasks).join(', '));
  process.exit(2);
 }
 
@@ -24,7 +30,7 @@ if(args.length===1&&args[0]==='--help'){
 
 const options=new Map();
 const booleanFlags=new Set(['--strict']);
-const allowed=new Set(['--task','--module','--keywords','--supplement','--strict']);
+const allowed=new Set(['--task','--module','--keywords','--supplement','--stack','--strict']);
 for(let i=0;i<args.length;i++){
  const flag=args[i];
  if(!allowed.has(flag))fail('Unknown option: '+flag+'\n'+usage);
@@ -44,16 +50,17 @@ const task=options.get('--task')??null;
 const moduleId=options.get('--module')??null;
 const keywords=options.get('--keywords')??null;
 const supplementArg=options.get('--supplement')??null;
+const stackArg=options.get('--stack')??null;
 
-if(moduleId&&(task||keywords||supplementArg))fail('--module cannot be combined with --task, --keywords, or --supplement.');
+if(moduleId&&(task||keywords||supplementArg||stackArg))fail('--module cannot be combined with --task, --keywords, --supplement, or --stack.');
 
-if(!task&&!moduleId&&!keywords&&!supplementArg){
+if(!task&&!moduleId&&!keywords&&!supplementArg&&!stackArg){
  if(isStrict){
   fail('Strict mode: no task, module, keywords, or supplement selector provided.\n'+usage);
  }
- console.log(usage);
- console.log('Tasks: '+Object.keys(manifest.tasks).join(', '));
- process.exit(args.length?2:0);
+ console.error(usage);
+ console.error('Tasks: '+Object.keys(manifest.tasks).join(', '));
+ process.exit(2);
 }
 
 const supplements=manifest.supplements||[];
@@ -78,8 +85,43 @@ function assertSupplementExists(s){
  }
 }
 
+const stacks=manifest.stacks||[];
+const stacksById=new Map(stacks.map(s=>[s.id.toLowerCase(),s]));
+const stacksBySlug=new Map(stacks.map(s=>[s.slug.toLowerCase(),s]));
+const stacksByPath=new Map(stacks.map(s=>[s.path.toLowerCase(),s]));
+const stacksByFilename=new Map(stacks.map(s=>[path.basename(s.path).toLowerCase(),s]));
+
+function findStack(q){
+ const norm=q.toLowerCase().trim();
+ return stacksById.get(norm)
+  ||stacksBySlug.get(norm)
+  ||stacksByPath.get(norm)
+  ||stacksByFilename.get(norm)
+  ||stacks.find(s=>s.name.toLowerCase()===norm||(s.triggers&&s.triggers.includes(norm)))
+  ||null;
+}
+
+function assertStackExists(s){
+ const absPath=path.resolve(ROOT,s.path);
+ if(!fsSync.existsSync(absPath)){
+  fail('Referenced stack profile file does not exist on disk: '+s.path);
+ }
+}
+
 const seeds=[];
 const selectedSupplements=new Map();
+const selectedStacks=new Map();
+
+if(stackArg){
+ const queries=stackArg.split(',').map(s=>s.trim()).filter(Boolean);
+ for(const q of queries){
+  const s=findStack(q);
+  if(!s)fail('Unknown stack profile: '+q+'\nAvailable: '+stacks.map(x=>x.id).join(', '));
+  assertStackExists(s);
+  selectedStacks.set(s.id,s);
+  if(s.related_modules)seeds.push(...s.related_modules);
+ }
+}
 
 if(task){
  if(!Object.hasOwn(manifest.tasks,task)||!Array.isArray(manifest.tasks[task])){
@@ -147,11 +189,22 @@ if(keywords){
   }
  }
 
- const allMatchedTriggers=new Set([...matchedModuleTriggers,...matchedSupplementTriggers]);
+ const matchedStackTriggers=new Set();
+ for(const s of stacks){
+  for(const trigger of (s.triggers||[])){
+   if(candidates.has(norm(trigger))){
+    matchedStackTriggers.add(norm(trigger));
+    assertStackExists(s);
+    selectedStacks.set(s.id,s);
+   }
+  }
+ }
+
+ const allMatchedTriggers=new Set([...matchedModuleTriggers,...matchedSupplementTriggers,...matchedStackTriggers]);
  const matchedParts=new Set([...allMatchedTriggers].flatMap(trigger=>trigger.split('-')));
  const unmatched=words.filter(word=>!matchedParts.has(norm(word))&&!allMatchedTriggers.has(norm(word)));
 
- if(!keywordModuleIds.length&&!keywordSupplementIds.length&&!task&&!supplementArg){
+ if(!keywordModuleIds.length&&!keywordSupplementIds.length&&!selectedStacks.size&&!task&&!supplementArg&&!stackArg){
   fail('No trigger match. Choose a task key from: '+Object.keys(manifest.tasks).join(', '));
  }
 
@@ -159,12 +212,12 @@ if(keywords){
   if(unmatched.length){
    fail('Strict mode: unmatched keywords: '+unmatched.join(', '));
   }
-  if(!keywordModuleIds.length&&!keywordSupplementIds.length){
+  if(!keywordModuleIds.length&&!keywordSupplementIds.length&&!selectedStacks.size){
    fail('Strict mode: no keywords matched any trigger.');
   }
  } else {
   if(unmatched.length)console.error('WARNING: keywords not matched to any trigger: '+unmatched.join(', ')+'. Review these terms and widen routing manually if they describe another security boundary.');
-  if(!keywordModuleIds.length&&!keywordSupplementIds.length&&task)console.error('WARNING: no keyword trigger matched; only the selected task modules will be loaded.');
+  if(!keywordModuleIds.length&&!keywordSupplementIds.length&&!selectedStacks.size&&task)console.error('WARNING: no keyword trigger matched; only the selected task modules will be loaded.');
  }
 
  seeds.push(...keywordModuleIds);
@@ -184,7 +237,7 @@ function visit(id,trail=[]){
 }
 for(const id of new Set(seeds))visit(id);
 
-const selector=task?'task '+task:moduleId?'module '+moduleId:supplementArg?'supplement '+supplementArg:'keyword search';
+const selector=task?'task '+task:moduleId?'module '+moduleId:supplementArg?'supplement '+supplementArg:stackArg?'stack '+stackArg:'keyword search';
 console.log('USS '+manifest.version+' | '+selector+(keywords?' + keywords':'')+' | modules '+out.map(m=>m.id).join(', '));
 if(keywordModuleIds.length)console.log('Keyword modules: '+keywordModuleIds.join(', '));
 const callerRelativePath=p=>path.relative(CALLER_CWD,path.resolve(ROOT,p)).split(path.sep).join('/')||'.';
@@ -195,5 +248,13 @@ if(outSupplements.length){
  console.log('Supplements: '+outSupplements.map(s=>s.id).join(', '));
  for(const s of outSupplements){
   console.log(s.id+' '+callerRelativePath(s.path)+' | '+s.title);
+ }
+}
+
+const outStacks=[...selectedStacks.values()];
+if(outStacks.length){
+ console.log('Stack profiles: '+outStacks.map(s=>s.id).join(', '));
+ for(const s of outStacks){
+  console.log(s.id+' '+callerRelativePath(s.path)+' | '+s.name+' ('+(s.status||'REFERENCE_ONLY')+')');
  }
 }
