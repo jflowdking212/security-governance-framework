@@ -178,7 +178,7 @@ function walkFiles(dir=ROOT,relative='') {
         if(FILESYSTEM)throw new Error('Root .git metadata is not allowed in filesystem mode: .git');
         continue;
       }
-      throw new Error('Unexpected nested .git entry detected in release content: '+(relative?relative+'/.git':'.git'));
+      throw new Error('Unexpected nested .git directory or gitfile detected in release content: '+(relative?relative+'/.git':'.git'));
     }
     const rel=relative?relative+'/'+entry.name:entry.name;
     if(EXCLUDED.has(rel))continue;
