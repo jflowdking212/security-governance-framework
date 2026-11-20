@@ -34,6 +34,7 @@ function stableIdentityKey(value){
  const provider=identity.slice(0,separator);
  const subject=identity.slice(separator+1);
  if(!/^[a-z][a-z0-9+.-]*$/i.test(provider)||!subject.trim())return null;
+ if(provider.toLowerCase()==='github'&&!/^\d+$/.test(subject))return null;
  // Provider names are case-insensitive; the issuer-scoped subject is preserved exactly.
  return provider.toLowerCase()+':'+subject;
 }
@@ -46,6 +47,12 @@ const EVIDENCE_RESULTS=[...SUCCESS_RESULTS,...FAILURE_RESULTS];
 function isPlaceholderReference(value){
  if(!nonEmpty(value))return true;
  const norm=value.trim().toLowerCase().replace(/\s+/g,' ');
+ if(norm.startsWith('https://')){
+  try{
+   const host=new URL(norm).hostname;
+   if(host==='localhost'||host==='example.com'||host.endsWith('.example.com')||host==='example.org'||host.endsWith('.example.org')||host==='example.net'||host.endsWith('.example.net')||host.endsWith('.invalid')||host.endsWith('.test'))return true;
+  }catch{return true;}
+ }
  return ['n/a','n / a','na','none','unknown','tbd','todo','pending','x','.','see above','http://','https://','-','--','null','undefined','?'].includes(norm)||/^-+$/.test(norm);
 }
 
