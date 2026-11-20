@@ -56,7 +56,7 @@ Every engineering agent (Gemini, Claude, ChatGPT, or future automated contributo
 ---
 
 
-## 4. Read-only audit and commit provenance boundaries
+## 2A. Read-only audit and commit provenance boundaries
 
 - The independent auditor's default assignment is read-only. Claude must inspect, reproduce, test in isolated scratch copies, and report findings without modifying the audited branch, unless the owner explicitly changes the assignment.
 - The implementation rule "Implement, do not merely report" applies only to an agent that has been explicitly assigned and authorised to implement. It does not override a read-only audit assignment.
