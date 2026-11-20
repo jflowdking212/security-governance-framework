@@ -28,7 +28,7 @@ function markAllPass(report){
  report.project.repository='acme/example-app';
  report.project.commit='a'.repeat(40);
  report.project.reviewer='Independent Reviewer';
- report.project.reviewer_identity='github:reviewer-1';
+ report.project.reviewer_identity='github:123456';
 }
 
 test('control catalog maps every module to one stable family ID',()=>{
@@ -102,7 +102,7 @@ test('P2/P3 risk acceptance can be recorded with owner, rationale and expiry',()
   report.controls[0].status='FAIL';
   report.controls[0].evidence=[];
   report.controls[0].finding_ids=['F-003'];
-  report.findings=[{id:'F-003',severity:'P2',status:'ACCEPTED',title:'Documented medium-severity residual risk',severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',control_ids:[report.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'Compensating control is in place; remediation is scheduled.',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
+  report.findings=[{id:'F-003',severity:'P2',status:'ACCEPTED',title:'Documented medium-severity residual risk',severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',control_ids:[report.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:789012',rationale:'Compensating control is in place; remediation is scheduled.',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
  });
  try{
   const result=run(fixture.file,['--release','--expected-commit','a'.repeat(40)]);
@@ -184,10 +184,10 @@ test('a finding references only controls that are in scope, and finding IDs must
  expectInvalid(r=>{r.controls[0].status='FAIL';r.controls[0].finding_ids=['F-MISSING'];},/missing finding/);
 });
 test('P0 and P1 can never be risk-accepted, whatever the dates',()=>{
- for(const severity of ['P0','P1'])expectInvalid(r=>{r.findings=[{id:'F-015',severity,status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2099-01-01T00:00:00Z'}}];},/cannot be risk-accepted/);
+ for(const severity of ['P0','P1'])expectInvalid(r=>{r.findings=[{id:'F-015',severity,status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:789012',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2099-01-01T00:00:00Z'}}];},/cannot be risk-accepted/);
 });
 test('P2/P3 acceptance must be time-bounded and cannot be expired in a release assessment',()=>{
- const acceptance=(approved,expires)=>({approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'r',approved_at:approved,expires_at:expires});
+ const acceptance=(approved,expires)=>({approved_by:'Owner',approved_by_identity:'github:789012',rationale:'r',approved_at:approved,expires_at:expires});
  expectInvalid(r=>{r.findings=[{id:'F-016',severity:'P3',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:acceptance('2026-11-18T00:00:00Z','2026-11-01T00:00:00Z')}];},/must expire after/);
  expectInvalid(r=>{r.project.assessed_at='2020-02-01T00:00:00Z';r.findings=[{id:'F-017',severity:'P3',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:acceptance('2020-01-01T00:00:00Z','2020-06-01T00:00:00Z')}];},/has expired/,['--release']);
 });
@@ -210,7 +210,7 @@ test('evidence results must belong to the closed allowlist and match control sta
  expectInvalid(r=>{r.controls[0].evidence[0].result='non-compliant';},/marked PASS cannot be supported by non-passing or failed evidence result/);
 });
 test('evidence references cannot be placeholders',()=>{
- for(const ph of ['n/a','n / a','na','none','unknown','tbd','todo','pending','x','.','see above','http://','https://','-','--','null','undefined','?']) {
+ for(const ph of ['n/a','n / a','na','none','unknown','tbd','todo','pending','x','.','see above','http://','https://','https://example.com','https://example.org/audit/evidence/123','-','--','null','undefined','?']) {
   expectInvalid(r=>{r.controls[0].evidence[0].reference=ph;},/cannot be a placeholder/);
  }
 });
@@ -277,7 +277,7 @@ test('evidence validator rejects malformed top-level input safely',()=>{
 
 test('evidence references accept only immutable URL, path-anchor or run-ID forms',()=>{
  const valid=[
-  'https://example.org/audit/evidence/123',
+  'https://github.com/jflowdking212/security-governance-framework/actions/runs/44735907958',
   'tests/evidence.test.mjs#fixture',
   'run:44716588316'
  ];
@@ -285,7 +285,7 @@ test('evidence references accept only immutable URL, path-anchor or run-ID forms
   const fixture=withReport(r=>{markAllPass(r);r.controls[0].evidence[0].reference=reference;});
   try{const result=run(fixture.file);assert.equal(result.status,0,result.stderr);}finally{fixture.cleanup();}
  }
- for(const reference of ['http://example.org/evidence','https://','tests/evidence.test.mjs','../secret.txt#L1','/etc/passwd#L1','file:///tmp/evidence#L1']){
+ for(const reference of ['http://example.org/evidence','https://','tests/evidence.test.mjs','../secret.txt#L1','/etc/passwd#L1','file:///tmp/evidence#L1','https://example.org/audit/evidence/123']){
   expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
  }
 });
@@ -307,10 +307,10 @@ test('evidence commit must be a full 40-character SHA and release evidence must 
 
 test('approval identities must be stable, independent and dated no later than the assessment',()=>{
  expectInvalid(r=>{
-  r.findings=[{id:'F-030',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Reviewer',approved_by_identity:'github:reviewer-1',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
+  r.findings=[{id:'F-030',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Reviewer',approved_by_identity:'github:123456',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
  },/self-approval/);
  expectInvalid(r=>{
-  r.findings=[{id:'F-031',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'r',approved_at:'2099-01-01T00:00:00Z',expires_at:'2100-01-01T00:00:00Z'}}];
+  r.findings=[{id:'F-031',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:789012',rationale:'r',approved_at:'2099-01-01T00:00:00Z',expires_at:'2100-01-01T00:00:00Z'}}];
  },/approved_at cannot be in the future/);
  expectInvalid(r=>{
   r.project.reviewer_identity='UNASSIGNED';
@@ -318,7 +318,7 @@ test('approval identities must be stable, independent and dated no later than th
   r.controls[0].evidence=[];
   r.controls[0].rationale='Not applicable to this service.';
   r.controls[0].approved_by='Owner';
-  r.controls[0].approved_by_identity='github:owner-1';
+  r.controls[0].approved_by_identity='github:789012';
   r.controls[0].approved_at='2026-11-18T00:00:00Z';
  },/stable issuer-scoped identity/);
 });
@@ -330,7 +330,7 @@ test('validator does not invent a maximum evidence age or risk-acceptance durati
   r.controls[0].status='FAIL';
   r.controls[0].evidence[0].result='failed';
   r.controls[0].finding_ids=['F-032'];
-  r.findings=[{id:'F-032',severity:'P2',status:'ACCEPTED',title:'Long-lived but explicitly time-bounded acceptance',severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'Owner-approved time-bounded acceptance for testing policy semantics.',approved_at:'2026-11-18T00:00:00Z',expires_at:'2046-11-18T00:00:00Z'}}];
+  r.findings=[{id:'F-032',severity:'P2',status:'ACCEPTED',title:'Long-lived but explicitly time-bounded acceptance',severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:789012',rationale:'Owner-approved time-bounded acceptance for testing policy semantics.',approved_at:'2026-11-18T00:00:00Z',expires_at:'2046-11-18T00:00:00Z'}}];
  });
  try{const result=run(fixture.file);assert.equal(result.status,0,result.stderr);}finally{fixture.cleanup();}
 });
