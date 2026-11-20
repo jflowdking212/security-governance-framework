@@ -39,6 +39,17 @@ This log tracks the findings as summarised during the Claude review discussion, 
 | **U-09** | Version alignment across codebase | Set candidate version to `1.0.0-rc.1` across `VERSION`, `package.json`, `manifest.json`, `templates/security-evidence.example.json`, `KERNEL.md`, `README.md`, `RELEASE-CHECKLIST.md`, and `CHANGELOG.md`. Explained that final `v1.0.0` will be created only during owner signing ceremony. | REMEDIATED AND VERIFIED. |
 | **U-10** | Resolver CLI failure mode, stack profiles and licensing | Updated `tools/resolve-task.mjs` to exit with status code 2 when invoked without arguments. Added stack profile routing (`--stack <name>`). Created reference profiles for Go (`stacks/go.md`), Rust (`stacks/rust.md`), and Java/Spring Boot (`stacks/java-spring.md`), marked REFERENCE ONLY. Added `"stacks"` to `manifest.json`. Added license and author fields to `package.json`. Created `THIRD-PARTY-NOTICES.md` documenting `yaml@2.9.1`. Added `namespaces="git,USS-SHA256SUMS"` to `.security/allowed_signers` and expanded `.github/CODEOWNERS` for complete repository coverage. | REMEDIATED AND VERIFIED. |
 
+## Supervisory Review Remediation (SUP-01 through SUP-06)
+
+| Finding ID | Supervisory Finding | Correction and Evidence | Status |
+|---|---|---|---|
+| **SUP-01 / U-01** | Release signing blocker identity | Preserved original U-01 identity in PR description and documentation. Release manifest and tag signing remains exclusively the owner's responsibility on his personal workstation. | PRESERVED FOR OWNER. |
+| **SUP-02 / U-08** | Main ruleset required status checks and ID | Corrected ruleset ID (`27612394`) and parameters. Preserved single-owner non-blocking model; documented option of requiring `USS validation` as a status check for owner decision. | DOCUMENTED FOR OWNER DECISION. |
+| **SUP-03 / U-05** | Semgrep scan coverage & skipped files | Investigated the 9 skipped files: identified that Semgrep's default built-in ignore patterns automatically skipped all 9 files in `tests/`. Created repository-root `.semgrepignore` (`node_modules/`, `.git/`) and added `--verbose` to CI workflow. Verified Semgrep scans all 18 files (9 tools, 9 tests) with 0 skipped and 0 findings. | REMEDIATED AND VERIFIED. |
+| **SUP-04 / U-06/U-09** | Test-only dependency classification and lockfile version sync | Moved `yaml@2.9.1` from `dependencies` to `devDependencies` in `package.json`. Regenerated `package-lock.json`, aligning root package version to `1.0.0-rc.1`. Verified `npm ci --ignore-scripts` and full test suite (136/136 tests pass). | REMEDIATED AND VERIFIED. |
+| **SUP-05** | Stale coordination ledger timestamp and actions | Updated `coordination/agent-handoff.md` timestamp, verified branch head, and recorded engineering responses to supervisory review. | REMEDIATED AND VERIFIED. |
+| **SUP-06** | Overstated active ruleset in OWNER-ACTIONS.md | Corrected `OWNER-ACTIONS.md` Section 1 and Section 7. Removed inaccurate claims regarding linear history and CODEOWNERS enforcement; accurately described active ruleset `Protect Main` (ID `27612394`). | REMEDIATED AND VERIFIED. |
+
 ## Verification summary
 
 All 15 initial findings and all confirmed independent audit findings (U-02, U-03, U-04, U-05, U-06, U-07, U-09, U-10) are remediated and locally verified with passing automated test suites, 0 compiler errors, and 0 drift between build tools and generated files. Owner-dependent items U-01 (release signing) and U-08 (main ruleset required status checks) are clearly segregated and documented in OWNER-ACTIONS.md.

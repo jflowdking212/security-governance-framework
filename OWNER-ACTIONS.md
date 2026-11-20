@@ -8,11 +8,14 @@ These items track repository-owner and rights-holder governance decisions.
 **Observed state:** GitHub ruleset `Protect Main` (ruleset ID `27612394`) is active on `~DEFAULT_BRANCH` (`main`).
 Enforced rules:
 - Requires pull requests for changes to `main`.
-- Requires conversation resolution before merge.
-- Requires linear history.
+- Requires review thread resolution before merge (`required_review_thread_resolution: true`).
 - Blocks force pushes (`non_fast_forward`).
 - Blocks branch deletion (`deletion`).
-- Enforces CODEOWNERS review for canonical directives, generated modules, resolver/validator tools, workflows, supplements, and stack profiles.
+
+Rules not configured in the active ruleset:
+- Linear history is not required (`allowed_merge_methods` permits `merge`, `squash`, and `rebase`).
+- CODEOWNERS approval is not enforced (`require_code_owner_review: false`, `required_approving_review_count: 0`), preserving single-owner operations without self-blocking.
+- Required status checks are not currently configured (see Section 7 for owner option).
 
 ## 2. Enable dependency graph access and scanner execution
 
