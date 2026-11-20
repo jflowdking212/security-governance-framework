@@ -402,3 +402,92 @@ The authenticated repository check found that the owner account has write permis
 ### 8.6 Expected outcome
 
 A new, independently verifiable remediation head with A2-02 and A2-03 closed by reproduced regression tests, P2 documentation claims corrected, P3 limitations either fixed or explicitly dispositioned, accurate scanner evidence, and no release/merge action. The candidate remains NOT APPROVED FOR RELEASE until Claude's next independent audit and the owner's later signing ceremony.
+
+
+---
+
+## 9. Owner-Directed Parallel Remediation Allocation
+
+**Allocation date:** 2026-11-20  
+**Allocation basis:** Project owner directed that remediation be split across ChatGPT, Gemini and Claude. No single agent is to be trusted as the sole implementer or reviewer.  
+**Authoritative starting HEAD:** `8e242ef352615ac719e86208ddb97a7c9a71ef4d`  
+**PR:** #9, target `integration/uss-pr3-pr8-hardening`  
+**Release posture:** NOT APPROVED FOR RELEASE.
+
+### 9.1 ChatGPT workstream — checksum integrity, release semantics and cross-review
+
+**Assigned findings:** A2-03, A2-09, A2-04, A2-10.  
+**Role:** Direct repository implementation through the authenticated owner connection, clearly recorded as owner-issued supervisory changes; independent review of Gemini and Claude deliverables.
+
+Completed owner-issued changes on the remediation branch:
+- `tools/checksums.mjs`: filesystem mode rejects root `.git` metadata whether a directory or gitfile; filesystem mode does not invoke Git; nested `.git` diagnostics cover directories and gitfiles.
+- `tests/checksums.test.mjs`: added adversarial root `.git` directory/config and gitfile tests for both manifest creation and verification.
+- `SECURITY-ROOT.md` and `CONSUMING.md`: documented Git-mode file coverage, tolerated untracked/ignored build/dependency paths, filesystem-mode rejection rules, and metadata not represented by the manifest.
+- Earlier owner-issued documentation updates corrected release status, the stale badge and the eight-stack listing in `README.md`, and clarified read-only audit and commit-provenance rules in `automation.md`.
+
+Relevant owner-issued commit sequence:
+- `781be69279ddfc1435bfa98e8f130a6615ab7aaa` — root Git metadata rejection.
+- `8fd8ca12c33962ceb1ff46754887eadb810b33f4` — adversarial regression tests.
+- `6f8ef6a3d794fc5bcc4d94390dc4008bb0fffa47` — nested Git diagnostic compatibility correction.
+- `cc3194c075c35a08e32a6c5652e7d8635a8dfba1` — checksum threat-model documentation.
+- `8e242ef352615ac719e86208ddb97a7c9a71ef4d` — consuming guidance.
+
+**Verification caveat:** The hosted validation run at `8fd8ca12c33962ceb1ff46754887eadb810b33f4` reported 136 passing and 1 failing test. The sole failure was an existing assertion expecting the phrase `Unexpected nested .git directory`; the code's more general directory/gitfile wording broke that assertion. The wording was corrected in `6f8ef6a`. The full suite must be rerun on the latest head before A2-03 can be marked verified. Do not describe A2-03 as closed until that run passes and the exploit regression is reviewed.
+
+### 9.2 Gemini workstream — workflow guard and scanner engineering
+
+**Assigned findings:** A2-02 and A2-07.  
+**Exclusive implementation scope:**
+- `.github/workflows/uss-validation.yml`
+- `.github/workflows/security-scans.yml`
+- `templates/ci/consumer-security-scans.yml`
+- `tests/workflow-security.test.mjs`
+- Any narrowly required workflow-security validator helper, with no changes to checksum or evidence-validator files.
+
+**Required work:**
+1. Implement A2-02's workflow AST/schema validation and one or more negative regression tests for every mutation in Section 8.3.
+2. Preserve and validate legitimate least-privilege exceptions, including CodeQL's narrowly scoped `security-events: write` permission only where required.
+3. Implement A2-07 scanner scope, CodeQL Actions coverage determination, OSV pin provenance evidence and actual scan reporting.
+4. Run targeted tests, all workflow-security tests, full validation, and hosted CI. Record exact counts, run IDs, skipped-file counts and scan coverage.
+5. Do not edit `tools/checksums.mjs`, `tests/checksums.test.mjs`, `tools/validate-evidence.mjs`, `tests/evidence.test.mjs`, or the stack profiles. Report any dependency on those areas to ChatGPT instead of editing them.
+
+**Access constraint:** The connected `jayblisstech-bot` account currently has pull-only access to this repository. Gemini must prepare and test its changes locally or in an authorised workspace, but must not push as the owner or spoof author metadata. A separate authenticated write-enabled agent identity must be provisioned before Gemini pushes commits. ChatGPT will integrate or review the returned patch under clearly identified owner-issued commits if necessary.
+
+### 9.3 Claude workstream — evidence assurance, stack profiles and standards accuracy
+
+**Assigned findings:** A2-06, A2-11 and A2-12. Claude is explicitly authorised to implement these bounded corrections; it is not acting as the independent approver of its own changes.
+
+**Exclusive implementation scope:**
+- A2-06: `tools/validate-evidence.mjs`, `tests/evidence.test.mjs`, `modules/m17-severity-release-gates.md`, `assurance/severity-and-release-gates.md`, and directly related evidence documentation.
+- A2-11: all eight files under `stacks/` and `stacks/README.md`, plus only the directly necessary stack index/manifest entries.
+- A2-12: `modules/m21-cors-browser-boundary.md`, relevant standards references and generated outputs only when the established build process requires regeneration.
+
+**Required work:**
+1. For A2-06, inspect M17 and the current owner policy before changing risk-acceptance semantics. Require strict evidence-reference validation and full 40-character commit SHAs where commit references are required. Add adversarial tests for malformed references, self-approval where prohibited, future approval times and expiry handling. Do not invent a maximum acceptance duration: if policy does not specify one, propose options and leave the implementation unchanged pending supervisory/owner decision.
+2. For A2-11, compare each of the eight stack profiles with the original Claude findings and the universal modules/supplements. Correct concrete omissions or contradictions, preserve source traceability, and keep each unverified profile explicitly marked `REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION`.
+3. For A2-12, verify current PNA / Local Network Access terminology from primary standards/browser sources. State the source and date in the report. Change policy wording only where supported by current authoritative evidence.
+4. Add targeted adversarial tests where code changes are made. Run the relevant tests and full validation if the environment allows. Provide exact commands, outputs, changed-file list and patch/commit SHA.
+5. Do not edit workflow files, checksum tooling/tests or the shared handoff ledger. Submit a separate report/patch for supervisory integration.
+
+**Independence rule:** ChatGPT will review Claude's code changes, tests, policy compatibility and evidence. Claude must not label its own A2-06/A2-11/A2-12 changes independently verified or use those same changes as proof of a clean third-party audit.
+
+**Access constraint:** Until Claude has a distinct authenticated write-enabled repository identity, it must not push using the owner's identity. Prepare a patch or local commit under Claude's own identity and provide it for owner-authorised integration.
+
+### 9.4 Owner-controlled items and no-overlap rules
+
+- **A2-05:** ChatGPT independently verified live ruleset ID `27612394`; no settings changes are authorised.
+- **A2-08:** Owner decision required for a distinct write-enabled implementation identity. The existing bot connection is read-only. Do not impersonate the owner.
+- **U-01:** Final release signing and signed tag remain exclusively owner-controlled.
+- **A2-04 / A2-10:** Documentation corrections are committed by the owner but remain subject to CI and supervisory verification.
+- Each agent must stay within its assigned file scope. If a fix crosses workstream boundaries, stop and request coordination rather than editing another agent's files.
+- Only ChatGPT updates this shared handoff ledger during the parallel work period, to prevent concurrent overwrite conflicts.
+- No agent may merge PR #9, merge into `main`, change repository settings, publish a release, create `SHA256SUMS.sig` for the final release, or create the `v1.0.0` tag.
+
+### 9.5 Acceptance and review sequence
+
+1. Gemini and Claude return separate implementation reports and patches with exact source SHAs and test evidence.
+2. ChatGPT independently inspects each diff against the live GitHub branch and checks for cross-workstream regressions.
+3. ChatGPT integrates authorised changes without rewriting agent provenance claims; any owner-issued integration commit must be labelled as such.
+4. Hosted CI runs against the combined candidate.
+5. Claude performs an independent audit of A2-02 and A2-03, which Claude did not implement. A different independent reviewer must assess Claude-authored A2-06/A2-11/A2-12 changes; ChatGPT's cross-review is required but does not become a claim that Claude independently audited its own fixes.
+6. Only after all P2 findings are independently closed may the owner consider the final signing ceremony. P3 items must be fixed or formally dispositioned under M17.
