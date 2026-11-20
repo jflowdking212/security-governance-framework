@@ -34,3 +34,6 @@ This template is a starting point, not a complete security programme. Scanner su
 - Keep `.semgrepignore` limited to generated/dependency metadata such as `.git/` and `node_modules/`. Never exclude source, tests, workflows, templates, or security-sensitive configuration. Do not add `SEMGREP_RULES`, alternate `--config`, `--exclude`, or rule-exclusion arguments to the scanner job.
 - Do not add CodeQL `paths-ignore`, custom query filters, or configuration that silently removes source coverage. If a repository needs a reviewed exclusion, document its path, rationale, owner and compensating scan.
 - Keep the OSV reusable workflow inputs limited to the approved failure and SARIF settings. Do not override `scan-args`, `runs-on`, `ref`, or other upstream inputs.
+
+
+The first-party and consumer workflows run a fail-closed configuration guard before Gitleaks and Semgrep. It rejects unreviewed Gitleaks, Semgrep and CodeQL config/ignore files, and permits `.semgrepignore` only when it contains the two harmless metadata/dependency exclusions `.git/` and `node_modules/`. If an application needs an additional exclusion, obtain an explicit owner-approved exception and update the security tests before changing the guard.
