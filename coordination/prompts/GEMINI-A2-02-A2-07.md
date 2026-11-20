@@ -165,3 +165,49 @@ Return:
 Do not mark findings independently verified or closed. Your task is implementation. ChatGPT will independently inspect your actual diff and evidence. PR #9 must remain open and unmerged. Do not change repository settings, publish a release, sign a release, or create the v1.0.0 tag.
 
 Start now by syncing the branch and inspecting the current live files. Do not stop after analysis: implement the fixes you can safely complete, test them, and return the patch plus evidence.
+
+
+---
+
+## Supervisory follow-up addendum — required before A2-02/A2-07 can be marked implemented
+
+**Issued by:** ChatGPT supervisory review  
+**Live review baseline:** PR #9 head `4fff3c7e87fc52350392bc9e4eec4d82cba8280e`  
+**Implementation owner:** Gemini  
+**Scope remains limited to A2-02/A2-07 files listed above.**
+
+The first implementation is present, but direct inspection of the live files shows that the validator still does not enforce several controls already required by this prompt. Do not report A2-02/A2-07 complete until each item below has a dedicated negative mutation test that fails against the vulnerable mutation and passes against the legitimate baseline.
+
+### Confirmed gaps from live-source inspection
+
+1. `validateWorkflowSecurity()` scans untrusted expressions in `step.run` only. It does not inspect workflow-level, job-level or step-level `env` values. An attacker can move an unsafe expression out of `run:` and into an environment variable consumed by a shell command.
+2. Runner validation accepts arrays containing `ubuntu-latest` plus arbitrary extra labels, and does not reject object-form or expression-based selectors. Require the exact approved runner representation for these workflows. Reject arrays, objects, expressions, dynamic selectors and all self-hosted combinations unless an explicitly approved exact form is documented.
+3. The OSV check validates `uses` prefix and `fail-on-vuln: true`, but does not reject unsafe reusable-workflow input overrides such as `scan-args`, `runs-on`, `ref`, or other unapproved inputs. Enforce an explicit input allowlist for the pinned upstream workflow and test every prohibited override.
+4. The Semgrep check does not enforce the exact approved rule configuration. It checks for `--error` and target paths, but a different or additional `--config` can be substituted. Enforce the approved config, required arguments and scope, rejecting duplicate/config-file overrides, excludes, rule exclusions and environment-based weakening.
+5. Gitleaks checks the action and comments setting, but do not protect configuration/ignore/allowlist overrides or all artifact-output settings. Add an explicit safe environment/configuration allowlist and mutation tests.
+6. The consumer template receives only generic workflow validation plus a weak Semgrep substring check. It does not receive the same scanner-specific Gitleaks, Semgrep, CodeQL and OSV invariants as the repository workflow. Add template-specific scanner validation and negative mutations for each scanner.
+7. Trigger validation checks only trigger names. It does not validate branch/event filters. The current security workflow restricts `pull_request` to `main`, while PR #9 targets `integration/uss-pr3-pr8-hardening`. Confirm and enforce the intended PR coverage for both the active integration target and main. Reject narrowing push scans to main-only or otherwise silently skipping required branch/event coverage.
+8. Add adversarial mutations for error masking beyond the existing patterns, including shell no-op fallbacks and alternative errexit disabling where applicable. Keep tests tied to parsed YAML fields, not only regexes over a single command string.
+
+### Required acceptance tests
+
+- Inject `github.event`, `github.actor`, `github.head_ref`, `github.ref_name`, `github.base_ref` and `inputs.*` into workflow/job/step `env`; each unsafe case must be rejected.
+- Replace `runs-on` with an array containing `ubuntu-latest` plus another label, an object mapping, and an expression/dynamic value; each must be rejected.
+- Add OSV `scan-args`, `runs-on`, `ref` and unknown `with` keys; each must be rejected.
+- Replace or supplement Semgrep `p/default` with a custom config, add duplicate `--config`, `--exclude`, `--exclude-rule`, or weakening environment values; each must be rejected.
+- Add Gitleaks config/ignore/allowlist overrides and re-enable artifact upload or comments; each must be rejected.
+- Delete each required scanner from the consumer template, weaken each scanner's required configuration, and inject prohibited inputs; each mutation must be rejected.
+- Narrow push branches to `main` only and remove the active integration PR target from the PR filter; each must be rejected.
+- Prove the untouched repository workflows and consumer template still pass.
+
+### Delivery requirements
+
+1. Fetch the current live branch head before editing. The baseline above may have advanced; use the latest SHA and state it in the handback.
+2. Reproduce each gap first, then implement the validator and tests.
+3. Keep edits strictly within A2-02/A2-07 ownership. Do not edit checksum, evidence, stack-profile or shared handoff files.
+4. Run targeted workflow tests, the complete test suite, repository validation, and scanner coverage checks.
+5. Return exact changed paths, base/final SHA or patch hash, all mutation test names/results, exact commands/exit codes, test totals, scanner counts and hosted CI run/job IDs.
+6. Do not claim independent closure. ChatGPT will inspect the actual diff and reproduce the attacks; Claude will independently audit the exact integrated SHA.
+7. Keep PR #9 open and unmerged. No release, tag, signing ceremony or ruleset changes.
+
+**Priority:** Complete this follow-up before spending time on cosmetic refactoring. The required result is a fail-closed workflow-security guard that detects configuration bypasses in both first-party workflows and the consumer template.
