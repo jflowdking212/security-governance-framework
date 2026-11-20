@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
@@ -950,4 +952,46 @@ test('negative: consumer template cannot omit or weaken the runtime scanner conf
   const weakened = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
   weakened.jobs.semgrep.steps[1].run = 'echo scanner config check skipped';
   assert.throws(() => validateSecurityScansWorkflow(weakened, 'consumer-security-scans.yml', true), /must execute the exact fail-closed scanner configuration guard/);
+});
+
+
+test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-suppressed tracked scan targets', t => {
+  if (process.platform === 'win32') {
+    t.skip('Runtime guard integration test requires bash, available in hosted Linux CI');
+    return;
+  }
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-scanner-guard-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const run = (command, args) => {
+    const result = spawnSync(command, args, { cwd, encoding: 'utf8' });
+    assert.equal(result.status, 0, command + ' ' + args.join(' ') + ' failed: ' + result.stderr);
+    return result;
+  };
+  run('git', ['init', '-q']);
+  run('git', ['config', 'user.name', 'USS Scanner Guard Test']);
+  run('git', ['config', 'user.email', 'uss-scanner-guard@example.invalid']);
+  run('git', ['config', 'commit.gpgsign', 'false']);
+  for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+    fs.mkdirSync(path.join(cwd, dir), { recursive: true });
+  }
+  fs.writeFileSync(path.join(cwd, '.gitignore'), 'tools/guard.js\n');
+  fs.writeFileSync(path.join(cwd, 'tools/guard.js'), 'const ok = true;\n');
+  fs.writeFileSync(path.join(cwd, 'tests/check.mjs'), 'const ok = true;\n');
+  fs.writeFileSync(path.join(cwd, '.github/workflows/test.yml'), 'name: test\n');
+  fs.writeFileSync(path.join(cwd, 'templates/template.yml'), 'name: template\n');
+  run('git', ['add', '.gitignore', 'tests/check.mjs', '.github/workflows/test.yml', 'templates/template.yml']);
+  run('git', ['add', '-f', 'tools/guard.js']);
+  run('git', ['commit', '-m', 'scanner guard fixture']);
+
+  const ignored = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  assert.notEqual(ignored.status, 0, 'Guard must reject a tracked scanner target hidden by .gitignore');
+  assert.match(ignored.stderr, /excluded by \.gitignore/);
+
+  fs.writeFileSync(path.join(cwd, '.gitignore'), '');
+  run('git', ['add', '.gitignore']);
+  run('git', ['commit', '-m', 'remove ignored target pattern']);
+  fs.writeFileSync(path.join(cwd, 'tools', '.semgrepignore'), 'sensitive-source/\n');
+  const nested = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  assert.notEqual(nested.status, 0, 'Guard must reject nested .semgrepignore files');
+  assert.match(nested.stderr, /Nested \.semgrepignore is not permitted/);
 });
