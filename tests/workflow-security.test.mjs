@@ -53,12 +53,14 @@ function validateWorkflowSecurity(parsed, label) {
     }
   }
 
-  // 2. Reject pull_request_target
+  // 2. Reject pull_request_target and workflow_run
   const triggers = parsed.on || parsed['true'] || {};
   if (typeof triggers === 'object' && triggers !== null) {
     assert.equal(triggers.pull_request_target, undefined, `${label} must not use pull_request_target`);
+    assert.equal(triggers.workflow_run, undefined, `${label} must not use workflow_run`);
     if (Array.isArray(triggers)) {
       assert.ok(!triggers.includes('pull_request_target'), `${label} must not include pull_request_target`);
+      assert.ok(!triggers.includes('workflow_run'), `${label} must not include workflow_run`);
     }
   }
 
@@ -73,6 +75,11 @@ function validateWorkflowSecurity(parsed, label) {
     // continue-on-error forbidden on security jobs
     assert.ok(!job['continue-on-error'], `${label} job ${jobId} must not have continue-on-error: true`);
 
+    // Execution timeout-minutes required for all runner jobs
+    if (job['runs-on']) {
+      assert.ok(typeof job['timeout-minutes'] === 'number' && job['timeout-minutes'] > 0, `${label} job ${jobId} must specify a positive timeout-minutes`);
+    }
+
     const steps = job.steps || [];
     for (const [i, step] of steps.entries()) {
       assert.ok(!step['continue-on-error'], `${label} job ${jobId} step ${i} (${step.name || 'unnamed'}) must not have continue-on-error: true`);
@@ -83,10 +90,24 @@ function validateWorkflowSecurity(parsed, label) {
         assert.strictEqual(step.with['persist-credentials'], false, `${label} checkout step ${i} must set persist-credentials: false`);
       }
 
-      // Check run commands for error suppression
+      // Check run commands
       if (step.run) {
+        // Reject direct github.event expression interpolation in run: scripts
+        assert.ok(!/\$\{\{\s*github\.event/i.test(step.run), `${label} step ${i} contains forbidden direct github.event expression interpolation: ${step.run}`);
+
+        // Error suppression
         for (const pattern of FORBIDDEN_ERROR_SUPPRESSIONS) {
           assert.ok(!pattern.test(step.run), `${label} step ${i} suppresses errors with ${pattern}: ${step.run}`);
+        }
+
+        // npm install forbidden; must use npm ci
+        if (/\bnpm\s+(?:install|i)\b/.test(step.run)) {
+          assert.fail(`${label} step ${i} uses 'npm install' instead of 'npm ci': ${step.run}`);
+        }
+
+        // npm ci must enforce --ignore-scripts
+        if (/\bnpm\s+ci\b/.test(step.run)) {
+          assert.ok(step.run.includes('--ignore-scripts'), `${label} step ${i} running npm ci must enforce --ignore-scripts: ${step.run}`);
         }
       }
     }
@@ -142,6 +163,7 @@ function validateSecurityScansWorkflow(parsed) {
   assert.ok(jobs.osv, 'security-scans.yml must contain osv job');
 
   // Gitleaks checks
+  assert.equal(jobs.gitleaks.name, 'Secret scan (commit range on push/PR, full history on schedule)', 'Gitleaks job name must reflect accurate scope');
   const gitleaksSteps = jobs.gitleaks.steps || [];
   const gitleaksCheckout = gitleaksSteps.find(s => s.uses && s.uses.startsWith('actions/checkout'));
   assert.ok(gitleaksCheckout, 'Gitleaks job must check out repository');
@@ -157,6 +179,7 @@ function validateSecurityScansWorkflow(parsed) {
   const semgrepStep = semgrepJob.steps?.find(s => s.run && s.run.includes('semgrep scan'));
   assert.ok(semgrepStep, 'Semgrep job must execute semgrep scan step');
   assert.ok(semgrepStep.run.includes('--error'), 'Semgrep scan must fail on findings with --error');
+  assert.ok(semgrepStep.run.includes('tools/ tests/'), 'Semgrep scan must target tools/ tests/');
   assert.ok(!semgrepStep.run.includes('|| true'), 'Semgrep step must not suppress errors with || true');
 
   // CodeQL checks
@@ -294,4 +317,36 @@ test('negative: rejects non-Node-20 validation', () => {
   const setupNode = parsed.jobs.validate.steps.find(s => s.uses && s.uses.startsWith('actions/setup-node'));
   setupNode.with['node-version'] = 22;
   assert.throws(() => validateUssValidationWorkflow(parsed), /must enforce Node\.js version 20/);
+});
+
+test('negative: rejects direct github.event expression interpolation in run scripts', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps[2].run = 'echo "${{ github.event.issue.title }}"';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /contains forbidden direct github\.event expression interpolation/);
+});
+
+test('negative: rejects workflow_run trigger', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.on = { workflow_run: { workflows: ['CI'] } };
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must not (use|include) workflow_run/);
+});
+
+test('negative: rejects npm install in favor of npm ci', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  const installStep = parsed.jobs.validate.steps.find(s => s.run && s.run.includes('npm ci'));
+  installStep.run = 'npm install --ignore-scripts --no-audit';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /uses 'npm install' instead of 'npm ci'/);
+});
+
+test('negative: rejects npm ci without --ignore-scripts', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  const installStep = parsed.jobs.validate.steps.find(s => s.run && s.run.includes('npm ci'));
+  installStep.run = 'npm ci --no-audit --no-fund';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must enforce --ignore-scripts/);
+});
+
+test('negative: rejects runner job missing timeout-minutes', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  delete parsed.jobs.gitleaks['timeout-minutes'];
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must specify a positive timeout-minutes/);
 });

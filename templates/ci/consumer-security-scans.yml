@@ -16,6 +16,7 @@ jobs:
   secrets:
     name: Full-history secret scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read
@@ -33,6 +34,7 @@ jobs:
   semgrep:
     name: Semgrep SAST
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     container:
       image: semgrep/semgrep:1.186.0
     steps:
@@ -47,6 +49,7 @@ jobs:
   codeql:
     name: CodeQL SAST
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       actions: read
       contents: read
