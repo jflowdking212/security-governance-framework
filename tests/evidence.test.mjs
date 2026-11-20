@@ -313,6 +313,9 @@ test('approval identities must be stable, independent and dated no later than th
   r.findings=[{id:'F-031',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:789012',rationale:'r',approved_at:'2099-01-01T00:00:00Z',expires_at:'2100-01-01T00:00:00Z'}}];
  },/approved_at cannot be in the future/);
  expectInvalid(r=>{
+  r.findings=[{id:'F-033',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-name',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
+ },/stable issuer-scoped identity/);
+ expectInvalid(r=>{
   r.project.reviewer_identity='UNASSIGNED';
   r.controls[0].status='NOT_APPLICABLE';
   r.controls[0].evidence=[];
