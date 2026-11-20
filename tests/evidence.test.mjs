@@ -28,6 +28,7 @@ function markAllPass(report){
  report.project.repository='acme/example-app';
  report.project.commit='a'.repeat(40);
  report.project.reviewer='Independent Reviewer';
+ report.project.reviewer_identity='github:reviewer-1';
 }
 
 test('control catalog maps every module to one stable family ID',()=>{
@@ -49,7 +50,7 @@ test('example evidence template validates but is not release-ready',()=>{
 test('complete evidence-backed assessment passes the structural and release checks',()=>{
  const fixture=withReport(report=>markAllPass(report));
  try{
-  const result=run(fixture.file,['--release']);
+  const result=run(fixture.file,['--release','--expected-commit','a'.repeat(40)]);
   assert.equal(result.status,0,result.stderr);
   assert.match(result.stdout,/READY_FOR_OWNER_REVIEW/);
  }finally{fixture.cleanup();}
@@ -62,7 +63,7 @@ test('UNKNOWN is never treated as PASS',()=>{
   report.controls[0].status='UNKNOWN';
   report.controls[0].evidence=[];
   fs.writeFileSync(fixture.file,JSON.stringify(report));
-  const result=run(fixture.file,['--release']);
+  const result=run(fixture.file,['--release','--expected-commit','a'.repeat(40)]);
   assert.equal(result.status,1);
   assert.match(result.stdout,/NOT_READY/);
  }finally{fixture.cleanup();}
@@ -90,7 +91,7 @@ test('open P1 finding blocks release',()=>{
   report.findings=[{id:'F-002',severity:'P1',status:'OPEN',title:'Unresolved critical-path defect',severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',control_ids:[report.controls[0].control_id]}];
  });
  try{
-  const result=run(fixture.file,['--release']);
+  const result=run(fixture.file,['--release','--expected-commit','a'.repeat(40)]);
   assert.equal(result.status,1);
   assert.match(result.stdout,/BLOCKED_P0_P1/);
  }finally{fixture.cleanup();}
@@ -101,10 +102,10 @@ test('P2/P3 risk acceptance can be recorded with owner, rationale and expiry',()
   report.controls[0].status='FAIL';
   report.controls[0].evidence=[];
   report.controls[0].finding_ids=['F-003'];
-  report.findings=[{id:'F-003',severity:'P2',status:'ACCEPTED',title:'Documented medium-severity residual risk',severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',control_ids:[report.controls[0].control_id],risk_acceptance:{approved_by:'Owner',rationale:'Compensating control is in place; remediation is scheduled.',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
+  report.findings=[{id:'F-003',severity:'P2',status:'ACCEPTED',title:'Documented medium-severity residual risk',severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',control_ids:[report.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'Compensating control is in place; remediation is scheduled.',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
  });
  try{
-  const result=run(fixture.file,['--release']);
+  const result=run(fixture.file,['--release','--expected-commit','a'.repeat(40)]);
   assert.equal(result.status,0,result.stderr);
   assert.match(result.stdout,/READY_FOR_OWNER_REVIEW/);
  }finally{fixture.cleanup();}
@@ -160,7 +161,8 @@ function mutated(change,{pass=true}={}){
 function expectInvalid(change,pattern,args=[]){
  const fixture=mutated(change);
  try{
-  const result=run(fixture.file,args);
+  const effectiveArgs=args.includes('--release')&&!args.includes('--expected-commit')?[...args,'--expected-commit','a'.repeat(40)]:args;
+  const result=run(fixture.file,effectiveArgs);
   assert.equal(result.status,2,'expected structural rejection, got exit '+result.status+': '+result.stdout);
   assert.match(result.stderr,pattern);
  }finally{fixture.cleanup();}
@@ -182,15 +184,15 @@ test('a finding references only controls that are in scope, and finding IDs must
  expectInvalid(r=>{r.controls[0].status='FAIL';r.controls[0].finding_ids=['F-MISSING'];},/missing finding/);
 });
 test('P0 and P1 can never be risk-accepted, whatever the dates',()=>{
- for(const severity of ['P0','P1'])expectInvalid(r=>{r.findings=[{id:'F-015',severity,status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2099-01-01T00:00:00Z'}}];},/cannot be risk-accepted/);
+ for(const severity of ['P0','P1'])expectInvalid(r=>{r.findings=[{id:'F-015',severity,status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2099-01-01T00:00:00Z'}}];},/cannot be risk-accepted/);
 });
 test('P2/P3 acceptance must be time-bounded and cannot be expired in a release assessment',()=>{
- const acceptance=(approved,expires)=>({approved_by:'Owner',rationale:'r',approved_at:approved,expires_at:expires});
+ const acceptance=(approved,expires)=>({approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'r',approved_at:approved,expires_at:expires});
  expectInvalid(r=>{r.findings=[{id:'F-016',severity:'P3',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:acceptance('2026-11-18T00:00:00Z','2026-11-01T00:00:00Z')}];},/must expire after/);
  expectInvalid(r=>{r.project.assessed_at='2020-02-01T00:00:00Z';r.findings=[{id:'F-017',severity:'P3',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:acceptance('2020-01-01T00:00:00Z','2020-06-01T00:00:00Z')}];},/has expired/,['--release']);
 });
 test('a FAIL control whose linked findings are all VERIFIED is inconsistent',()=>{
- expectInvalid(r=>{const id=r.controls[0].control_id;r.controls[0].status='FAIL';r.controls[0].evidence=[];r.controls[0].finding_ids=['F-018'];r.findings=[{id:'F-018',severity:'P2',status:'VERIFIED',title:'x',severity_rationale:'r',control_ids:[id],verification_evidence:[{kind:'test',reference:'t',observed_at:'2026-11-18',result:'ok'}]}];},/FAIL but every linked finding is VERIFIED/);
+ expectInvalid(r=>{const id=r.controls[0].control_id;r.controls[0].status='FAIL';r.controls[0].evidence=[];r.controls[0].finding_ids=['F-018'];r.findings=[{id:'F-018',severity:'P2',status:'VERIFIED',title:'x',severity_rationale:'r',control_ids:[id],verification_evidence:[{kind:'test',reference:'tests/evidence.test.mjs#verified-finding',observed_at:'2026-11-18',result:'ok'}]}];},/FAIL but every linked finding is VERIFIED/);
 });
 test('release assessments reject template placeholder metadata and routine type',()=>{
  const base={};
@@ -208,7 +210,7 @@ test('evidence results must belong to the closed allowlist and match control sta
  expectInvalid(r=>{r.controls[0].evidence[0].result='non-compliant';},/marked PASS cannot be supported by non-passing or failed evidence result/);
 });
 test('evidence references cannot be placeholders',()=>{
- for(const ph of ['n/a','na','none','unknown','tbd','-','--','null','undefined','?']) {
+ for(const ph of ['n/a','n / a','na','none','unknown','tbd','todo','pending','x','.','see above','http://','https://','-','--','null','undefined','?']) {
   expectInvalid(r=>{r.controls[0].evidence[0].reference=ph;},/cannot be a placeholder/);
  }
 });
@@ -270,4 +272,65 @@ test('evidence validator rejects malformed top-level input safely',()=>{
   const file=path.join(dir,'a.json');fs.writeFileSync(file,content);
   try{const result=run(file);assert.notEqual(result.status,0,content);assert.doesNotMatch(result.stderr,/TypeError|at .*\.mjs/,'unhandled exception for '+content)}finally{fs.rmSync(dir,{recursive:true,force:true})}
  }
+});
+
+
+test('evidence references accept only immutable URL, path-anchor or run-ID forms',()=>{
+ const valid=[
+  'https://example.org/audit/evidence/123',
+  'tests/evidence.test.mjs#fixture',
+  'run:44716588316'
+ ];
+ for(const reference of valid){
+  const fixture=withReport(r=>{markAllPass(r);r.controls[0].evidence[0].reference=reference;});
+  try{const result=run(fixture.file);assert.equal(result.status,0,result.stderr);}finally{fixture.cleanup();}
+ }
+ for(const reference of ['http://example.org/evidence','https://','tests/evidence.test.mjs','../secret.txt#L1','/etc/passwd#L1','file:///tmp/evidence#L1']){
+  expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
+ }
+});
+
+test('evidence commit must be a full 40-character SHA and release evidence must match the expected audited commit',()=>{
+ expectInvalid(r=>{r.project.commit='deadbeef';},/full 40-character/);
+ const fixture=withReport(markAllPass);
+ try{
+  const missing=run(fixture.file,['--release']);
+  assert.equal(missing.status,2);
+  assert.match(missing.stderr,/requires --expected-commit/);
+  const mismatch=run(fixture.file,['--release','--expected-commit','b'.repeat(40)]);
+  assert.equal(mismatch.status,2);
+  assert.match(mismatch.stderr,/exactly match the audited commit/);
+  const match=run(fixture.file,['--release','--expected-commit','a'.repeat(40)]);
+  assert.equal(match.status,0,match.stderr);
+ }finally{fixture.cleanup();}
+});
+
+test('approval identities must be stable, independent and dated no later than the assessment',()=>{
+ expectInvalid(r=>{
+  r.findings=[{id:'F-030',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Reviewer',approved_by_identity:'github:reviewer-1',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
+ },/self-approval/);
+ expectInvalid(r=>{
+  r.findings=[{id:'F-031',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'r',approved_at:'2099-01-01T00:00:00Z',expires_at:'2100-01-01T00:00:00Z'}}];
+ },/approved_at cannot be in the future/);
+ expectInvalid(r=>{
+  r.project.reviewer_identity='UNASSIGNED';
+  r.controls[0].status='NOT_APPLICABLE';
+  r.controls[0].evidence=[];
+  r.controls[0].rationale='Not applicable to this service.';
+  r.controls[0].approved_by='Owner';
+  r.controls[0].approved_by_identity='github:owner-1';
+  r.controls[0].approved_at='2026-11-18T00:00:00Z';
+ },/stable issuer-scoped identity/);
+});
+
+test('validator does not invent a maximum evidence age or risk-acceptance duration',()=>{
+ const fixture=withReport(r=>{
+  markAllPass(r);
+  r.controls[0].evidence[0].observed_at='1970-01-01T00:00:00Z';
+  r.controls[0].status='FAIL';
+  r.controls[0].evidence[0].result='failed';
+  r.controls[0].finding_ids=['F-032'];
+  r.findings=[{id:'F-032',severity:'P2',status:'ACCEPTED',title:'Long-lived but explicitly time-bounded acceptance',severity_rationale:'Fixture rationale: impact, reachability and blast radius recorded.',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:owner-1',rationale:'Owner-approved time-bounded acceptance for testing policy semantics.',approved_at:'2026-11-18T00:00:00Z',expires_at:'2046-11-18T00:00:00Z'}}];
+ });
+ try{const result=run(fixture.file);assert.equal(result.status,0,result.stderr);}finally{fixture.cleanup();}
 });
