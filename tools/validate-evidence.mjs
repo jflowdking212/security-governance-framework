@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const args=process.argv.slice(2);
-const usage='Usage: node tools/validate-evidence.mjs --file <assessment.json> [--release] [--require-full-audit]';
+const usage='Usage: node tools/validate-evidence.mjs --file <assessment.json> [--expected-commit <40-char-sha>] [--release] [--require-full-audit]';
 const errors=[];
 function failUsage(message){
  console.error(message+'\n'+usage);
@@ -26,6 +26,18 @@ function validDate(value){
  const calendar=new Date(Date.UTC(year,month-1,day));
  return calendar.getUTCFullYear()===year&&calendar.getUTCMonth()===month-1&&calendar.getUTCDate()===day&&(match[4]===undefined||Number(match[4])<24)&&(match[5]===undefined||Number(match[5])<60);
 }
+function stableIdentityKey(value){
+ if(!nonEmpty(value))return null;
+ const identity=value.trim();
+ const separator=identity.indexOf(':');
+ if(separator<=0||separator===identity.length-1)return null;
+ const provider=identity.slice(0,separator);
+ const subject=identity.slice(separator+1);
+ if(!/^[a-z][a-z0-9+.-]*$/i.test(provider)||!subject.trim())return null;
+ // Provider names are case-insensitive; the issuer-scoped subject is preserved exactly.
+ return provider.toLowerCase()+':'+subject;
+}
+
 const EVIDENCE_KINDS=['test','code-review','configuration','infrastructure','log','external-attestation','build-artifact'];
 const SUCCESS_RESULTS=['passed','verified','compliant','ok','success'];
 const FAILURE_RESULTS=['failed','non-compliant','violation','fail','failure'];
@@ -33,8 +45,43 @@ const EVIDENCE_RESULTS=[...SUCCESS_RESULTS,...FAILURE_RESULTS];
 
 function isPlaceholderReference(value){
  if(!nonEmpty(value))return true;
- const norm=value.trim().toLowerCase();
- return ['n/a','na','none','unknown','tbd','-','--','null','undefined','?'].includes(norm)||/^-+$/.test(norm);
+ const norm=value.trim().toLowerCase().replace(/\\s+/g,' ');
+ return ['n/a','n / a','na','none','unknown','tbd','todo','pending','x','.','see above','http://','https://','-','--','null','undefined','?'].includes(norm)||/^-+$/.test(norm);
+}
+
+function validEvidenceReference(value){
+ if(!nonEmpty(value)||isPlaceholderReference(value))return false;
+ const reference=value.trim();
+ if(/^run:[1-9]\\d{4,19}$/i.test(reference))return true;
+ if(/^https:\\/\\//i.test(reference)){
+  try{
+   const url=new URL(reference);
+   return url.protocol==='https:'&&Boolean(url.hostname)&&!url.username&&!url.password;
+  }catch{return false;}
+ }
+ const separator=reference.indexOf('#');
+ if(separator<=0||separator===reference.length-1)return false;
+ const relativePath=reference.slice(0,separator);
+ const anchor=reference.slice(separator+1);
+ if(relativePath.startsWith('/')||relativePath.includes('\\\\')||relativePath.split('/').some(part=>!part||part==='.'||part==='..'))return false;
+ return /^[A-Za-z0-9._/-]+$/.test(relativePath)&&/^[A-Za-z0-9._:-]+$/.test(anchor);
+}
+
+function checkApproval(label,approval,project,assessedAt){
+ if(!isObject(approval)){addError(label+' requires an approval object.');return;}
+ if(!nonEmpty(approval.approved_by))addError(label+' requires approved_by.');
+ if(!nonEmpty(approval.rationale))addError(label+' requires rationale.');
+ const reviewerIdentity=stableIdentityKey(project?.reviewer_identity);
+ const approverIdentity=stableIdentityKey(approval.approved_by_identity);
+ if(!reviewerIdentity)addError(label+' requires project.reviewer_identity as a stable issuer-scoped identity.');
+ if(!approverIdentity)addError(label+' requires approved_by_identity as a stable issuer-scoped identity.');
+ else if(reviewerIdentity&&approverIdentity===reviewerIdentity)addError(label+' cannot be approved by the same identity that performed the assessment (self-approval).');
+ if(!validDate(approval.approved_at))addError(label+' requires a valid ISO 8601 approved_at date/time.');
+ else{
+  const approvedAt=Date.parse(approval.approved_at);
+  if(approvedAt>Date.now())addError(label+' approved_at cannot be in the future.');
+  if(assessedAt&&validDate(assessedAt)&&approvedAt>Date.parse(assessedAt))addError(label+' approved_at cannot be later than the assessment date.');
+ }
 }
 
 // Shared by control evidence and finding verification_evidence so a VERIFIED finding cannot rest on free text.
@@ -43,6 +90,7 @@ function checkEvidenceItem(label,evidence,parentStatus=null,assessedAt=null){
  if(!EVIDENCE_KINDS.includes(evidence.kind))addError(label+' has invalid evidence kind '+String(evidence.kind));
  if(!nonEmpty(evidence.reference))addError(label+' evidence reference must be non-empty.');
  else if(isPlaceholderReference(evidence.reference))addError(label+' evidence reference cannot be a placeholder ('+String(evidence.reference)+').');
+ else if(!validEvidenceReference(evidence.reference))addError(label+' evidence reference must be an immutable HTTPS URL, repository-relative path#anchor, or run:<id> reference.');
  if(!validDate(evidence.observed_at))addError(label+' evidence observed_at must be a valid ISO 8601 date/time.');
  else{
   const obsTime=Date.parse(evidence.observed_at);
@@ -70,9 +118,17 @@ function addError(message){
  errors.push(message);
 }
 const options=new Set();
-let file=null,release=false,requireFullAudit=false;
+let file=null,release=false,requireFullAudit=false,expectedCommit=null;
 for(let i=0;i<args.length;i++){
  const flag=args[i];
+ if(flag==='--expected-commit'){
+  if(expectedCommit!==null)failUsage('Duplicate option: --expected-commit');
+  const value=args[i+1];
+  if(value===undefined||value.startsWith('--')||!value.trim())failUsage('Missing value for --expected-commit');
+  expectedCommit=value.trim();
+  i++;
+  continue;
+ }
  if(flag==='--release'){
   if(release)failUsage('Duplicate option: --release');
   release=true;
@@ -96,6 +152,8 @@ for(let i=0;i<args.length;i++){
  i++;
 }
 if(!file)failUsage('Missing required --file');
+if(expectedCommit!==null&&!/^[a-f0-9]{40}$/.test(expectedCommit))addError('--expected-commit must be a full 40-character lowercase hexadecimal Git commit SHA.');
+if(release&&!expectedCommit)addError('--release requires --expected-commit <40-character audited commit SHA>.');
 
 let manifest,catalog,assessment;
 try{
@@ -139,7 +197,8 @@ const project=assessment?.project;
 if(!isObject(project))addError('project must be an object.');
 else{
  for(const field of ['repository','scope','reviewer'])if(!nonEmpty(project[field]))addError('project.'+field+' must be a non-empty string.');
- if(!/^[a-f0-9]{7,64}$/i.test(project.commit??''))addError('project.commit must be a pinned hexadecimal Git commit SHA (7-64 characters).');
+ if(!/^[a-f0-9]{40}$/.test(project.commit??''))addError('project.commit must be a full 40-character lowercase hexadecimal Git commit SHA.');
+ if(expectedCommit&&project.commit!==expectedCommit)addError('project.commit must exactly match the audited commit supplied with --expected-commit.');
  if(!validDate(project.assessed_at))addError('project.assessed_at must be a valid ISO date/time.');
  else if(Date.parse(project.assessed_at)>Date.now())addError('Assessment date project.assessed_at cannot be in the future: '+project.assessed_at);
 }
@@ -178,7 +237,12 @@ for(const control of controlEntries){
   }
  }
  if(control.status==='NOT_APPLICABLE'){
-  if(!nonEmpty(control.rationale)||!nonEmpty(control.approved_by)||!validDate(control.approved_at))addError('NOT_APPLICABLE control '+id+' requires rationale, approved_by and approved_at.');
+  checkApproval('NOT_APPLICABLE control '+id,{
+   approved_by:control.approved_by,
+   approved_by_identity:control.approved_by_identity,
+   rationale:control.rationale,
+   approved_at:control.approved_at
+  },project,project?.assessed_at);
  }
  if(control.status==='FAIL'&&(!Array.isArray(control.finding_ids)||control.finding_ids.length===0))addError('FAIL control '+id+' must reference at least one finding_id.');
 }
@@ -205,9 +269,10 @@ for(const finding of findingEntries){
  if(finding.status==='ACCEPTED'){
   if(['P0','P1'].includes(finding.severity))addError('P0/P1 finding '+finding.id+' cannot be risk-accepted.');
   const approval=finding.risk_acceptance;
-  if(!isObject(approval)||!nonEmpty(approval.approved_by)||!nonEmpty(approval.rationale)||!validDate(approval.approved_at)||!validDate(approval.expires_at))addError('Accepted finding '+finding.id+' requires approved_by, rationale, approved_at and expires_at.');
-  else if(Date.parse(approval.expires_at)<=Date.parse(project?.assessed_at??''))addError('Risk acceptance for '+finding.id+' must expire after the assessment date.');
-  else if(Date.parse(approval.expires_at)<=Date.parse(approval.approved_at))addError('Risk acceptance for '+finding.id+' must expire after it was approved.');
+  checkApproval('Risk acceptance for '+finding.id,approval,project,project?.assessed_at);
+  if(!isObject(approval)||!validDate(approval.expires_at))addError('Accepted finding '+finding.id+' requires a valid ISO 8601 expires_at date/time.');
+  else if(validDate(project?.assessed_at)&&Date.parse(approval.expires_at)<=Date.parse(project.assessed_at))addError('Risk acceptance for '+finding.id+' must expire after the assessment date.');
+  else if(validDate(approval.approved_at)&&Date.parse(approval.expires_at)<=Date.parse(approval.approved_at))addError('Risk acceptance for '+finding.id+' must expire after it was approved.');
   else if(release&&Date.parse(approval.expires_at)<=Date.now())addError('Risk acceptance for '+finding.id+' has expired; a release assessment cannot rely on an expired acceptance.');
  }
 }
@@ -220,6 +285,7 @@ if(release){
  if(/^0+$/.test(project?.commit??''))addError('Release assessment project.commit is a placeholder (all zeros).');
  if(/^example\//i.test(project?.repository??''))addError('Release assessment project.repository is still the template placeholder.');
  if(/^unassigned$/i.test(String(project?.reviewer??'').trim()))addError('Release assessment project.reviewer is UNASSIGNED.');
+ if(!stableIdentityKey(project?.reviewer_identity))addError('Release assessment project.reviewer_identity must be a stable issuer-scoped identity.');
  if(assessmentType==='routine')addError('A release assessment must be full-audit or production-release, not routine.');
 }
 const p0p1Open=[...findingMap.values()].filter(f=>['P0','P1'].includes(f.severity)&&f.status!=='VERIFIED');
