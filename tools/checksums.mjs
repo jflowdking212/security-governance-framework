@@ -218,11 +218,13 @@ function createManifest() {
     // execute repository-configured clean filters while preparing that diff.
     // The cached diff is index-to-HEAD only and does not read/clean worktree files.
     runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
-    assertNoUnexpectedUntracked();
   }
   const files=trackedFiles();
   if(!files.length)throw new Error('No tracked files found to checksum.');
   const lines=files.map(rel=>{assertSafePath(rel);return sha256ForPath(rel)+'  '+rel;});
+  // Validate unexpected untracked content after tracked-path checks so a
+  // tracked path replaced by a symlinked parent is reported at that boundary.
+  if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
   fs.writeFileSync(path.join(ROOT,MANIFEST),lines.join('\n')+'\n',{encoding:'utf8'});
   console.log('Created '+MANIFEST+' for '+files.length+' files (excluding '+MANIFEST+' and '+SIGNATURE+').');
 }
@@ -263,6 +265,7 @@ function verifyManifest() {
     const actualDigest=sha256ForPath(rel);
     if(actualDigest!==digest)throw new Error('SHA-256 mismatch: '+rel);
   }
+  if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
   console.log('Verified '+entries.length+' file digests in '+MANIFEST+'.');
 }
 
