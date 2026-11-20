@@ -26,3 +26,11 @@ After verifying that the workflow works on the default branch:
 ## Limitations
 
 This template is a starting point, not a complete security programme. Scanner success does not prove that the application is secure. A green workflow is only evidence that the configured checks ran and passed on the scanned revision.
+
+
+## Scanner configuration integrity
+
+- Do not add `.gitleaks.toml`, `.gitleaksignore`, `gitleaks.toml`, or Gitleaks allowlist/config overrides without a separately reviewed policy exception and negative regression tests. An ignore entry suppresses a finding; it is not a harmless formatting preference.
+- Keep `.semgrepignore` limited to generated/dependency metadata such as `.git/` and `node_modules/`. Never exclude source, tests, workflows, templates, or security-sensitive configuration. Do not add `SEMGREP_RULES`, alternate `--config`, `--exclude`, or rule-exclusion arguments to the scanner job.
+- Do not add CodeQL `paths-ignore`, custom query filters, or configuration that silently removes source coverage. If a repository needs a reviewed exclusion, document its path, rationale, owner and compensating scan.
+- Keep the OSV reusable workflow inputs limited to the approved failure and SARIF settings. Do not override `scan-args`, `runs-on`, `ref`, or other upstream inputs.
