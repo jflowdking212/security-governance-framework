@@ -164,3 +164,11 @@ The handoff/documentation commit `05e54c714bc50f2abf10111a13bfc824786ff63d` has 
 - Gitleaks job `136213176665`: no leaks detected.
 
 This confirms the current documentation and supervisory handoff state at `05e54c7`; it does not resolve the further A2-02/A2-07 mutation weaknesses listed above or replace Claude's independent review.
+
+
+### Latest verified PR head — `a52b22e337a3fc44f5cb0931004e63c1a2f77068`
+
+At this exact head, all 7 reported GitHub check runs completed successfully:
+- USS validation run `44714438971`, job `136214089559`: 155/155 tests passed, 0 failed, 0 skipped. The three new checksum adversarial tests passed.
+- Security scans run `44714439491`: Gitleaks job `136214091207` reported no leaks; Semgrep job `136214090698` scanned 26 tracked targets with 237 rules, 0 findings and no skipped files; CodeQL job `136214091187` scanned 18/18 JavaScript and 2/2 GitHub Actions files; OSV job `136214091438` reported no issues.
+- PR #9 remains OPEN and NOT APPROVED FOR RELEASE. Gemini's additional mutation-guard corrections and Claude's implementation handback remain pending.
