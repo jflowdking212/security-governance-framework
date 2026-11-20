@@ -432,7 +432,7 @@ Relevant owner-issued commit sequence:
 - `cc3194c075c35a08e32a6c5652e7d8635a8dfba1` — checksum threat-model documentation.
 - `8e242ef352615ac719e86208ddb97a7c9a71ef4d` — consuming guidance.
 
-**Verification caveat:** The hosted validation run at `8fd8ca12c33962ceb1ff46754887eadb810b33f4` reported 136 passing and 1 failing test. The sole failure was an existing assertion expecting the phrase `Unexpected nested .git directory`; the code's more general directory/gitfile wording broke that assertion. The wording was corrected in `6f8ef6a`. The full suite must be rerun on the latest head before A2-03 can be marked verified. Do not describe A2-03 as closed until that run passes and the exploit regression is reviewed.
+**Verification update:** The initial hosted validation run at `8fd8ca12c33962ceb1ff46754887eadb810b33f4` reported 136 passing and 1 failing test. The sole failure was an existing assertion expecting the phrase `Unexpected nested .git directory`; the code's more general directory/gitfile wording broke that assertion. The wording was corrected in `6f8ef6a3d794fc5bcc4d94390dc4008bb0fffa47`. Hosted validation then passed on `e2ce7d78dc3d3f138acbabd1217f03e64a7c81de`: job `136196321666`, run `121016259145`, **137/137 tests passed**, including both new root-`.git` directory and gitfile regression tests; USS validation reported 22 modules and 52 source references with no drift/validation errors. Secret scan, Semgrep and OSV checks also passed at that head; CodeQL was still in progress at the time. A later documentation-only commit moved the branch to `6138f7e103a2ba748c2c180b85967748d4e8fc0a`; its validation job `136196822144` passed, while the remaining scanner checks were still running at last inspection. A2-03's implementation and targeted regression tests have passed hosted validation, but the independent Claude re-audit remains outstanding.
 
 ### 9.2 Gemini workstream — workflow guard and scanner engineering
 
@@ -491,3 +491,38 @@ Relevant owner-issued commit sequence:
 4. Hosted CI runs against the combined candidate.
 5. Claude performs an independent audit of A2-02 and A2-03, which Claude did not implement. A different independent reviewer must assess Claude-authored A2-06/A2-11/A2-12 changes; ChatGPT's cross-review is required but does not become a claim that Claude independently audited its own fixes.
 6. Only after all P2 findings are independently closed may the owner consider the final signing ceremony. P3 items must be fixed or formally dispositioned under M17.
+
+
+---
+
+## 10. Parallel Workstream Status Snapshot
+
+**Snapshot date:** 2026-11-20  
+**Current branch HEAD at snapshot:** `6138f7e103a2ba748c2c180b85967748d4e8fc0a`  
+**PR #9:** OPEN, unmerged, target `integration/uss-pr3-pr8-hardening`.
+
+### ChatGPT-owned changes
+
+- A2-03 code and regression tests are committed and the full hosted USS validation passed at `e2ce7d78dc3d3f138acbabd1217f03e64a7c81de` with 137/137 tests passing. The current documentation-only descendant's validation job also passed.
+- A2-09 checksum coverage and filesystem metadata limitations are documented in `SECURITY-ROOT.md` and `CONSUMING.md`.
+- A2-04 README status, badge and stack catalogue corrections are committed.
+- A2-10 read-only audit and agent identity rules are recorded in `automation.md`.
+- These are owner-issued commits through the authenticated owner connection, not agent-authored commits. They remain subject to Claude's independent review of A2-03 and cross-review of documentation.
+
+### Gemini and Claude status
+
+- Gemini is assigned A2-02 and A2-07, limited to workflow/CI/scanner files and tests.
+- Claude is assigned A2-06, A2-11 and A2-12, limited to evidence validation, stack profiles and browser-boundary standards.
+- No agent-authored patch has yet been received or independently reviewed in this snapshot.
+- The bot account still has pull-only access. No agent may push using the owner's identity.
+
+### Latest CI status at snapshot
+
+At `6138f7e103a2ba748c2c180b85967748d4e8fc0a`:
+- USS validation job `136196822144`: SUCCESS.
+- Secret scan job `136196823135`: SUCCESS.
+- Semgrep job `136196823372`: IN PROGRESS.
+- OSV job `136196823111`: IN PROGRESS.
+- CodeQL job `136196822764`: IN PROGRESS.
+
+Re-fetch the latest branch head and checks before making any subsequent completion claim.
