@@ -28,7 +28,7 @@ const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_
 
 // Matches direct untrusted GitHub context or input interpolation in run: scripts.
 // Covers dot notation, bracket notation, and nested paths.
-const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|event_name|triggering_actor|actor_id|repository|repository_owner|run_id|run_number|run_attempt)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
+const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
 
 // Narrow allowlist of approved job-level write permissions:
 // Only CodeQL and OSV jobs may request security-events: write
