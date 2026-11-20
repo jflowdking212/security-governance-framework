@@ -225,7 +225,7 @@ The first implementation is present, but direct inspection of the live files sho
 2. The guard rejects Gitleaks config/ignore files, Semgrep config files, CodeQL config files, nested .semgrepignore files and symlinked root .semgrepignore.
 3. It permits only the harmless root .semgrepignore entries .git/ and node_modules/.
 4. It uses git check-ignore --no-index to detect tracked files hidden by .gitignore within the actual Semgrep scan scope. The consumer template checks all tracked files because it scans the whole repository.
-5. Semgrep runs with both --error and --no-suppress-errors; the validator rejects --suppress-errors.
+5. Semgrep runs with both --error and --strict; the validator rejects --suppress-errors.
 6. CodeQL now explicitly includes the actions language alongside javascript-typescript. Verify the live job log extracts and analyzes the first-party workflow files and consumer template.
 7. The consumer template receives the same scanner-specific checks as the first-party workflow, including exact Gitleaks, Semgrep, CodeQL and OSV configuration.
 
@@ -260,7 +260,7 @@ There is no separate `semgrep` job, even though `validateSecurityScansWorkflow()
 More seriously, the current `gitleaks` job is not running Gitleaks. Its third step runs:
 
 ```sh
-semgrep scan --config p/default --error --no-suppress-errors --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
+semgrep scan --config p/default --error --strict --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
 ```
 
 The job log confirms this command exits **127 (command not found)** on `ubuntu-latest`. There is no `gitleaks/gitleaks-action` invocation in the current first-party workflow. The consumer template has the same topology problem: its `secrets` job runs Semgrep directly on `ubuntu-latest`, and no separate Semgrep job/container is declared.
@@ -271,7 +271,7 @@ Therefore, the current hosted scan run does **not** prove Gitleaks or Semgrep co
 
 1. Restore two distinct scanner jobs in both first-party workflow and consumer template:
    - Gitleaks job: pinned checkout, exact scanner-config guard, then the pinned `gitleaks/gitleaks-action` SHA with the reviewed least-privilege environment. Keep full-history checkout where required and preserve the scheduled full-history behaviour.
-   - Semgrep job: a separate job with the immutable pinned Semgrep container image digest, checkout, exact scanner-config guard and the exact approved `semgrep scan --config p/default --error --no-suppress-errors ...` command and target scope.
+   - Semgrep job: a separate job with the immutable pinned Semgrep container image digest, checkout, exact scanner-config guard and the exact approved `semgrep scan --config p/default --error --strict ...` command and target scope.
 2. Keep CodeQL and OSV as separate jobs with their current pinned actions/reusable workflow and least-privilege permissions.
 3. The first-party workflow and consumer template must both actually execute all four scanners: Gitleaks, Semgrep, CodeQL and OSV. Do not rename a Semgrep job to Gitleaks or treat a successful job name as proof of scanner execution.
 4. Align the validator with the intended actual job IDs and topology. Do not weaken scanner requirements to make the current workflow pass.
@@ -297,3 +297,7 @@ On the exact resulting PR HEAD, provide:
 - exact commit SHA, changed files, commands, exit codes and run/job IDs.
 
 The prior run IDs above are failure evidence, not acceptance evidence. Fetch the current remote branch head before editing, work from that exact head, and report any intervening changes. Keep all changes within A2-02/A2-07 ownership. Do not edit checksum/evidence-validator/stack files or the shared handoff ledger. PR #9 remains open and unmerged; no release or signing actions.
+
+
+### Semgrep CLI flag clarification
+The current Semgrep container uses semgrep scan, not semgrep ci. For this command, --strict is the supported scan-specific flag that makes structured scan errors fatal; --no-suppress-errors is a semgrep ci option and must not be passed to semgrep scan. Keep --error for findings and --strict for scan errors. Verify this against the pinned Semgrep 1.186.0 CLI and current CI logs.
