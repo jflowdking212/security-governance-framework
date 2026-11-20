@@ -758,7 +758,7 @@
       "path": "stacks/flutter-dart.md",
       "status": "REFERENCE_ONLY",
       "triggers": ["flutter", "dart", "mobile", "ios", "android"],
-      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M12"]
+      "related_modules": ["M01", "M02", "M03", "M04", "M05", "M06", "M08", "M09", "M10", "M12", "M21"]
     },
     {
       "id": "go",
