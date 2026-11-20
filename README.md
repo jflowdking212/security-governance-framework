@@ -190,7 +190,7 @@ Commit all intended release source files before creating the source manifest. In
 - A passing build, scanner, test suite or AI review alone does not prove production security.
 - Destructive changes, production migrations, credential revocation/rotation and production deployment require explicit human authorisation.
 - Security claims must be supported by relevant evidence.
-- Formal release-readiness evidence must use the control catalog and pass `node tools/validate-evidence.mjs --file <assessment.json> --release`; this validator does not replace human owner approval.
+- Formal release-readiness evidence must use the control catalog and pass `node tools/validate-evidence.mjs --file <assessment.json> --release --expected-commit <40-character-audited-commit-sha>`; this validator does not replace human owner approval.
 
 See [M17](modules/m17-severity-release-gates.md), the [severity classification rubric](assurance/severity-classification.md), [M20](modules/m20-audit-first-remediation.md) and [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md).
 
