@@ -50,7 +50,7 @@ jobs:
         run: semgrep scan --config p/default --error --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
 
   codeql:
-    name: CodeQL JavaScript/TypeScript analysis
+    name: CodeQL JavaScript/TypeScript and GitHub Actions analysis
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -65,7 +65,7 @@ jobs:
       - name: Initialise CodeQL
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
-          languages: javascript-typescript
+          languages: 'javascript-typescript, actions'
           build-mode: none
       - name: Analyse source
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
