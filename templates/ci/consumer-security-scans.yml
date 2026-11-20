@@ -4,7 +4,7 @@ on:
   push:
     branches: ["**"]
   pull_request:
-    branches: [main]
+    branches: ["**"]
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   secrets:
-    name: Full-history secret scan
+    name: Secret scan (commit range on push/PR, full history on schedule)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
