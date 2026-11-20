@@ -91,5 +91,5 @@ test('Laravel and Flutter profiles cover the previously identified stack-specifi
  const laravel=read('stacks/laravel-php.md');
  for(const term of ['Blade','{!!','Livewire','Inertia','Horizon','Telescope','Debugbar','ShouldBeUnique','afterCommit','signed URL','SSRF','Laravel 13'])assert.ok(laravel.includes(term),'Laravel profile missing '+term);
  const flutter=read('stacks/flutter-dart.md');
- for(const term of ['WebView','addJavascriptInterface','FCM','android:exported','allowBackup','Play Integrity','App Attest','Keychain','PKCE','ThisDeviceOnly'])assert.ok(flutter.includes(term),'Flutter profile missing '+term);
+ for(const term of ['WebView','addJavascriptInterface','FCM','android:exported','allowBackup','Play Integrity','App Attest','Keychain','PKCE','ThisDeviceOnly','M03','M06','M10'])assert.ok(flutter.includes(term),'Flutter profile missing '+term);
 });
