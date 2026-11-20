@@ -735,3 +735,46 @@ The Gemini prompt was updated with the explicit supervisory addendum and accepta
 - ChatGPT will independently inspect Gemini's actual follow-up patch, reproduce the bypass mutations, review Claude's patch, continue A2-03/A2-09/A2-04/A2-10 supervisory ownership and record verified corrections here.
 - No finding is CLOSED merely because code or tests were added. Use IMPLEMENTED, VERIFIED and CLOSED as separate states.
 - PR #9 remains OPEN and UNMERGED. U-01 signing remains owner-only. No v1.0.0 release, signed tag, manifest signing, main merge or ruleset modification is authorised.
+
+
+---
+
+## 14. ChatGPT A2-03 Additional Checksum Root-Boundary Correction — 2026-11-20
+
+**Implementation author:** ChatGPT, owner-issued commits through the authenticated owner connection.  
+**PR:** #9, remains OPEN and UNMERGED.  
+**Base observed before this correction:** `e2eb7a0d323826648b3a23cac9f14cf0910da1f5`.
+
+### Finding
+
+A2-03 source review identified a missed boundary case in `tools/checksums.mjs`: when Git mode was invoked with `--root vendor/uss`, the selected subdirectory's own root-level `.git` directory or gitfile was treated like the outer repository's legitimate root `.git` metadata. The recursive check and filesystem walk skipped a `.git` entry whenever its relative path was empty, without distinguishing the actual Git worktree root from a selected subdirectory.
+
+This could allow nested Git metadata at the selected vendored root to be silently omitted from the checksum content scan, contrary to the documented rule that nested Git metadata is rejected.
+
+### Correction
+
+- `tools/checksums.mjs` now allows root `.git` metadata only when the selected checksum root is the actual Git worktree root (`ROOT_PREFIX === ''` and a valid `GIT_ROOT` exists).
+- A root-level `.git` entry inside a selected vendored subdirectory is rejected in Git mode.
+- The check also treats case variants of `.git` as metadata names, including filesystem-mode root checks and manifest path components.
+- The normal repository-root Git metadata remains allowed in Git mode; filesystem-mode snapshots continue to reject root Git metadata.
+
+### Owner-issued commits
+
+1. `e6d95cd017d8d14d4b65c618f37c56d4331e03b1` — `tools/checksums.mjs`: reject nested Git metadata at a selected vendored checksum root.
+2. `072304c195da6b4c41f7dbfb915926742a214da1` — `tests/checksums.test.mjs`: add adversarial coverage for both a `.git` directory and a `.git` gitfile at the selected vendored root.
+
+### Regression test added
+
+`adversarial: rejects .git metadata at the selected vendored root in Git mode`
+
+The test creates a parent Git fixture, selects `vendor/uss` using `--root`, then verifies that both a nested `.git` directory and a nested `.git` gitfile are rejected.
+
+### Verification status and limitations
+
+- The updated source and test files were re-fetched from the live PR branch and inspected after the commits.
+- PR head was confirmed as `072304c195da6b4c41f7dbfb915926742a214da1`.
+- The combined commit-status lookup returned no status records at the time of inspection. No claim is made that the new regression test or full suite has passed yet.
+- The latest independently inspected successful hosted runs remain the earlier runs at `a52b22e337a3fc44f5cb0931004e63c1a2f77068` (validation run `44714438971`, security scans run `44714439491`). Those runs predate this correction and do not verify these new commits.
+- Required next step: obtain fresh hosted USS validation and security-scan results for the updated PR head. If hosted CI is unavailable, the owner/Gemini must run the exact local validation and full test suite, returning raw command output and exit codes.
+- State: **IMPLEMENTED, NOT YET VERIFIED, NOT CLOSED.**
+
