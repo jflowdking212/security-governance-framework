@@ -17,6 +17,9 @@ No stack profile is currently marked VALIDATED. The available profiles are refer
 - [Laravel 11 and PHP](laravel-php.md)
 - [React and TypeScript](react-typescript.md)
 - [Flutter and Dart mobile](flutter-dart.md)
+- [Go](go.md)
+- [Rust](rust.md)
+- [Java and Spring Boot](java-spring.md)
 
 ## Requirements for a validated profile
 

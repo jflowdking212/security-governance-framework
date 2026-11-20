@@ -1,6 +1,6 @@
 {
   "standard": "Universal Security Standard",
-  "version": "1.0.0",
+  "version": "1.0.0-rc.1",
   "status": "review-ready",
   "description": "Modular, source-traceable security engineering policy for AI agents and human engineering teams.",
   "kernel": "KERNEL.md",
@@ -712,6 +712,80 @@
         "M12",
         "M22"
       ]
+    }
+  ],
+  "stacks": [
+    {
+      "id": "nodejs-express",
+      "slug": "nodejs-express",
+      "name": "Node.js and Express",
+      "path": "stacks/nodejs-express.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["node", "nodejs", "express", "javascript", "typescript"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "react-typescript",
+      "slug": "react-typescript",
+      "name": "React and TypeScript",
+      "path": "stacks/react-typescript.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["react", "frontend", "typescript-react", "spa", "vite", "nextjs"],
+      "related_modules": ["M01", "M04", "M05", "M12", "M21"]
+    },
+    {
+      "id": "python-fastapi",
+      "slug": "python-fastapi",
+      "name": "Python and FastAPI",
+      "path": "stacks/python-fastapi.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["python", "fastapi", "pydantic", "uvicorn", "starlette"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "laravel-php",
+      "slug": "laravel-php",
+      "name": "Laravel and PHP",
+      "path": "stacks/laravel-php.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["php", "laravel", "eloquent", "blade", "composer"],
+      "related_modules": ["M01", "M02", "M03", "M04", "M05", "M06", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "flutter-dart",
+      "slug": "flutter-dart",
+      "name": "Flutter and Dart mobile",
+      "path": "stacks/flutter-dart.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["flutter", "dart", "mobile", "ios", "android"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M12"]
+    },
+    {
+      "id": "go",
+      "slug": "go",
+      "name": "Go",
+      "path": "stacks/go.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["go", "golang", "gin", "echo", "chi"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "rust",
+      "slug": "rust",
+      "name": "Rust",
+      "path": "stacks/rust.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["rust", "cargo", "axum", "actix", "actix-web", "tower"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "java-spring",
+      "slug": "java-spring",
+      "name": "Java and Spring Boot",
+      "path": "stacks/java-spring.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["java", "spring", "spring-boot", "springboot", "jvm", "maven", "gradle"],
+      "related_modules": ["M01", "M02", "M03", "M04", "M05", "M06", "M08", "M09", "M10", "M12", "M21"]
     }
   ],
   "tasks": {
