@@ -39,4 +39,7 @@ This template is a starting point, not a complete security programme. Scanner su
 The first-party and consumer workflows run a fail-closed configuration guard before Gitleaks and Semgrep. It rejects unreviewed Gitleaks, Semgrep and CodeQL config/ignore files, and permits `.semgrepignore` only when it contains the two harmless metadata/dependency exclusions `.git/` and `node_modules/`. If an application needs an additional exclusion, obtain an explicit owner-approved exception and update the security tests before changing the guard.
 
 
-The guard also rejects nested .semgrepignore files and any .gitignore rule that hides a tracked file within the active Semgrep scan scope. Semgrep runs with --no-suppress-errors so scanner/parser errors are fatal, in addition to --error making findings fail the job. Consumer repositories are checked across all tracked files because the template scans the whole repository.
+The guard also rejects nested .semgrepignore files and any .gitignore rule that hides a tracked file within the active Semgrep scan scope. Semgrep runs with --strict so scanner/parser errors are fatal, in addition to --error making findings fail the job. Consumer repositories are checked across all tracked files because the template scans the whole repository.
+
+
+The first-party and consumer Semgrep scan commands use Semgrep's scan-specific --strict flag to make scan errors fatal, together with --error to fail on findings. The --no-suppress-errors flag belongs to semgrep ci, not semgrep scan, and is intentionally not used here.
