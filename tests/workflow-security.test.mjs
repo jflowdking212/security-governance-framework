@@ -220,7 +220,7 @@ function validateWorkflowSecurity(parsed, label) {
   else if (typeof rawTriggers === 'object') triggerKeys = Object.keys(rawTriggers);
   assert.ok(triggerKeys.length > 0, label + ' must define at least one trigger');
   for (const trigger of triggerKeys) {
-    assert.ok(ALLOWED_TRIGGERS.has(trigger), label + ' uses unapproved trigger ' + trigger);
+    assert.ok(ALLOWED_TRIGGERS.has(trigger), label + " uses unapproved trigger '" + trigger + "'");
   }
 
   assertSafeEnv(parsed.env, label + ' workflow');
@@ -263,7 +263,7 @@ function validateWorkflowSecurity(parsed, label) {
           assert.ok(!pattern.test(step.run), label + ' job ' + jobId + ' step ' + i + ' suppresses errors with ' + pattern + ': ' + step.run);
         }
         if (/\bnpm\s+(?:install|i)\b/.test(step.run)) {
-          assert.fail(label + ' job ' + jobId + ' step ' + i + ' uses npm install instead of npm ci: ' + step.run);
+          assert.fail(label + ' job ' + jobId + ' step ' + i + " uses 'npm install' instead of 'npm ci': " + step.run);
         }
         if (/\bnpm\s+ci\b/.test(step.run)) {
           assert.ok(step.run.includes('--ignore-scripts'), label + ' job ' + jobId + ' step ' + i + ' running npm ci must enforce --ignore-scripts: ' + step.run);
@@ -299,7 +299,7 @@ function validateUssValidationWorkflow(parsed) {
   ];
   assert.equal(steps.length, 10, 'uss-validation.yml validate job must contain exactly 10 steps, got ' + steps.length);
   for (let idx = 0; idx < stepMatchers.length; idx++) {
-    assert.ok(stepMatchers[idx](steps[idx]), 'uss-validation.yml step ' + idx + ' does not match required sequence: ' + (steps[idx].name || steps[idx].run || steps[idx].uses));
+    assert.ok(stepMatchers[idx](steps[idx]), 'uss-validation.yml step ' + idx + ' does not match required step sequence: ' + (steps[idx].name || steps[idx].run || steps[idx].uses));
     assert.equal(steps[idx].if, undefined, 'uss-validation.yml mandatory step ' + idx + ' must not be conditional');
   }
 
@@ -754,7 +754,7 @@ test('negative: rejects untrusted GitHub expressions moved into workflow, job, s
 
   const actionInput = YAML.parse(read('uss-validation.yml'));
   actionInput.jobs.validate.steps[1].with['node-version'] = '\${{ inputs.target }}';
-  assert.throws(() => validateUssValidationWorkflow(actionInput), /with contains forbidden untrusted GitHub context/);
+  assert.throws(() => validateUssValidationWorkflow(actionInput), /with.*contains forbidden untrusted GitHub context/);
 });
 
 test('negative: rejects array, object and expression-based runner selectors', () => {
