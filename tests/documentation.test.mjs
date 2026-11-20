@@ -71,7 +71,7 @@ test('M21 documents current Local Network Access terminology and does not requir
  assert.match(m21,/Draft Community Group Report dated 7 August 2026/);
  assert.match(m21,/\`local-network\`/);
  assert.match(m21,/\`loopback-network\`/);
- assert.match(m21,/must NOT rely on those legacy headers/);
+ assert.match(m21,/MUST NOT rely on those legacy headers/);
  assert.match(m21,/wicg\.github\.io\/local-network-access/);
  assert.doesNotMatch(m21,/must explicitly inspect and validate incoming \`Access-Control-Request-Private-Network\` preflight headers/);
  assert.doesNotMatch(m21,/unconditionally respond with \`Access-Control-Allow-Private-Network: true\`/);
