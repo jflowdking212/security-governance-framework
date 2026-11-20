@@ -111,3 +111,43 @@ This section updates the disposition of the second-audit findings after the audi
 - The full configured CI suite passed on Gemini's implementation commit `33186db096265b1affe908931132dfefa1a5f646`.
 - A subsequent owner-issued checksum regression-test iteration initially failed one assertion because the untracked-path guard reported before the new parent-symlink guard. The guard order was corrected in `8359028abf36e637762c1c590b1f39cfe4962726`; the current combined candidate must pass its own CI before this correction is treated as verified.
 - The current PR head and its check runs must be re-fetched before any release-readiness claim. The candidate remains NOT APPROVED FOR RELEASE. No signing, tagging or merge is authorised by this status update.
+
+
+---
+
+## Current-head supervisory verification — 2026-11-20
+
+**Verified PR head:** `f7ff86b9877fd635ccafe5aefd7544541eaac811`  
+**PR #9:** OPEN, base `integration/uss-pr3-pr8-hardening` (`58afa246b2c0d0601a5f3945d72bc3243e657c01`).  
+**Release posture:** NOT APPROVED FOR RELEASE.
+
+### Hosted validation and scanner evidence at this exact head
+
+| Check | Run / Job | Result |
+|---|---|---|
+| USS validation | Run `44713599897`, job `136211219639` | SUCCESS; 155/155 tests passed, 0 failed, 0 skipped. The three new checksum adversarial tests passed. |
+| Secret scan | Run `44713600302`, job `136211220215` | SUCCESS; Gitleaks reported no leaks. |
+| Semgrep | Run `44713600302`, job `136211220728` | SUCCESS; 26 tracked targets, 237 rules, 0 findings, 0 skipped files, no partial parsing errors, approximately 100% parsed lines. |
+| CodeQL | Run `44713600302`, job `136211220562` | SUCCESS; 18/18 JavaScript files and 2/2 GitHub Actions workflow files analyzed. |
+| OSV | Run `44713600302`, job `136211220658` | SUCCESS; one package scanned from `package-lock.json`, "No issues found". |
+| Aggregate check suite | Commit `f7ff86b9877fd635ccafe5aefd7544541eaac811` | All 7 reported check runs SUCCESS. |
+
+### A2-03 supervisory implementation
+
+The current branch includes the checksum hardening described above. The new tests prove that Git-mode create/verify does not execute a repository-configured `core.fsmonitor` command or clean filter, and that a tracked file cannot be reached through a symlinked parent directory. The implementation compares worktree bytes directly with committed `HEAD` blobs, disables `core.fsmonitor` for every Git invocation, and retains an index-to-`HEAD` cached diff. The parent-symlink test initially exposed check-ordering: the untracked-path check ran first. The ordering was corrected so tracked paths are validated before unexpected untracked paths are rejected. All three tests pass in the current 155-test hosted run.
+
+### A2-07 supervisory cross-check of CodeQL and Semgrep
+
+The current CodeQL log proves that GitHub Actions workflow files are analyzed even though the configured language input is `javascript-typescript`: CodeQL reported 2/2 GitHub Actions files scanned. Do not report an Actions-coverage gap on this evidence. The Semgrep log confirms 26 tracked targets, 237 rules, 0 skipped files and no partial parsing errors.
+
+### Remaining A2-02 / A2-07 work
+
+Hosted CI passing does not close the mutation-guard findings. Supervisory review of Gemini's commit `33186db096265b1affe908931132dfefa1a5f646` identified additional mutation gaps and requested follow-up in PR comment `7036410191`: OSV `scan-args` / `runs-on` / `ref` overrides, Semgrep rule-config replacement, Gitleaks configuration overrides, untrusted context passed through `env`, dynamic runner selectors, push-branch narrowing and scanner-specific validation of the consumer template. A subsequent comment `7036436127` corrected the CodeQL finding with the actual 2/2 Actions scan evidence. Gemini's follow-up implementation and tests are still required before A2-02/A2-07 can be closed.
+
+### Current agent handback status
+
+- Gemini's first A2-02/A2-07 implementation is committed at `33186db096265b1affe908931132dfefa1a5f646`; follow-up supervisory findings are awaiting implementation.
+- Claude's A2-06/A2-11/A2-12 implementation patch has not yet appeared on the authoritative PR branch as of this snapshot. Continue with the assigned prompt and re-sync before integrating any local patch.
+- A2-03/A2-04/A2-09/A2-10 owner-issued changes are implemented and current-head CI verified; independent review of the checksum changes and documentation cross-review remain outstanding.
+- A2-08 remains an owner identity/provenance decision. No agent may impersonate the owner.
+- No merge, signing ceremony, signed release manifest or release tag has been performed.
