@@ -268,8 +268,11 @@ test('adversarial: Git-mode checksum operations do not execute repository-config
   t.after(()=>fs.rmSync(hookDir,{recursive:true,force:true}));
   const marker=path.join(hookDir,'executed.txt');
   const hook=path.join(hookDir,'fsmonitor.cjs');
-  fs.writeFileSync(hook,
-    `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'executed');process.stdout.write('0\\n');\\n`);
+  fs.writeFileSync(hook,[
+    "const fs=require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(marker)},'executed');`,
+    "process.stdout.write('0'+String.fromCharCode(10));"
+  ].join(String.fromCharCode(10)));
   const command='"'+process.execPath+'" "'+hook+'"';
   git(cwd,'config','core.fsmonitor',command);
 
@@ -283,8 +286,8 @@ test('adversarial: Git-mode checksum operations do not execute repository-config
 
 test('adversarial: Git-mode checksum operations do not execute repository-configured clean filters',t=>{
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
-  fs.writeFileSync(path.join(cwd,'.gitattributes'),'*.uss-filtered filter=uss-audit\\n');
-  fs.writeFileSync(path.join(cwd,'policy.uss-filtered'),'trusted policy bytes\\n');
+  fs.writeFileSync(path.join(cwd,'.gitattributes'),'*.uss-filtered filter=uss-audit'+String.fromCharCode(10));
+  fs.writeFileSync(path.join(cwd,'policy.uss-filtered'),'trusted policy bytes'+String.fromCharCode(10));
   git(cwd,'add','.gitattributes','policy.uss-filtered');
   git(cwd,'commit','-m','add filtered policy fixture');
 
@@ -292,8 +295,11 @@ test('adversarial: Git-mode checksum operations do not execute repository-config
   t.after(()=>fs.rmSync(hookDir,{recursive:true,force:true}));
   const marker=path.join(hookDir,'executed.txt');
   const hook=path.join(hookDir,'clean-filter.cjs');
-  fs.writeFileSync(hook,
-    `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'executed');process.stdin.pipe(process.stdout);\\n`);
+  fs.writeFileSync(hook,[
+    "const fs=require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(marker)},'executed');`,
+    "process.stdin.pipe(process.stdout);"
+  ].join(String.fromCharCode(10)));
   const command='"'+process.execPath+'" "'+hook+'"';
   git(cwd,'config','filter.uss-audit.clean',command);
 
@@ -309,7 +315,7 @@ test('adversarial: rejects a tracked file reached through a symbolic-link parent
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   const policyDir=path.join(cwd,'policy');
   fs.mkdirSync(policyDir);
-  fs.writeFileSync(path.join(policyDir,'README.md'),'trusted nested policy\\n');
+  fs.writeFileSync(path.join(policyDir,'README.md'),'trusted nested policy'+String.fromCharCode(10));
   git(cwd,'add','policy/README.md');
   git(cwd,'commit','-m','add nested policy fixture');
   assert.equal(run(cwd,'create').status,0);
@@ -318,7 +324,7 @@ test('adversarial: rejects a tracked file reached through a symbolic-link parent
 
   const target=fs.mkdtempSync(path.join(os.tmpdir(),'uss-parent-symlink-target-'));
   t.after(()=>fs.rmSync(target,{recursive:true,force:true}));
-  fs.writeFileSync(path.join(target,'README.md'),'trusted nested policy\\n');
+  fs.writeFileSync(path.join(target,'README.md'),'trusted nested policy'+String.fromCharCode(10));
   fs.rmSync(policyDir,{recursive:true,force:true});
   fs.symlinkSync(target,policyDir,process.platform==='win32'?'junction':'dir');
 
