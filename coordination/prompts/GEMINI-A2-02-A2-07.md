@@ -301,3 +301,21 @@ The prior run IDs above are failure evidence, not acceptance evidence. Fetch the
 
 ### Semgrep CLI flag clarification
 The current Semgrep container uses semgrep scan, not semgrep ci. For this command, --strict is the supported scan-specific flag that makes structured scan errors fatal; --no-suppress-errors is a semgrep ci option and must not be passed to semgrep scan. Keep --error for findings and --strict for scan errors. Verify this against the pinned Semgrep 1.186.0 CLI and current CI logs.
+
+
+---
+
+## Resolution of the urgent workflow-topology note
+
+The topology concern recorded against the older snapshot `f57d6ce` is resolved in the current branch. That snapshot was damaged by an incorrect file-block replacement. The workflows were restored from the known-good `39d72f6f` revision and the guard was then inserted separately into the correct Gitleaks and Semgrep jobs.
+
+Current intended topology:
+- First-party security workflow: four distinct jobs named `gitleaks`, `semgrep`, `codeql`, and `osv`.
+- Consumer template: four distinct jobs named `secrets`, `semgrep`, `codeql`, and `osv`.
+- Gitleaks uses its pinned action; Semgrep uses the pinned container; CodeQL uses JavaScript/TypeScript plus Actions; OSV uses the pinned reusable workflow.
+
+Two subsequent Semgrep execution issues were also corrected:
+1. The scanner container initially rejected Git operations because the checked-out repository was owned by a different host/container user. The guard now uses the exact workspace path as a per-command Git safe.directory and disables core.fsmonitor.
+2. The Semgrep 1.186.0 image does not support `--no-suppress-errors` on `semgrep scan`. The supported scan-specific `--strict` option is now used alongside `--error`; the validator rejects `--no-error`, `--no-strict` and `--suppress-errors` mutations.
+
+At commit `b0bf7bdf`, USS validation passed 177/177 tests, including the runtime guard integration test. That result predates the final Semgrep CLI correction. The latest validation and scanner runs after the correction are pending and must be checked before reporting the current head as green. Do not reuse the older topology-failure note as the current branch status.
