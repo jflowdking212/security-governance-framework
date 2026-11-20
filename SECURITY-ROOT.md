@@ -91,7 +91,11 @@ node tools/checksums.mjs verify --root dist/bundles --filesystem
 
 In Git mode, the tool hashes committed Git blob bytes from `HEAD`, not the platform-dependent working-tree representation, so Windows CRLF checkout settings do not change the digest. The repository must be clean and all release files must already be committed before creating the source manifest.
 
-The `--filesystem` mode is for generated artifacts such as `dist/bundles/`, which are intentionally not Git-tracked. It hashes every regular file in the selected directory. The signature must be verified separately before trusting the checksum file.
+The `--filesystem` mode is for generated artifacts such as `dist/bundles/`, extracted release snapshots and other self-contained directories that are intentionally verified by file contents rather than Git object identity. It hashes every regular file under the selected root, excluding only `SHA256SUMS` and `SHA256SUMS.sig`. It rejects a root `.git` directory or gitfile, any nested `.git` entry, symbolic links and unsupported filesystem entries. It does not invoke Git in filesystem mode, so untrusted snapshot Git configuration cannot influence verification.
+
+The manifest records relative file paths and file bytes only. Empty directories, executable permission bits, ownership, timestamps and other filesystem metadata are not represented. A consumer that depends on those properties must verify them through a separate trusted packaging or deployment control. The signature must be verified separately before trusting the checksum file.
+
+In Git mode, the manifest covers Git-tracked files (except the manifest and signature). Tracked files under `node_modules/` or `dist/bundles/`, if any, are still included. Untracked or ignored workspace content under those two directories is tolerated as local build/dependency noise by the dirty-worktree check, but is not thereby included in the manifest. Other unexpected untracked or ignored files cause creation/verification to fail.
 
 ### Owner workstation test evidence (2026-11-19)
 
