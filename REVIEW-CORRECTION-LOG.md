@@ -83,3 +83,31 @@ The implementation candidate contains remediation changes for the listed technic
 - Authenticated ruleset API response for ID `27612394` confirms the exact active rules listed above.
 
 Passing CI is not a substitute for the missing adversarial controls. Do not sign or release until P2 findings are fixed and independently re-audited.
+
+
+---
+
+## Supervisory implementation follow-up — 2026-11-20
+
+This section updates the disposition of the second-audit findings after the audited commit `7e12fe60498551bd29807c37efe70966cc6b3b92`. The original findings above remain unchanged as the historical audit record. "Implemented" does not mean independently closed.
+
+| Finding | Follow-up implementation / evidence | Current disposition |
+|---|---|---|
+| A2-02 — Workflow mutation guard gaps | Gemini committed workflow AST/schema hardening and additional negative mutations in `33186db096265b1affe908931132dfefa1a5f646`. The validation and configured security scans passed on that exact commit. | IMPLEMENTED AND CI-VERIFIED AT 33186DB; independent review pending. |
+| A2-03 — Checksum execution and filesystem path safety | Owner-issued commits `d4cec88d9c887cff6696008b7dd1735df86970f3`, `4d349043bfea9553101b2f260af2734fce240b6f`, `0282759e8e7034c0df79950b2686eec1cd467a03`, `2cc43f01214f34a1f0bd0aa272955fdd62eb9687` and `8359028abf36e637762c1c590b1f39cfe4962726` harden Git-mode verification. The tool disables repository-local `core.fsmonitor`, avoids worktree `git diff` because configured clean filters can execute during that operation, compares tracked files directly with committed `HEAD` blobs, and rejects symlinked parent directories. Three adversarial tests cover fsmonitor execution, clean-filter execution and parent-symlink substitution. | IMPLEMENTED; current-head CI and independent adversarial review pending. |
+| A2-04 — README release claims | Owner-issued README update `4721444495ce8f59ce54361bdfe7f3aeec024727` distinguishes the initial Claude review from the second audit, identifies the current remediation log, states PR #9's integration target and preserves the candidate-not-released warning. The README stack catalogue lists all eight profiles and the validation badge targets the remediation branch. | IMPLEMENTED; current-head CI and cross-review pending. |
+| A2-05 — Live ruleset evidence | Ruleset `Protect Main` ID `27612394` was read from the authenticated GitHub API. | VERIFIED; no settings changes authorised. |
+| A2-06 — Evidence validator residuals | Assigned to Claude under `coordination/prompts/CLAUDE-A2-06-A2-11-A2-12.md`. | IN PROGRESS / HANDOVER PENDING. |
+| A2-07 — Scanner scope and provenance | Gemini's commit `33186db096265b1affe908931132dfefa1a5f646` expands and hardens the workflow scan configuration. The hosted Semgrep, CodeQL, Gitleaks, OSV and USS validation checks passed on that SHA. | IMPLEMENTED AND CI-VERIFIED AT 33186DB; independent scope/provenance review pending. |
+| A2-08 — Agent commit provenance | The connected bot identity remains read-only. Agent work must not be committed by impersonating the owner. Owner-issued integration commits are explicitly labelled in the handoff. | OWNER ACCESS / IDENTITY DECISION OPEN. |
+| A2-09 — Checksum exclusions and limitations | Owner-issued documentation commits `3447cd57b26de88836d07f67a15e590040fb7cb3` and `4c8dec3e9fabfec52343d5f3892df5a75dba2c3a` clarify tracked versus untracked/ignored content, separate bundle manifests, empty-directory and metadata limitations, and safe Git-mode verification behaviour. | DOCUMENTED; independent documentation review pending. |
+| A2-10 — Read-only audit role clarity | Owner-issued commits `49711e3231e4bee97b8b3ab024d34830d3281224` and `4721444495ce8f59ce54361bdfe7f3aeec024727` clarify agent-specific responsibilities, bounded implementation permissions, and ChatGPT-only updates to the shared handoff ledger. | IMPLEMENTED; current-head CI and cross-review pending. |
+| A2-11 — Stack profile completeness | Assigned to Claude under `coordination/prompts/CLAUDE-A2-06-A2-11-A2-12.md`. | IN PROGRESS / HANDOVER PENDING. |
+| A2-12 — PNA terminology | Assigned to Claude under `coordination/prompts/CLAUDE-A2-06-A2-11-A2-12.md`. | IN PROGRESS / HANDOVER PENDING. |
+| U-01 / SUP-01 — Release signing | Owner retains the private key and performs the final signing ceremony only after technical closure and owner approval. | OWNER-ONLY ACTION PENDING; RELEASE BLOCKED. |
+
+### Current verification boundary
+
+- The full configured CI suite passed on Gemini's implementation commit `33186db096265b1affe908931132dfefa1a5f646`.
+- A subsequent owner-issued checksum regression-test iteration initially failed one assertion because the untracked-path guard reported before the new parent-symlink guard. The guard order was corrected in `8359028abf36e637762c1c590b1f39cfe4962726`; the current combined candidate must pass its own CI before this correction is treated as verified.
+- The current PR head and its check runs must be re-fetched before any release-readiness claim. The candidate remains NOT APPROVED FOR RELEASE. No signing, tagging or merge is authorised by this status update.
