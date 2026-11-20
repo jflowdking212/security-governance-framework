@@ -327,7 +327,7 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   const jobs = parsed.jobs || {};
   const gitleaksId = consumerTemplate ? 'secrets' : 'gitleaks';
   const gitleaksJob = jobs[gitleaksId];
-  assert.ok(gitleaksJob, label + ' must contain ' + gitleaksId + ' secret-scanning job');
+  assert.ok(gitleaksJob, label + ' must contain ' + gitleaksId + ' job');
   for (const jobId of [gitleaksId, 'semgrep', 'codeql', 'osv']) {
     assert.ok(jobs[jobId], label + ' must contain ' + jobId + ' job');
     assertNoMandatoryJobConditions(jobId, jobs[jobId], label);
@@ -355,6 +355,7 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
 
   const semgrepJob = jobs.semgrep;
   assert.equal(semgrepJob.permissions, undefined, label + ' Semgrep must inherit read-only workflow permissions');
+  assert.ok(/^semgrep\\/semgrep:[^@]+@sha256:[a-f0-9]{64}$/.test(semgrepJob.container?.image || ''), label + ' Semgrep container image must be pinned by immutable sha256 digest');
   assertExactObject(semgrepJob.container, {
     image: 'semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493'
   }, label + ' Semgrep container');
