@@ -1,9 +1,9 @@
 # Universal Security Standard (USS)
 
-**Current version:** 1.0.0  
-**Release status:** Independent review completed with required fixes applied; integration candidate combines PR #3 (routing, evidence validation, scanner coverage) and PR #8 (trust root, checksum manifest, SSH signing); GitHub Actions CI is used to validate the candidate; final owner release approval and signed release tag remain outstanding.
+**Current version:** 1.0.0-rc.1  
+**Release status:** Release candidate v1.0.0-rc.1. Independent audit findings remediated; automated validation and security test suites passing. Final official v1.0.0 release tag and cryptographic signing ceremony remain pending owner execution.  
 **Security posture:** FAIL CLOSED & PROVE  
-**Runtime requirement:** Node.js 20 or later for the repository validation tools. No third-party Node packages are required.
+**Runtime requirement:** Node.js 20 or later. Core repository tools require zero external dependencies; test suites require `npm ci --ignore-scripts`.
 
 [![USS validation](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml/badge.svg?branch=uss%2Fv1.0.0-modular-security-standard)](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml)
 
@@ -126,11 +126,19 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 
 ## Build and validate
 
-Requirements: Node.js 20 or later. The tools use Node.js built-ins and do not require installing third-party packages.
+Requirements: Node.js 20 or later.
+
+> **Dependency and Supply-Chain Security:**
+> - Core USS tools (`tools/resolve-task.mjs`, `tools/checksums.mjs`, `tools/build-modules.mjs`, `tools/validate.mjs`, `tools/validate-evidence.mjs`) use Node.js standard library built-ins with zero external dependencies.
+> - A single pinned dependency (`yaml@2.9.1`) is required strictly for running workflow AST security tests in `tests/workflow-security.test.mjs`.
+> - The `--ignore-scripts` flag is mandatory during installation to prevent malicious third-party lifecycle scripts from executing arbitrary code during `npm ci`.
 
 From a clean checkout:
 
 ```sh
+# Install pinned test dependency without executing lifecycle scripts
+npm ci --ignore-scripts
+
 # Regenerate all modules from the preserved canonical sources
 node tools/build-modules.mjs
 

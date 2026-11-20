@@ -20,8 +20,10 @@ The fingerprint was obtained locally with `ssh-keygen -lf`. The key successfully
 The corresponding raw public key is stored as `SECURITY-ROOT.pub`. The SSH allowed-signers entry is stored as `.security/allowed_signers` in this form:
 
 ```text
-jude_m2003@yahoo.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA2fInUDvAZFW5E8KuFh6YsjBuqHaz8wBsujComEYF71
+jude_m2003@yahoo.com namespaces="git,USS-SHA256SUMS" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA2fInUDvAZFW5E8KuFh6YsjBuqHaz8wBsujComEYF71
 ```
+
+The `namespaces` directive restricts key validity strictly to `git` (for commit and tag verification) and `USS-SHA256SUMS` (for release checksum manifests), enforcing signature domain separation and preventing cross-protocol signature reuse.
 
 Both files are public verification material. Never store the private key or its passphrase in this repository.
 
@@ -135,6 +137,16 @@ The following controls require repository-owner configuration and cannot be esta
 - Require 2FA for maintainers and minimise administrator access.
 - Restrict workflow permissions to least privilege (`contents: read` default).
 - Enable secret scanning and dependency/security alerts.
+
+### Pinned scanner and CI action provenance
+
+All actions and reusable workflows in `.github/workflows/` are pinned to immutable 40-character commit SHAs or container image digests. Their provenance is verified against upstream canonical sources:
+- `google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@d3c1414ded37de590f207572e37a7d180f1d0ef7`: verified as official commit on `google/osv-scanner-action` main branch (reviewed 2026-11-11).
+- `actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803`: official release commit for GitHub Checkout action.
+- `actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38`: official release commit for Node.js setup action.
+- `gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e`: official release commit for Gitleaks action.
+- `github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066` and `analyze@33d7b85da1a04171e211befe2c739303b9a4c066`: official CodeQL v4.39.3 action commits.
+- `semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493`: official Semgrep immutable image digest.
 
 ## Release signing procedure
 

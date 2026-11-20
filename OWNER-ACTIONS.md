@@ -44,6 +44,33 @@ Enforced rules:
 - Authoritative URL: `https://github.com/jflowdking212/security-governance-framework`
 - All documentation, clone commands, and consuming references have been updated.
 
+## 6. Release signing ceremony (U-01)
+
+**Status: PENDING OWNER EXECUTION**  
+The release candidate `v1.0.0-rc.1` is fully implemented and tested. To finalize the official `v1.0.0` release:
+1. Merge the remediation PR into `integration/uss-pr3-pr8-hardening`.
+2. Fast-forward merge `integration/uss-pr3-pr8-hardening` into `main` after owner review.
+3. On the owner's workstation (where the private SSH key resides):
+   ```sh
+   git checkout main
+   git pull origin main
+   node tools/checksums.mjs create
+   ssh-keygen -Y sign -f ~/.ssh/security_layer_signing -n USS-SHA256SUMS SHA256SUMS
+   git add SHA256SUMS SHA256SUMS.sig
+   git commit -S -m "release: Universal Security Standard v1.0.0"
+   git tag -s -m "Universal Security Standard v1.0.0" v1.0.0
+   git push origin main v1.0.0
+   ```
+4. Verify the published release commit and tag on GitHub.
+
+## 7. Main branch required status checks (U-08)
+
+**Status: OWNER DECISION RECORDED**  
+- The active `Protect Main` ruleset (ID `27612394`) enforces pull requests, conversation resolution, and blocks force pushes and deletion.
+- In accordance with the owner's directive, mandatory second-person approval remains disabled.
+- Once hosted GitHub Actions runners are confirmed active and the workflow name `USS validation` is verified in GitHub checks, the owner can optionally add `USS validation` as a required status check in `Protect Main` ruleset.
+- No repository settings were modified by engineering agents.
+
 ## Release rule
 
-All foundational owner governance actions are complete. USS v1.0.0 is technically validated and ready for independent review by Claude and personal release signing by the owner.
+All technical audit remediations are complete and verified in `v1.0.0-rc.1`. Final v1.0.0 release is pending owner signing ceremony.
