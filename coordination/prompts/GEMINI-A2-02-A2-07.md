@@ -234,3 +234,66 @@ The first implementation is present, but direct inspection of the live files sho
 Fetch the latest PR head and inspect the actual live files and CI. Reproduce the adversarial cases, especially nested ignore files, .gitignore-hidden tracked targets, Gitleaks config/ignore files, Semgrep CLI error suppression, CodeQL Actions language, unsafe OSV inputs and dynamic runners.
 
 Return only evidence-backed findings with exact file/line, severity, reproduction, and exact tested SHA. If you find a defect, propose a minimal patch in your own authorized workspace. Do not modify the shared handoff ledger. Do not claim independent closure from a green CI run alone. PR #9 remains open and unmerged.
+
+
+---
+
+## Urgent supervisory follow-up — repair scanner topology and failing tests before further hardening
+
+**Issued:** 2026-11-20  
+**Live PR HEAD at review:** `f57d6ce600538736925b4af62321a715db49d16c`  
+**Failed validation:** run `44737872939`, job `136293734824`  
+**Failed security scan:** run `44737873441`, job `136293737777`
+
+### Confirmed live failures
+
+The current hosted validation run executed 177 tests: **154 passed, 23 failed**. The failures are concentrated in the workflow-security tests.
+
+The current `.github/workflows/security-scans.yml` contains only these job IDs:
+
+- `gitleaks`
+- `codeql`
+- `osv`
+
+There is no separate `semgrep` job, even though `validateSecurityScansWorkflow()` and its mutation tests require `jobs.semgrep`. As a result, the baseline security-workflow test fails with `security-scans.yml must contain semgrep job`, and multiple mutation tests then throw TypeErrors while trying to mutate the missing job.
+
+More seriously, the current `gitleaks` job is not running Gitleaks. Its third step runs:
+
+```sh
+semgrep scan --config p/default --error --no-suppress-errors --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
+```
+
+The job log confirms this command exits **127 (command not found)** on `ubuntu-latest`. There is no `gitleaks/gitleaks-action` invocation in the current first-party workflow. The consumer template has the same topology problem: its `secrets` job runs Semgrep directly on `ubuntu-latest`, and no separate Semgrep job/container is declared.
+
+Therefore, the current hosted scan run does **not** prove Gitleaks or Semgrep coverage.
+
+### Required correction
+
+1. Restore two distinct scanner jobs in both first-party workflow and consumer template:
+   - Gitleaks job: pinned checkout, exact scanner-config guard, then the pinned `gitleaks/gitleaks-action` SHA with the reviewed least-privilege environment. Keep full-history checkout where required and preserve the scheduled full-history behaviour.
+   - Semgrep job: a separate job with the immutable pinned Semgrep container image digest, checkout, exact scanner-config guard and the exact approved `semgrep scan --config p/default --error --no-suppress-errors ...` command and target scope.
+2. Keep CodeQL and OSV as separate jobs with their current pinned actions/reusable workflow and least-privilege permissions.
+3. The first-party workflow and consumer template must both actually execute all four scanners: Gitleaks, Semgrep, CodeQL and OSV. Do not rename a Semgrep job to Gitleaks or treat a successful job name as proof of scanner execution.
+4. Align the validator with the intended actual job IDs and topology. Do not weaken scanner requirements to make the current workflow pass.
+5. Repair mutation tests so each fixture mutates an existing, explicit job/step. A missing job must fail with a clear assertion, not throw a TypeError before the intended assertion. Add explicit negative tests proving:
+   - removal/renaming of the Gitleaks job or action is rejected;
+   - removal/renaming of the Semgrep job or container is rejected;
+   - Semgrep cannot be run on a bare Ubuntu runner without the pinned container or another explicitly pinned, verified installation method;
+   - the consumer template independently enforces the same two scanner jobs.
+6. Keep the scanner configuration guard, exact Semgrep config/scope, Gitleaks config restrictions, branch coverage, action pins, and error-fatal behaviour intact.
+7. Do not suppress, skip or mark the current 23 failing tests as expected. Fix the underlying topology and fixtures.
+
+### Acceptance evidence
+
+On the exact resulting PR HEAD, provide:
+
+- targeted workflow-security tests: all pass;
+- complete `node --test tests/*.test.mjs`: all pass, with exact total;
+- `node tools/validate.mjs` and generated-file drift checks: pass;
+- fresh hosted USS validation: success;
+- fresh hosted security scans with **four distinct successful scanner jobs**: Gitleaks, Semgrep, CodeQL and OSV;
+- Semgrep tracked/scanned/skipped counts and findings;
+- Gitleaks job log showing the pinned Gitleaks action actually ran, not merely a job named “Secret scan”;
+- exact commit SHA, changed files, commands, exit codes and run/job IDs.
+
+The prior run IDs above are failure evidence, not acceptance evidence. Fetch the current remote branch head before editing, work from that exact head, and report any intervening changes. Keep all changes within A2-02/A2-07 ownership. Do not edit checksum/evidence-validator/stack files or the shared handoff ledger. PR #9 remains open and unmerged; no release or signing actions.
