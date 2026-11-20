@@ -390,7 +390,7 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   assert.equal(codeqlSteps.length, 3, label + ' CodeQL must contain checkout, init and analyze steps');
   const codeqlInit = codeqlSteps[1];
   assert.equal(codeqlInit.uses, 'github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066', label + ' CodeQL init action must remain pinned');
-  assertExactObject(codeqlInit.with, { languages: 'javascript-typescript', 'build-mode': 'none' }, label + ' CodeQL init inputs');
+  assertExactObject(codeqlInit.with, { languages: 'javascript-typescript, actions', 'build-mode': 'none' }, label + ' CodeQL init inputs');
   const codeqlAnalyze = codeqlSteps[2];
   assert.equal(codeqlAnalyze.uses, 'github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066', label + ' CodeQL analyze action must remain pinned');
   assert.equal(codeqlAnalyze.with, undefined, label + ' CodeQL analyze must not receive unapproved inputs');
