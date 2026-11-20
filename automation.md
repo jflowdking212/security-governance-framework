@@ -3,9 +3,9 @@
 **Authority:** Project Owner (Jude O. Richard / Jay Bliss Tech Limited)  
 **Scope:** Universal Security Standard (USS) repository and associated engineering assignments  
 **Participating Roles:**
-- **Lead Implementation Engineer:** Gemini (executing code, test, and documentation corrections)
-- **Supervisory Reviewer:** ChatGPT (independent oversight, operational planning, and governance review)
-- **Independent Security Auditor:** Claude (adversarial inspection, defect identification, and release verification)
+- **Implementation Engineer:** Gemini (A2-02 workflow security and A2-07 scanner assurance)
+- **Bounded Implementation Engineer / Independent Auditor:** Claude (A2-06 evidence validation, A2-11 stack profiles and A2-12 browser standards; independent audits only outside its own implementation scope)
+- **Supervisory Engineer:** ChatGPT (A2-03 checksum tooling, A2-09 checksum documentation, A2-04 release-status documentation, A2-10 collaboration protocol, and cross-agent review)
 - **Project Owner / Final Authority:** Jude O. Richard (cryptographic signing, policy exceptions, and release authorization)
 
 ---
@@ -21,7 +21,7 @@ Every engineering agent (Gemini, Claude, ChatGPT, or future automated contributo
 5. **Implement, Do Not Merely Report:** When authorized, implement confirmed technical corrections directly rather than issuing advisory recommendations.
 6. **Verify After Every Fix:** Run the affected test suites and validation scripts immediately after applying each correction.
 7. **Fix Within Scope:** Address minor, fully understood defects that fall within the authorized scope; surface out-of-scope architectural decisions to the supervisory reviewer and owner.
-8. **Record in Coordination Ledger:** Record every discovered defect and its severity in `coordination/agent-handoff.md`.
+8. **Record findings without concurrent ledger edits:** Every agent must record discovered defects, severity, reproduction steps and evidence in its own handover. During active parallel work, only ChatGPT updates the shared `coordination/agent-handoff.md` ledger. Other agents submit their findings and exact evidence to ChatGPT for inclusion, preventing concurrent overwrites.
 9. **Document Commit and Test Evidence:** Every correction must cite the exact files changed, commit reference, and executed test evidence.
 10. **Deliver Precise Handovers:** Provide the next agent with an explicit handover detailing the base commit SHA, branch name, completed fixes, passing test counts, and outstanding owner decisions.
 11. **Owner Approval for Releases and Policies:** Never merge into `main`, publish release tags, alter production security rules, or modify licensing without explicit human owner authorization.
@@ -31,22 +31,22 @@ Every engineering agent (Gemini, Claude, ChatGPT, or future automated contributo
 
 ## 2. Agent Operational Boundaries
 
-- **Gemini (Implementation):**
-  - Works on dedicated feature/fix branches (e.g. `fix/uss-final-audit-remediation`).
-  - Implements confirmed audit fixes across tools, workflows, tests, and documentation.
-  - Rebuilds modules, compiles bundles, runs full validation suites, and verifies 0 drift.
-  - Submits pull requests targeting the designated integration branch.
+- **Gemini (A2-02 / A2-07 implementation):**
+  - Works only on the workflow-security AST/schema validator, its adversarial tests, scanner configuration, scan coverage and provenance evidence assigned in Section 2B and the current handoff.
+  - Fetches and verifies the live GitHub source SHA before every work session.
+  - Runs targeted tests, full validation and hosted CI where authorised.
+  - Returns a patch or opens a PR only under its own authenticated identity if it has write access. If not, it preserves the patch and reports the exact access blocker.
 
-- **Claude (Independent Audit & Technical Review):**
-  - Fetches authoritative published branches directly from GitHub.
-  - Conducts adversarial testing, fuzzing, structural inspection, and AST analysis.
-  - Evaluates security controls against the 13-Layer Assurance Model.
-  - Submits structured findings with severity classifications and reproduction evidence.
+- **Claude (A2-06 / A2-11 / A2-12 implementation and independent audit):**
+  - Implements only its explicitly assigned evidence-validator, stack-profile and browser-standards corrections.
+  - Fetches and verifies the live GitHub source SHA before every work session.
+  - Uses adversarial tests and primary standards/browser sources, and reports source dates and exact evidence.
+  - Remains read-only when performing an independent audit; it must not certify its own implementation work.
 
-- **ChatGPT (Supervisory Review & Quality Control):**
-  - Analyzes audit reports and implementation plans.
-  - Assesses compliance with owner directives and non-waivable release policies.
-  - Coordinates milestone objectives between implementation and review agents.
+- **ChatGPT (A2-03 / A2-09 / A2-04 / A2-10 supervisory engineering):**
+  - Implements and verifies its assigned checksum, checksum-documentation, README/release-status and collaboration-protocol work.
+  - Independently inspects actual agent diffs, tests, CI logs and repository state rather than accepting handover claims alone.
+  - Prepares the next bounded instruction after each agent handback, fixes safe in-scope defects, and maintains the shared coordination ledger.
 
 - **Project Owner (Authority & Cryptographic Root):**
   - Retains personal custody of private SSH signing keys on local hardware.
