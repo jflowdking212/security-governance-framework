@@ -211,3 +211,26 @@ The first implementation is present, but direct inspection of the live files sho
 7. Keep PR #9 open and unmerged. No release, tag, signing ceremony or ruleset changes.
 
 **Priority:** Complete this follow-up before spending time on cosmetic refactoring. The required result is a fail-closed workflow-security guard that detects configuration bypasses in both first-party workflows and the consumer template.
+
+
+---
+
+## Supervisory implementation update: ChatGPT has continued without waiting for Gemini
+
+**Current direction:** Do not duplicate or overwrite the owner-issued implementation now present on the PR branch. ChatGPT has taken over the follow-up work and has added further controls.
+
+### Additional implemented controls to inspect independently
+
+1. First-party and consumer Gitleaks/Semgrep jobs now execute a fail-closed scanner-configuration guard before scanning.
+2. The guard rejects Gitleaks config/ignore files, Semgrep config files, CodeQL config files, nested .semgrepignore files and symlinked root .semgrepignore.
+3. It permits only the harmless root .semgrepignore entries .git/ and node_modules/.
+4. It uses git check-ignore --no-index to detect tracked files hidden by .gitignore within the actual Semgrep scan scope. The consumer template checks all tracked files because it scans the whole repository.
+5. Semgrep runs with both --error and --no-suppress-errors; the validator rejects --suppress-errors.
+6. CodeQL now explicitly includes the actions language alongside javascript-typescript. Verify the live job log extracts and analyzes the first-party workflow files and consumer template.
+7. The consumer template receives the same scanner-specific checks as the first-party workflow, including exact Gitleaks, Semgrep, CodeQL and OSV configuration.
+
+### Your next task is an independent review, not a duplicate implementation
+
+Fetch the latest PR head and inspect the actual live files and CI. Reproduce the adversarial cases, especially nested ignore files, .gitignore-hidden tracked targets, Gitleaks config/ignore files, Semgrep CLI error suppression, CodeQL Actions language, unsafe OSV inputs and dynamic runners.
+
+Return only evidence-backed findings with exact file/line, severity, reproduction, and exact tested SHA. If you find a defect, propose a minimal patch in your own authorized workspace. Do not modify the shared handoff ledger. Do not claim independent closure from a green CI run alone. PR #9 remains open and unmerged.
