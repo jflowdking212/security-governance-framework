@@ -36,7 +36,7 @@ const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(
 function buildScannerConfigGuard(targetSpec, emptyMessage) {
   return [
     'set -euo pipefail',
-    'git -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
+    'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
     'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do',
     '  if [ -e "$file" ]; then',
     "    printf 'Unreviewed scanner override is not permitted: %s\\n' \"$file\" >&2",
@@ -63,7 +63,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     'target_count=0',
     "while IFS= read -r -d '' file; do",
     '  target_count=$((target_count+1))',
-    '  if git -c core.fsmonitor=false check-ignore --no-index -q -- "$file"; then',
+    '  if git -c safe.directory="$PWD" -c core.fsmonitor=false check-ignore --no-index -q -- "$file"; then',
     "    printf 'Tracked Semgrep target is excluded by .gitignore: %s\\n' \"$file\" >&2",
     '    exit 1',
     '  else',
@@ -72,7 +72,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '      exit "$status"',
     '    fi',
     '  fi',
-    'done < <(git -c core.fsmonitor=false ls-files -z' + targetSpec + ')',
+    'done < <(git -c safe.directory="$PWD" -c core.fsmonitor=false ls-files -z' + targetSpec + ')',
     'if [ "$target_count" -eq 0 ]; then',
     "  printf '%s\\n' '" + emptyMessage + "' >&2",
     '  exit 1',
