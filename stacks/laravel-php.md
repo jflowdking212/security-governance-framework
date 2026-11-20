@@ -65,7 +65,7 @@ As of 2026-11-20, Laravel 11 security support ended on 2026-03-12 and it MUST NO
 ## Queue, Horizon and asynchronous execution
 
 - Assume queued jobs can be retried, duplicated, delayed or processed after the originating user's permissions change. Make business effects idempotent with database constraints or durable idempotency keys; do not rely on an in-memory check.
-- Dispatch jobs after database transactions commit when the job depends on committed records. Use unique-job locks or overlap middleware as concurrency controls, but retain database-level correctness constraints.
+- Dispatch jobs after database transactions commit when the job depends on committed records. Use Laravel's `ShouldBeUnique` jobs or overlap middleware as concurrency controls, but retain database-level correctness constraints.
 - Pass minimal identifiers rather than serializing unnecessary sensitive model state. Reload the record in the job and re-check tenant ownership and authorization before performing privileged work.
 - Set explicit tries, backoff, timeout and failure handling for each job class. Protect failed-job storage and queue dashboards.
 - Horizon's dashboard and any queue-management endpoint MUST be protected by an explicit authorization gate and network restrictions. Never assume a dashboard is private merely because it is intended for operators.
