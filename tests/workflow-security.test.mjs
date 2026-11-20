@@ -21,7 +21,8 @@ const FORBIDDEN_ERROR_SUPPRESSIONS = [
   /;\s*:/,
   /\bset\s+\+e\b/,
   /\bset\s+\+o\s+(?:errexit|e)\b/,
-  /\btrap\s+[^;\n]*\s+ERR\b/i
+  /\btrap\s+[^;\n]*\s+ERR\b/i,
+  /--suppress-errors\b/
 ];
 
 const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_dispatch']);
@@ -30,28 +31,66 @@ const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_
 // Covers dot notation, bracket notation, and nested paths.
 const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
 
-const SCANNER_CONFIG_GUARD_RUN = [
-  'set -euo pipefail',
-  'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do',
-  '  if [ -e "$file" ]; then',
-  "    printf 'Unreviewed scanner override is not permitted: %s\\n' \"$file\" >&2",
-  '    exit 1',
-  '  fi',
-  'done',
-  'if [ -f .semgrepignore ]; then',
-  "  actual=\"$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)\"",
-  "  expected=\"$(printf '.git/\\nnode_modules/\\n' | sort)\"",
-  '  if [ "$actual" != "$expected" ]; then',
-  "    printf '%s\\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2",
-  '    exit 1',
-  '  fi',
-  'fi'
-].join('\n');
+function buildScannerConfigGuard(targetSpec, emptyMessage) {
+  return String.raw\`set -euo pipefail
+git -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
+for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do
+  if [ -e "$file" ]; then
+    printf 'Unreviewed scanner override is not permitted: %s\\n' "$file" >&2
+    exit 1
+  fi
+done
+nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
+if [ -n "$nested_semgrepignore" ]; then
+  printf 'Nested .semgrepignore is not permitted: %s\\n' "$nested_semgrepignore" >&2
+  exit 1
+fi
+if [ -L .semgrepignore ]; then
+  printf '%s\\n' 'A symlinked .semgrepignore is not permitted' >&2
+  exit 1
+fi
+if [ -f .semgrepignore ]; then
+  actual="$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)"
+  expected="$(printf '.git/\\nnode_modules/\\n' | sort)"
+  if [ "$actual" != "$expected" ]; then
+    printf '%s\\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2
+    exit 1
+  fi
+fi
+target_count=0
+while IFS= read -r -d '' file; do
+  target_count=$((target_count+1))
+  if git -c core.fsmonitor=false check-ignore --no-index -q -- "$file"; then
+    printf 'Tracked Semgrep target is excluded by .gitignore: %s\\n' "$file" >&2
+    exit 1
+  else
+    status=$?
+    if [ "$status" -ne 1 ]; then
+      exit "$status"
+    fi
+  fi
+done < <(git -c core.fsmonitor=false ls-files -z\${targetSpec})
+if [ "$target_count" -eq 0 ]; then
+  printf '%s\\n' '\${emptyMessage}' >&2
+  exit 1
+fi\`;
+}
 
-function assertScannerConfigGuard(step, label) {
+const SCANNER_CONFIG_GUARD_RUN = buildScannerConfigGuard(
+  ' -- tools/ tests/ .github/workflows/ templates/',
+  'No tracked files found in required Semgrep scan targets'
+);
+const CONSUMER_CONFIG_GUARD_RUN = buildScannerConfigGuard(
+  '',
+  'No tracked files found for Semgrep scan'
+);
+
+
+function assertScannerConfigGuard(step, label, consumerTemplate = false) {
   assert.equal(step.name, 'Reject unreviewed scanner configuration', label + ' must include the scanner configuration guard');
   assert.equal(step.shell, 'bash', label + ' scanner configuration guard must use bash');
-  assert.equal(step.run?.trim(), SCANNER_CONFIG_GUARD_RUN.trim(), label + ' must execute the exact fail-closed scanner configuration guard');
+  const expected = consumerTemplate ? CONSUMER_CONFIG_GUARD_RUN : SCANNER_CONFIG_GUARD_RUN;
+  assert.equal(step.run?.trim(), expected.trim(), label + ' must execute the exact fail-closed scanner configuration guard');
 }
 
 // Narrow allowlist of approved job-level write permissions:
@@ -365,7 +404,7 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   const gitleaksCheckout = gitleaksSteps[0];
   assert.equal(gitleaksCheckout.uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', label + ' Gitleaks checkout must use the approved pinned action');
   assertExactObject(gitleaksCheckout.with, { 'fetch-depth': 0, 'persist-credentials': false }, label + ' Gitleaks checkout inputs');
-  assertScannerConfigGuard(gitleaksSteps[1], label + ' Gitleaks');
+  assertScannerConfigGuard(gitleaksSteps[1], label + ' Gitleaks', consumerTemplate);
   const gitleaksAction = gitleaksSteps[2];
   assert.equal(gitleaksAction.uses, 'gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e', label + ' Gitleaks must use the approved pinned action');
   assert.strictEqual(String(gitleaksAction.env?.GITLEAKS_ENABLE_COMMENTS), 'false', label + ' Gitleaks must disable PR comments');
@@ -386,7 +425,7 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   }, label + ' Semgrep container');
   const semgrepSteps = semgrepJob.steps || [];
   assert.equal(semgrepSteps.length, 3, label + ' Semgrep job must contain exactly checkout, config guard and scan steps');
-  assertScannerConfigGuard(semgrepSteps[1], label + ' Semgrep');
+  assertScannerConfigGuard(semgrepSteps[1], label + ' Semgrep', consumerTemplate);
   const semgrepStep = semgrepSteps[2];
   assert.ok(semgrepStep.run && semgrepStep.run.includes('semgrep scan'), label + ' Semgrep job must execute a scan');
   assert.ok(semgrepStep.run.includes('--error'), 'Semgrep scan must fail on findings with --error');
@@ -397,8 +436,8 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
     assert.ok(!semgrepStep.run.includes('--exclude'), 'Semgrep scan must not use --exclude argument to weaken scan');
   }
   const expectedSemgrepCommand = consumerTemplate
-    ? 'semgrep scan --config p/default --error --metrics=off .'
-    : 'semgrep scan --config p/default --error --metrics=off --verbose tools/ tests/ .github/workflows/ templates/';
+    ? 'semgrep scan --config p/default --error --no-suppress-errors --metrics=off .'
+    : 'semgrep scan --config p/default --error --no-suppress-errors --metrics=off --verbose tools/ tests/ .github/workflows/ templates/';
   assert.equal(semgrepStep.run.trim(), expectedSemgrepCommand, label + ' Semgrep must use the exact approved ruleset, flags and target scope');
   assertExactObject(semgrepStep.env, { SEMGREP_SEND_METRICS: 'off' }, label + ' Semgrep environment');
   if (!consumerTemplate) {
@@ -866,7 +905,7 @@ test('negative: rejects pull-request and push branch filters that skip required 
 });
 
 test('negative: rejects additional error-masking shell variants', () => {
-  for (const suffix of [' || :', ' || /bin/true', '; echo ignored', 'set +o errexit']) {
+  for (const suffix of [' || :', ' || /bin/true', '; echo ignored', 'set +o errexit', ' --suppress-errors']) {
     const parsed = YAML.parse(read('security-scans.yml'));
     parsed.jobs.semgrep.steps[2].run += suffix;
     assert.throws(() => validateSecurityScansWorkflow(parsed), /suppresses errors with/);
