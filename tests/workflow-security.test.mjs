@@ -24,7 +24,9 @@ const FORBIDDEN_ERROR_SUPPRESSIONS = [
   /\bset\s+\+e\b/,
   /\bset\s+\+o\s+(?:errexit|e)\b/,
   /\btrap\s+[^;\n]*\s+ERR\b/i,
-  /--suppress-errors\b/
+  /--suppress-errors\b/,
+  /--no-error\b/,
+  /--no-strict\b/
 ];
 
 const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_dispatch']);
@@ -908,7 +910,7 @@ test('negative: rejects pull-request and push branch filters that skip required 
 });
 
 test('negative: rejects additional error-masking shell variants', () => {
-  for (const suffix of [' || :', ' || /bin/true', '; echo ignored', 'set +o errexit', ' --suppress-errors']) {
+  for (const suffix of [' || :', ' || /bin/true', '; echo ignored', 'set +o errexit', ' --suppress-errors', ' --no-error', ' --no-strict']) {
     const parsed = YAML.parse(read('security-scans.yml'));
     parsed.jobs.semgrep.steps[2].run += suffix;
     assert.throws(() => validateSecurityScansWorkflow(parsed), /suppresses errors with/);
