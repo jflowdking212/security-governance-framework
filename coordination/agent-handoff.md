@@ -661,7 +661,7 @@ At `f7ff86b9877fd635ccafe5aefd7544541eaac811`:
 - CodeQL job `136211220562`: 18/18 JavaScript and 2/2 Actions workflow files scanned.
 - OSV job `136211220658`: no issues found.
 
-The current handoff update itself is documentation-only. Re-fetch the branch and checks after this commit before claiming that its new head has passed CI.
+The handoff update commit `05e54c714bc50f2abf10111a13bfc824786ff63d` is documentation-only and its hosted validation/security checks completed successfully: USS validation run `44714172730` passed 155/155 tests and security-scans run `44714173223` passed all reported checks. This is the latest verified documentation head at the time of this note.
 
 ### 12.5 Required next actions
 
