@@ -63,3 +63,16 @@ test('release trust bootstrap documentation and checksum tooling are present',()
  assert.ok(consuming.includes('Do not read or follow a vendored'));
  assert.ok(consuming.includes('sha256sums_sha256'));
 });
+
+
+test('M21 documents current Local Network Access terminology and does not require legacy PNA preflight headers',()=>{
+ const m21=read('modules/m21-cors-browser-boundary.md');
+ assert.match(m21,/Local Network Access \(LNA\)/);
+ assert.match(m21,/Draft Community Group Report dated 7 August 2026/);
+ assert.match(m21,/\`local-network\`/);
+ assert.match(m21,/\`loopback-network\`/);
+ assert.match(m21,/must NOT rely on those legacy headers/);
+ assert.match(m21,/wicg\.github\.io\/local-network-access/);
+ assert.doesNotMatch(m21,/must explicitly inspect and validate incoming \`Access-Control-Request-Private-Network\` preflight headers/);
+ assert.doesNotMatch(m21,/unconditionally respond with \`Access-Control-Allow-Private-Network: true\`/);
+});
