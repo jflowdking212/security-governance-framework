@@ -6,7 +6,8 @@
     "commit": "0000000000000000000000000000000000000000",
     "scope": "Illustrative template only. Replace with the actual repository, commit and assessment scope.",
     "assessed_at": "2026-11-18T00:00:00Z",
-    "reviewer": "UNASSIGNED"
+    "reviewer": "UNASSIGNED",
+    "reviewer_identity": "UNASSIGNED"
   },
   "assessment_type": "full-audit",
   "scope": {
