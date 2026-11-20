@@ -38,7 +38,7 @@ This profile provides framework-specific security guidance for Laravel applicati
 ## Webhooks, payments and timing-safe operations
 
 - Verify webhook signatures using timing-safe comparison (`hash_equals()`) over the raw request payload (`$request->getContent()`).
-- Verify webhook timestamp headers against the server clock with a tolerance window (e.g. 300 seconds) to prevent replay attacks.
+- When the provider supplies a timestamp that is covered by its signature, validate it against the server clock using the provider's documented tolerance to reduce replay risk. Do not invent or require a separate timestamp header when the provider does not sign or supply one; use the provider's documented freshness mechanism and durable idempotency controls instead.
 - Enforce atomic idempotency using database transaction locks or unique constraints on payment event IDs (`event_id`).
 - Under PCI DSS, prohibit storing Card Verification Values (CVV/CVC) or full card numbers after transaction authorization. Rely exclusively on payment gateway tokenization.
 - Redact payment tokens, authentication headers, passwords, and sensitive customer data from Monolog log contexts.
