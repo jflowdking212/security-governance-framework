@@ -223,7 +223,6 @@ A CORS allowlist is a browser response-sharing control. The real security bounda
 
 ---
 
-
 ## USS implementation guidance: Local Network Access (LNA), legacy Private Network Access (PNA), and browser trust boundaries
 
 > This section provides implementation and verification guidance authored specifically for the Universal Security Standard. It supplements the foundational CORS requirements above.
