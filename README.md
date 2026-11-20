@@ -1,15 +1,15 @@
 # Universal Security Standard (USS)
 
 **Current version:** 1.0.0-rc.1  
-**Release status:** Release candidate v1.0.0-rc.1. Independent audit findings remediated; automated validation and security test suites passing. Final official v1.0.0 release tag and cryptographic signing ceremony remain pending owner execution.  
+**Release status:** Release candidate v1.0.0-rc.1. Claude's second independent audit on 2026-11-20 identified additional P2/P3 findings that require remediation. PR #9 remains open against the integration branch and has not been merged into main. Final owner approval and the signed v1.0.0 release remain pending.  
 **Security posture:** FAIL CLOSED & PROVE  
 **Runtime requirement:** Node.js 20 or later. Core repository tools require zero external dependencies; test suites require `npm ci --ignore-scripts`.
 
-[![USS validation](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml/badge.svg?branch=uss%2Fv1.0.0-modular-security-standard)](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml)
+[![USS validation (candidate branch)](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml/badge.svg?branch=fix%2Fuss-final-audit-remediation)](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml)
 
 USS is a modular, source-traceable security engineering standard for human developers and AI coding agents. It turns the project's canonical application-security, payment/webhook/tax and agent-execution directives into focused modules that can be selected by task. The aim is to make the right security requirements available at the point of work without forcing every agent to load the entire policy library.
 
-> **Important:** v1.0.0 has received an independent Claude review and its correction series is merged into `main`. The latest governance and trust-root changes still require local validation and, when available, hosted GitHub CI. Owner approval and a signed release remain outstanding.
+> **Important:** This repository currently contains release candidate `v1.0.0-rc.1`, not a final `v1.0.0` release. Claude's second independent audit found additional P2/P3 issues, including workflow-guard and filesystem-checksum bypasses. PR #9 remains open against `integration/uss-pr3-pr8-hardening`; the candidate has not been merged into `main`. Passing configured CI does not resolve these findings or constitute release approval. Remediation and a further independent review are required before the owner signing ceremony.
 
 ## What USS provides
 
@@ -119,7 +119,7 @@ The authoritative routing and dependency map is in [manifest.json](manifest.json
 | `source/traceability-matrix.csv` | Source-section to module mapping |
 | `adapters/` | Gemini, Claude and ChatGPT entrypoints |
 | `supplements/` | Supplemental implementation guidance for identity, SSRF, API protocols, cryptography, data lifecycle, AI agents/RAG and runtime hardening |
-| `stacks/` | Node.js/Express and Python/FastAPI reference profiles; neither is verified against a consuming application |
+| `stacks/` | Eight reference profiles: Node.js/Express, Python/FastAPI, Laravel/PHP, React/TypeScript, Flutter/Dart, Go, Rust, and Java/Spring Boot; all remain reference-only and are not verified against a consuming application |
 | `templates/` | Audit, remediation, structured security-evidence and consumer CI security workflow templates |
 | `tests/` | Automated manifest, routing, documentation, evidence-validator and workflow-security tests |
 | `.github/workflows/` | USS validation and security-scanning workflows |

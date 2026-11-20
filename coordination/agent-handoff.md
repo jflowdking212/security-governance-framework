@@ -286,3 +286,119 @@ Conclude with a traceable U-01 through U-10 and SUP-01 through SUP-06 matrix. Ex
 - Do not implement your own proposed fixes during this audit. Return findings for supervisory triage and Gemini implementation.
 
 **Expected outcome:** An independent, reproducible security audit of the exact latest published remediation head, with no reliance on self-reported completion claims and with all owner-only decisions clearly separated.
+
+
+---
+
+## 8. Claude Second Independent Audit — Supervisory Triage and Gemini Follow-up
+
+**Audit date:** 2026-11-20  
+**Auditor:** Claude  
+**Audited branch:** `fix/uss-final-audit-remediation`  
+**Audited HEAD:** `7e12fe60498551bd29807c37efe70966cc6b3b92`  
+**Base:** `integration/uss-pr3-pr8-hardening` @ `58afa246b2c0d0601a5f3945d72bc3243e657c01`  
+**Verdict:** NOT APPROVED FOR RELEASE.
+
+### 8.1 Independent supervisory cross-check
+
+ChatGPT independently fetched the PR, branch, commit, CI checks, relevant source files and live GitHub ruleset after receiving Claude's report.
+
+Verified live state:
+- PR #9 remains open, unmerged and mergeable; its head is the audited SHA above and its base is `integration/uss-pr3-pr8-hardening`.
+- All seven hosted check runs at the audited SHA completed successfully. This proves only that the configured jobs passed; it does not disprove Claude's reproduced bypasses.
+- `main` remains at `a616ade2963bc69dd2140a65016d0756c13399d8`.
+- Authenticated GitHub API read of ruleset `27612394` confirms `Protect Main` is active for `~DEFAULT_BRANCH`. It requires pull requests and review-thread resolution, blocks deletion and non-fast-forward updates, and has zero required approvals, no CODEOWNERS approval requirement and no required status checks. This matches the owner's recorded decision. **A2-05 is VERIFIED as a live-state check; no settings were changed.**
+
+Source-level cross-checks:
+- A2-03 is confirmed in `tools/checksums.mjs`: filesystem mode ignores the root `.git` entry after checking only active root hooks, allowing other Git metadata such as `.git/config` to remain outside the checksum set.
+- A2-02 is confirmed in `tests/workflow-security.test.mjs`: missing workflow-level permissions are accepted, job-level permissions are not inspected, only two trigger types are denied, and shell interpolation checks only the literal `github.event` form.
+- A2-04 is confirmed in `README.md`: it claims the correction series is merged into `main`, although PR #9 remains open against the integration branch; its badge points to a stale branch; its stack listing omits six existing reference profiles.
+
+Claude's A2-03 exploit was independently corroborated by source inspection, not re-executed by ChatGPT. Claude's detailed scratch reproduction remains the supplied independent reproduction evidence.
+
+### 8.2 Finding disposition
+
+| Finding | Severity | Current disposition | Required action |
+|---|---:|---|---|
+| U-01 / SUP-01 | P1 | OPEN, owner-only | No signing until all technical findings are corrected and independently re-reviewed. |
+| A2-02 | P2 | OPEN | Harden workflow AST validation and add negative tests for every surviving mutation. |
+| A2-03 | P2 | OPEN | Reject root `.git` directory and gitfile in filesystem mode; add regression tests for verification and creation. |
+| A2-04 | P2 | FIXED_UNVERIFIED in this owner-issued handoff commit | README status, candidate badge and eight-stack description corrected; Gemini must verify the diff and run documentation tests. |
+| A2-05 | P2 | VERIFIED | Live ruleset API evidence recorded above. No repository setting changes authorised. |
+| A2-06 | P3 | OPEN | Harden evidence reference formats, full commit SHA binding, approval independence and date/expiry rules after checking the existing policy. |
+| A2-07 | P3 | OPEN | Expand and verify scanner scope; confirm CodeQL Actions coverage and OSV pin provenance. |
+| A2-08 | P3 | OPEN, owner access decision | Stop agent commits being attributed to the owner's identity. Use a distinct authenticated, write-enabled agent identity. |
+| A2-09 | P3 | OPEN / documented limitation | Review and document checksum exclusions and filesystem-mode semantics. |
+| A2-10 | P3 | FIXED_UNVERIFIED in this owner-issued handoff commit | Automation policy now distinguishes read-only audits from authorised implementation work. Gemini must verify. |
+| A2-11 | P3 | OPEN | Re-audit all eight stack profiles against the original audit findings; preserve REFERENCE_ONLY status. |
+| A2-12 | P3 | OPEN | Verify current browser/standards terminology for Private Network Access and Local Network Access. |
+
+### 8.3 Gemini implementation assignment
+
+**Assignment:** Remediate Claude's second-audit findings on the current remediation branch after synchronising to the latest remote head. This is an implementation task, not an audit task.
+
+#### Priority 1 — A2-03 filesystem checksum bypass
+1. Reproduce Claude's root `.git/config` / `core.fsmonitor` attack in an isolated scratch fixture.
+2. In filesystem mode, reject any root `.git` entry, whether it is a directory or a gitfile. Do not merely inspect `.git/hooks`.
+3. Preserve normal Git-mode operation, where the repository's own root `.git` metadata is expected.
+4. Add tests for a root `.git` directory with a config file and a root `.git` gitfile. The tests must prove `verify --filesystem` fails closed. Also prove normal extracted snapshots without `.git` still verify.
+5. Record the exact reproduction, changed files, test results and commit SHA.
+
+#### Priority 2 — A2-02 workflow security guard
+Harden the YAML/AST validator and tests to reject at least:
+- Missing workflow-level permissions.
+- Job-level `write` or `write-all` permissions except narrowly documented job-specific permissions required by the scanner (for example CodeQL `security-events: write`).
+- Direct untrusted GitHub/inputs context interpolation in `run:`, including `github.head_ref`, `github.actor`, `github.ref_name`, bracket notation and event variants. Prefer safe `env:` indirection with quoted shell use.
+- `if: false` or other conditions that disable mandatory validation/scanner jobs or steps.
+- Removal, reordering or replacement of required validation steps, including attempts to run evidence validation with `--help`.
+- Error suppression such as `|| echo ignored`, `set +e`, and other tested variants.
+- Additional unsafe triggers, including `issue_comment`, `pull_request_review_comment`, `pull_request_target` and `workflow_run`; use an explicit approved trigger allow-list.
+- Unapproved `self-hosted` runners, checkout token overrides, and secret exposure/exfiltration paths.
+- Scanner scope/rule weakening, including Semgrep excludes/config replacement, CodeQL path exclusions, OSV scan-argument overrides and Gitleaks configuration overrides.
+- Removal of the scheduled full-history scan or restrictions that silently exclude required branches.
+
+Add at least one negative regression test for every surviving mutation Claude listed. Test that today's workflows still pass.
+
+#### Priority 3 — A2-06 evidence validator
+- Replace the short placeholder deny-list with strict, documented reference validation appropriate to each evidence kind.
+- Require a full 40-character commit SHA where a commit is supplied, and bind the assessment to the audited commit where the execution context permits.
+- Reject self-approval where the policy requires independent approval.
+- Reject future approval timestamps.
+- Enforce a defensible maximum risk-acceptance duration. First inspect M17 and the owner policy; if no maximum is specified, propose a value and request supervisory/owner approval before hardcoding it.
+- Add negative tests for each case without weakening valid FAIL evidence or the P0/P1 release block.
+
+#### Priority 4 — A2-07 scanner assurance
+- Extend Semgrep to cover `.github/workflows/` and relevant `templates/` in addition to `tools/` and `tests/`; prove the actual tracked-file count and no unintended skips.
+- Verify whether the configured CodeQL language pack covers GitHub Actions workflows. Add Actions analysis if supported and intended; otherwise document the actual coverage limitation.
+- Verify OSV reusable workflow commit provenance against the official upstream repository and release. Retain immutable SHA pinning; do not replace a stronger immutable pin with a mutable tag merely to satisfy wording.
+- Attach actual hosted job/run evidence, not just configuration claims.
+
+#### Priority 5 — Remaining audit findings
+- A2-08: use a distinct authenticated implementation-agent GitHub identity. Do not author implementation commits with the owner's name/email and do not invent an email or spoof author metadata. If no separate write-enabled identity is available, preserve work locally and report the exact access blocker; request owner provisioning before pushing.
+- A2-09: document the Git-mode exclusions for `node_modules/` and `dist/bundles/`, filesystem empty-directory/executable-bit semantics, and the trust boundary.
+- A2-11: re-audit all eight stack profiles (Node.js/Express, Python/FastAPI, Laravel/PHP, React/TypeScript, Flutter/Dart, Go, Rust, Java/Spring Boot) against Claude's first-audit gaps. Keep every unverified profile explicitly REFERENCE_ONLY.
+- A2-12: check current primary browser/standards sources for PNA / Local Network Access terminology; update only if the current evidence supports it.
+- A2-10: verify the read-only auditor exception and agent commit-provenance wording added to `automation.md`.
+
+### 8.4 Required verification and acceptance criteria
+
+Before handing back:
+1. Reproduce and fix A2-03 with the new regression tests.
+2. Run all workflow mutation tests and demonstrate each listed bypass is rejected.
+3. Run a clean checkout: `npm ci --ignore-scripts`, all generators, zero generated-file drift, `node tools/validate.mjs`, evidence validation and the complete test suite.
+4. Run all hosted security scans and capture run IDs, job conclusions, actual Semgrep tracked/scanned/skipped counts, CodeQL coverage and OSV results.
+5. Review all eight stack profiles and record exact remaining gaps.
+6. Update `REVIEW-CORRECTION-LOG.md` and this handoff with finding status, files, full commit SHA, exact commands, test totals, CI run IDs and unresolved owner decisions.
+7. Obtain supervisory cross-check of the new remote head, then request Claude's third independent audit against that exact SHA.
+
+**Do not merge PR #9, merge the integration branch into main, change the live ruleset, publish a release, create `SHA256SUMS.sig`, create the `v1.0.0` tag, or access the owner's private signing key.**
+
+### 8.5 Commit provenance and owner decision
+
+This handoff/documentation update is an owner-issued supervisory change made through the repository owner's authenticated GitHub connection. It is not represented as a Gemini implementation commit.
+
+The authenticated repository check found that the owner account has write permission, while the connected `jayblisstech-bot` account currently has pull-only access to this USS repository. Gemini must not work around this by setting the owner's author email on agent commits. The owner must provision or authorise a distinct agent identity with write permission before implementation commits can be pushed. Until then, Gemini may reproduce and prepare changes locally, but must report the access blocker rather than spoof provenance.
+
+### 8.6 Expected outcome
+
+A new, independently verifiable remediation head with A2-02 and A2-03 closed by reproduced regression tests, P2 documentation claims corrected, P3 limitations either fixed or explicitly dispositioned, accurate scanner evidence, and no release/merge action. The candidate remains NOT APPROVED FOR RELEASE until Claude's next independent audit and the owner's later signing ceremony.

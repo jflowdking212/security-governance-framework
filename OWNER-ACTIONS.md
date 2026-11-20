@@ -50,7 +50,7 @@ Rules not configured in the active ruleset:
 ## 6. Release signing ceremony (U-01)
 
 **Status: PENDING OWNER EXECUTION**  
-The release candidate `v1.0.0-rc.1` is fully implemented and tested. To finalize the official `v1.0.0` release:
+The release candidate `v1.0.0-rc.1` is not yet release-ready. Claude's second independent audit on 2026-11-20 identified unresolved P2/P3 findings A2-02, A2-03, A2-04, A2-06, A2-07, A2-08, A2-10, A2-11 and A2-12. Complete remediation and a further independent review before beginning the owner signing ceremony. To finalize the official `v1.0.0` release:
 1. Merge the remediation PR into `integration/uss-pr3-pr8-hardening`.
 2. Fast-forward merge `integration/uss-pr3-pr8-hardening` into `main` after owner review.
 3. On the owner's workstation (where the private SSH key resides):
@@ -76,4 +76,4 @@ The release candidate `v1.0.0-rc.1` is fully implemented and tested. To finalize
 
 ## Release rule
 
-The `v1.0.0-rc.1` implementation candidate has passed its current hosted CI checks, including 136 automated tests and the configured security scans. Claude's second independent audit is still pending. This candidate is not a final release. The U-01 signing ceremony remains owner-only, and the U-08 required-status-check decision remains with the owner.
+The `v1.0.0-rc.1` candidate's configured hosted CI checks passed at audited commit `7e12fe60498551bd29807c37efe70966cc6b3b92`, including 136 automated tests and the configured security scans. However, Claude's second independent audit on 2026-11-20 identified further P2/P3 findings. The candidate is NOT APPROVED FOR RELEASE and is not a final release. The U-01 signing ceremony remains owner-only, and the U-08 required-status-check decision remains with the owner.

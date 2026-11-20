@@ -55,6 +55,16 @@ Every engineering agent (Gemini, Claude, ChatGPT, or future automated contributo
 
 ---
 
+
+## 4. Read-only audit and commit provenance boundaries
+
+- The independent auditor's default assignment is read-only. Claude must inspect, reproduce, test in isolated scratch copies, and report findings without modifying the audited branch, unless the owner explicitly changes the assignment.
+- The implementation rule "Implement, do not merely report" applies only to an agent that has been explicitly assigned and authorised to implement. It does not override a read-only audit assignment.
+- Implementation agents must commit using their own distinct, authenticated GitHub identity. Never set an agent commit's author name or email to the project owner's identity merely because the owner's credentials are available.
+- Do not use the owner's private release-signing key for agent commits. The owner's release key is reserved for the final release ceremony.
+- If no distinct agent identity has write permission to the repository, preserve the work locally, report the exact access blocker, and request that the owner provision or authorise an agent identity. Do not spoof author metadata or silently push agent work as the owner.
+- A commit made by the owner through the owner's authenticated account must be clearly identified in the handoff as an owner-issued change, not an implementation-agent commit.
+
 ## 3. Governance Policy Limitation
 
 > **Note on Scope:** This protocol governs multi-agent collaboration within the Universal Security Standard repository (`security-governance-framework`). A comprehensive organisation-wide automation policy will eventually be deployed from a central organization repository under JayBlissTech. Until formal organization-level deployment is authorized by the owner, this USS-specific policy serves as the binding operational protocol.

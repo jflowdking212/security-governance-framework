@@ -53,3 +53,33 @@ This log tracks the findings as summarised during the Claude review discussion, 
 ## Verification summary
 
 The implementation candidate contains remediation changes for the listed technical findings and the latest hosted CI run passed, including 136 automated tests, Semgrep coverage of 18/18 intended files, and successful Gitleaks, CodeQL, and OSV checks. These results are implementation and CI evidence, not a substitute for Claude's pending second independent audit. Owner-dependent items remain U-01 (final release signing ceremony) and U-08 (whether to require the USS validation status check), as documented in OWNER-ACTIONS.md.
+
+
+## Claude Second Independent Audit — 2026-11-20
+
+**Audited HEAD:** `7e12fe60498551bd29807c37efe70966cc6b3b92`  
+**Verdict:** NOT APPROVED FOR RELEASE. The candidate passed its configured hosted CI, but Claude independently reproduced additional workflow and filesystem-checksum bypasses.
+
+| Finding | Independent supervisory cross-check | Current disposition |
+|---|---|---|
+| A2-02 — Workflow mutation guard gaps | Confirmed by direct inspection of `tests/workflow-security.test.mjs`: absent permissions, job permissions, trigger allow-list, expression variants and required gate conditions are not fully enforced. | OPEN, P2 |
+| A2-03 — Root .git filesystem checksum bypass | Confirmed by direct inspection of `tools/checksums.mjs`; filesystem mode ignores root `.git` metadata after checking only active hooks. Claude supplied the reproduced `core.fsmonitor` execution test. | OPEN, P2 |
+| A2-04 — README release claims | Confirmed: PR #9 is open against the integration branch, not merged to main; badge branch is stale; README omitted six of eight stack profiles. README corrected in the owner-issued supervisory follow-up commit, pending Gemini verification. | FIXED_UNVERIFIED, P2 |
+| A2-05 — Live ruleset evidence | Independently queried authenticated GitHub API. Ruleset `Protect Main` ID `27612394` is active with PR, thread-resolution, deletion and non-fast-forward rules; zero approvals, no CODEOWNERS requirement and no required status checks. Matches owner decision. | VERIFIED |
+| A2-06 — Evidence validator residuals | Source inspection confirms short placeholder deny-list and 7-64 character commit validation; independent approval and maximum acceptance duration need policy-aligned hardening. | OPEN, P3 |
+| A2-07 — Scanner scope and provenance | Confirmed Semgrep targets only `tools/` and `tests/`; CodeQL is configured for JavaScript/TypeScript; OSV uses an immutable commit pin whose upstream provenance needs recorded verification. | OPEN, P3 |
+| A2-08 — Agent commit provenance | GitHub reports the recent remediation commits as unsigned and authored as the owner. Repository access check shows the owner has write permission and `jayblisstech-bot` has pull-only permission. | OPEN, P3, owner access decision |
+| A2-09 — Checksum exclusions | Remaining documented threat-model limitations for excluded directories, empty directories and executable bits. | OPEN, P3 |
+| A2-10 — Read-only audit role clarity | Explicit read-only audit and commit-provenance boundaries added to `automation.md` in the owner-issued supervisory follow-up commit. | FIXED_UNVERIFIED, P3 |
+| A2-11 — Stack profile completeness | Eight profiles exist, but earlier content gaps were not re-audited in this pass. | UNKNOWN, P3 |
+| A2-12 — PNA terminology | Needs current primary-source review. | UNKNOWN, P3 |
+| U-01 / SUP-01 — Release signing | No signed `SHA256SUMS`, detached signature or final signed `v1.0.0` tag exists. Owner-only action after technical closure. | OPEN, P1 |
+
+### Live repository evidence
+
+- PR #9 is still open, unmerged and mergeable; head is the audited SHA and base is `integration/uss-pr3-pr8-hardening`.
+- Seven configured checks at the audited SHA completed successfully.
+- `main` remains at `a616ade2963bc69dd2140a65016d0756c13399d8`.
+- Authenticated ruleset API response for ID `27612394` confirms the exact active rules listed above.
+
+Passing CI is not a substitute for the missing adversarial controls. Do not sign or release until P2 findings are fixed and independently re-audited.
