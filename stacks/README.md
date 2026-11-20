@@ -14,7 +14,7 @@ No stack profile is currently marked VALIDATED. The available profiles are refer
 
 - [Node.js and Express](nodejs-express.md)
 - [Python and FastAPI](python-fastapi.md)
-- [Laravel 11 and PHP](laravel-php.md)
+- [Laravel and PHP](laravel-php.md)
 - [React and TypeScript](react-typescript.md)
 - [Flutter and Dart mobile](flutter-dart.md)
 - [Go](go.md)
