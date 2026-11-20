@@ -204,16 +204,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. See [CONSUMING.
 
 ## Independent review and release status
 
-The v1.0.0 candidate is under independent review. The review instructions and report are:
+The v1.0.0-rc.1 candidate is in remediation following Claude's second independent audit on 2026-11-20. These records distinguish the initial review from the current audit and remediation status:
 
-- [Claude review instructions](REVIEW-PROMPT-FOR-CLAUDE.md)
-- [Claude review report](REVIEW-CLAUDE.md)
-- [Current correction log](REVIEW-CORRECTION-LOG.md)
+- [Initial Claude review instructions](REVIEW-PROMPT-FOR-CLAUDE.md)
+- [Initial Claude review report (2026-11-18)](REVIEW-CLAUDE.md)
+- [Second independent audit and current remediation log (2026-11-20)](REVIEW-CORRECTION-LOG.md)
 - [Release checklist](RELEASE-CHECKLIST.md)
 - [Owner actions required before release](OWNER-ACTIONS.md)
 - [Changelog](CHANGELOG.md)
 
-The candidate must not be merged or tagged as an approved release until the independent review is complete, required findings are resolved or explicitly documented, and the owner approves the final result.
+PR #9 remains open against `integration/uss-pr3-pr8-hardening`. The candidate must not be merged into `main` or tagged as an approved release until all required findings are independently verified as resolved or formally dispositioned, and the owner approves the final result.
 
 ## Security reporting
 
