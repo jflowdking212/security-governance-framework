@@ -37,6 +37,11 @@ jobs:
               exit 1
             fi
           done
+          nested_osv_config="$(find . -path './.git' -prune -o -path './node_modules' -prune -o \( -name 'osv-scanner.toml' -o -name '.osv-scanner.toml' \) -print)"
+          if [ -n "$nested_osv_config" ]; then
+            printf 'Unreviewed OSV configuration is not permitted: %s\n' "$nested_osv_config" >&2
+            exit 1
+          fi
           if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E '[g]itleaks[[:space:]]*:[[:space:]]*allow' -- . >&2; then
             printf '%s\n' 'Prohibited Gitleaks inline suppression directive is not permitted' >&2
             exit 1
@@ -44,6 +49,57 @@ jobs:
             status=$?
             if [ "$status" -ne 1 ]; then
               exit "$status"
+            fi
+          fi
+          if ! historical_suppression="$(git -c safe.directory="$PWD" -c core.fsmonitor=false log -n 1 -i -E -G'[g]itleaks[[:space:]]*:[[:space:]]*allow' --format='%H %s')"; then
+            printf '%s\n' 'Failed to inspect Git history for prohibited Gitleaks directives' >&2
+            exit 1
+          fi
+          if [ -n "$historical_suppression" ]; then
+            printf 'Prohibited Gitleaks inline suppression directive found in Git history: %s\n' "$historical_suppression" >&2
+            exit 1
+          fi
+          while IFS= read -r attr_file; do
+            [ -z "$attr_file" ] && continue
+            if [ -L "$attr_file" ]; then
+              printf 'Symlinked .gitattributes is not permitted: %s\n' "$attr_file" >&2
+              exit 1
+            fi
+            if grep -n -E '(-diff|\bbinary\b|\bdiff[[:space:]]*=|\bfilter[[:space:]]*=|\bmerge[[:space:]]*=)' "$attr_file" >&2; then
+              printf 'Prohibited .gitattributes configuration is not permitted: %s\n' "$attr_file" >&2
+              exit 1
+            fi
+          done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)
+          if [ -e .git/info/attributes ]; then
+            if grep -n -E '(-diff|\bbinary\b|\bdiff[[:space:]]*=|\bfilter[[:space:]]*=|\bmerge[[:space:]]*=)' .git/info/attributes >&2; then
+              printf '%s\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2
+              exit 1
+            fi
+          fi
+          allowed_binaries_file=".allowed-binaries"
+          binary_allowlist=""
+          if [ -f "$allowed_binaries_file" ]; then
+            if [ -L "$allowed_binaries_file" ]; then
+              printf 'Symlinked %s is not permitted\n' "$allowed_binaries_file" >&2
+              exit 1
+            fi
+            binary_allowlist="$(awk 'NF && $1 !~ /^#/ { print $1 }' "$allowed_binaries_file" | sort)"
+          fi
+          if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk '$1 == "-" && $2 == "-" { print $3 }')"; then
+            printf '%s\n' 'Failed to inspect tracked files for binary content' >&2
+            exit 1
+          fi
+          if [ -n "$raw_binaries" ]; then
+            unapproved_binaries=""
+            while IFS= read -r bin_file; do
+              [ -z "$bin_file" ] && continue
+              if ! printf '%s\n' "$binary_allowlist" | grep -F -x -q "$bin_file"; then
+                unapproved_binaries="${unapproved_binaries} ${bin_file}"
+              fi
+            done < <(printf '%s\n' "$raw_binaries")
+            if [ -n "$unapproved_binaries" ]; then
+              printf 'Unapproved binary files are not permitted:%s\n' "$unapproved_binaries" >&2
+              exit 1
             fi
           fi
           nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
@@ -109,6 +165,11 @@ jobs:
               exit 1
             fi
           done
+          nested_osv_config="$(find . -path './.git' -prune -o -path './node_modules' -prune -o \( -name 'osv-scanner.toml' -o -name '.osv-scanner.toml' \) -print)"
+          if [ -n "$nested_osv_config" ]; then
+            printf 'Unreviewed OSV configuration is not permitted: %s\n' "$nested_osv_config" >&2
+            exit 1
+          fi
           if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E '[g]itleaks[[:space:]]*:[[:space:]]*allow' -- . >&2; then
             printf '%s\n' 'Prohibited Gitleaks inline suppression directive is not permitted' >&2
             exit 1
@@ -116,6 +177,57 @@ jobs:
             status=$?
             if [ "$status" -ne 1 ]; then
               exit "$status"
+            fi
+          fi
+          if ! historical_suppression="$(git -c safe.directory="$PWD" -c core.fsmonitor=false log -n 1 -i -E -G'[g]itleaks[[:space:]]*:[[:space:]]*allow' --format='%H %s')"; then
+            printf '%s\n' 'Failed to inspect Git history for prohibited Gitleaks directives' >&2
+            exit 1
+          fi
+          if [ -n "$historical_suppression" ]; then
+            printf 'Prohibited Gitleaks inline suppression directive found in Git history: %s\n' "$historical_suppression" >&2
+            exit 1
+          fi
+          while IFS= read -r attr_file; do
+            [ -z "$attr_file" ] && continue
+            if [ -L "$attr_file" ]; then
+              printf 'Symlinked .gitattributes is not permitted: %s\n' "$attr_file" >&2
+              exit 1
+            fi
+            if grep -n -E '(-diff|\bbinary\b|\bdiff[[:space:]]*=|\bfilter[[:space:]]*=|\bmerge[[:space:]]*=)' "$attr_file" >&2; then
+              printf 'Prohibited .gitattributes configuration is not permitted: %s\n' "$attr_file" >&2
+              exit 1
+            fi
+          done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)
+          if [ -e .git/info/attributes ]; then
+            if grep -n -E '(-diff|\bbinary\b|\bdiff[[:space:]]*=|\bfilter[[:space:]]*=|\bmerge[[:space:]]*=)' .git/info/attributes >&2; then
+              printf '%s\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2
+              exit 1
+            fi
+          fi
+          allowed_binaries_file=".allowed-binaries"
+          binary_allowlist=""
+          if [ -f "$allowed_binaries_file" ]; then
+            if [ -L "$allowed_binaries_file" ]; then
+              printf 'Symlinked %s is not permitted\n' "$allowed_binaries_file" >&2
+              exit 1
+            fi
+            binary_allowlist="$(awk 'NF && $1 !~ /^#/ { print $1 }' "$allowed_binaries_file" | sort)"
+          fi
+          if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk '$1 == "-" && $2 == "-" { print $3 }')"; then
+            printf '%s\n' 'Failed to inspect tracked files for binary content' >&2
+            exit 1
+          fi
+          if [ -n "$raw_binaries" ]; then
+            unapproved_binaries=""
+            while IFS= read -r bin_file; do
+              [ -z "$bin_file" ] && continue
+              if ! printf '%s\n' "$binary_allowlist" | grep -F -x -q "$bin_file"; then
+                unapproved_binaries="${unapproved_binaries} ${bin_file}"
+              fi
+            done < <(printf '%s\n' "$raw_binaries")
+            if [ -n "$unapproved_binaries" ]; then
+              printf 'Unapproved binary files are not permitted:%s\n' "$unapproved_binaries" >&2
+              exit 1
             fi
           fi
           nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
@@ -188,4 +300,3 @@ jobs:
     with:
       fail-on-vuln: true
       upload-sarif: true
-
