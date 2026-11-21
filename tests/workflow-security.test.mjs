@@ -208,23 +208,27 @@ function assertSafeEnv(env, context) {
   }
 }
 
+const APPROVED_SHELLS = new Set([
+  'bash',
+  'bash --noprofile --norc -eo pipefail {0}',
+  'bash --noprofile --norc -e -o pipefail {0}'
+]);
+
 function assertSafeShell(shell, context) {
   if (shell === undefined || shell === null) return;
   assert.equal(typeof shell, 'string', context + ' specifies invalid shell type: ' + typeof shell);
   const trimmed = shell.trim();
   assert.ok(
+    !/(?:^|\s)(?:-[a-zA-Z]*c|--command)(?:\s|$|=|:)/i.test(trimmed),
+    context + " specifies unsafe shell command override '" + trimmed + "' that bypasses runner script execution"
+  );
+  assert.ok(
     !/\b(?:ba)?sh\s+(?:--noprofile\s+|--norc\s+)*\{0\}/i.test(trimmed) && trimmed !== 'bash {0}' && trimmed !== 'sh {0}',
     context + " specifies unsafe shell override '" + trimmed + "' that disables fail-fast error handling (-e)"
   );
-  if (trimmed.includes('{0}')) {
-    assert.ok(
-      /-(?:[a-zA-Z]*e[a-zA-Z]*)\b/.test(trimmed),
-      context + " custom shell override '" + trimmed + "' lacks fail-fast -e flag"
-    );
-  }
   assert.ok(
-    trimmed === 'bash' || (trimmed.startsWith('bash ') && /-(?:[a-zA-Z]*e[a-zA-Z]*)\b/.test(trimmed)),
-    context + " specifies unapproved shell '" + trimmed + "'; must be 'bash' with fail-fast enforcement"
+    APPROVED_SHELLS.has(trimmed),
+    context + " specifies unapproved shell '" + trimmed + "'; must be approved safe shell template ('bash')"
   );
 }
 
@@ -1168,4 +1172,24 @@ test('negative: rejects shell: bash {0} and error-disabling shell overrides', ()
   const parsedUnapproved = YAML.parse(read('security-scans.yml'));
   parsedUnapproved.jobs.gitleaks.steps[1].shell = 'pwsh';
   assert.throws(() => validateSecurityScansWorkflow(parsedUnapproved), /specifies unapproved shell 'pwsh'/);
+
+  const parsedCmdShort = YAML.parse(read('security-scans.yml'));
+  parsedCmdShort.jobs.gitleaks.steps[1].shell = "bash -e -c 'exit 0' {0}";
+  assert.throws(() => validateSecurityScansWorkflow(parsedCmdShort), /bypasses runner script execution/);
+
+  const parsedCmdLong = YAML.parse(read('security-scans.yml'));
+  parsedCmdLong.jobs.gitleaks.steps[1].shell = 'bash -e --command "exit 0" {0}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedCmdLong), /bypasses runner script execution/);
+
+  const parsedExtraArg = YAML.parse(read('security-scans.yml'));
+  parsedExtraArg.jobs.gitleaks.steps[1].shell = 'bash -eo pipefail {0} extra';
+  assert.throws(() => validateSecurityScansWorkflow(parsedExtraArg), /must be approved safe shell template/);
+
+  const parsedLeadingArg = YAML.parse(read('security-scans.yml'));
+  parsedLeadingArg.jobs.gitleaks.steps[1].shell = 'bash -eo pipefail /bin/true {0}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedLeadingArg), /must be approved safe shell template/);
+
+  assert.doesNotThrow(() => assertSafeShell('bash', 'valid bash'));
+  assert.doesNotThrow(() => assertSafeShell('bash --noprofile --norc -eo pipefail {0}', 'valid template'));
+  assert.doesNotThrow(() => assertSafeShell('bash --noprofile --norc -e -o pipefail {0}', 'valid template'));
 });

@@ -1015,3 +1015,28 @@ This correction demonstrates why generated modules must be changed through their
   - Owner-only items: U-01 release signing ceremony and U-08 main ruleset status check.
   - Final PR #9 review and merge decisions by repository owner Jude O. Richard / Jay Bliss Tech Limited.
 
+### 17.3 D-02 Shell-Template Bypass Remediation (2026-11-21)
+
+**Review Reference:** ChatGPT Independent Review of Gemini D-01/D-02 remediation (`origin/chatgpt/checksum-mode-hardening` commit `4603553`).  
+**Addressed Vulnerability:** D-02 shell-template bypass (`shell: "bash -e -c 'exit 0' {0}"` and `--command` variations).  
+**Status:** **FIXED AND VERIFIED** (all 186 tests passing, including 4 new negative/positive shell-template regression tests).
+
+1. **Remediation Details:**
+   - In `tests/workflow-security.test.mjs`, replaced permissive substring checks in `assertSafeShell` with a strict allowlist of approved safe shell templates:
+     - `APPROVED_SHELLS = new Set(['bash', 'bash --noprofile --norc -eo pipefail {0}', 'bash --noprofile --norc -e -o pipefail {0}'])`.
+   - Added explicit regex assertion rejecting command-execution flags (`/(?:^|\s)(?:-[a-zA-Z]*c|--command)(?:\s|$|=|:)/i`) that would cause Bash to execute an inline string and treat `{0}` as a positional parameter `$0` rather than executing the runner script.
+   - Enforced rejection of unexpected arguments before or after `{0}`.
+   - Preserved requirement that scanner configuration guard steps specifically require `shell: bash`.
+
+2. **Negative Regression Tests Added:**
+   - `shell: "bash -e -c 'exit 0' {0}"` -> Rejection verified (`bypasses runner script execution`).
+   - `shell: 'bash -e --command "exit 0" {0}'` -> Rejection verified (`bypasses runner script execution`).
+   - `shell: 'bash -eo pipefail {0} extra'` -> Rejection verified (`must be approved safe shell template`).
+   - `shell: 'bash -eo pipefail /bin/true {0}'` -> Rejection verified (`must be approved safe shell template`).
+   - Positive validation confirmed for `shell: bash` and canonical templates `bash --noprofile --norc -eo pipefail {0}` and `bash --noprofile --norc -e -o pipefail {0}`.
+
+3. **Validation Evidence:**
+   - Full test suite: **186 tests, 186 passed, 0 failed, 0 skipped**.
+   - Build and validation checks: 22 modules rebuilt with 0 drift, 5 task indexes with 0 drift, 5 bundles compiled, evidence schema verified.
+
+
