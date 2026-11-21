@@ -179,7 +179,7 @@ node tools/checksums.mjs create --root dist/bundles --filesystem
 node tools/checksums.mjs verify --root dist/bundles --filesystem
 ```
 
-Commit all intended release source files before creating the source manifest. In Git mode, the tool hashes canonical committed Git blob bytes, so Windows line-ending conversion does not change the digest. The first manifest covers Git-tracked source files. The second covers generated task bundles, which are not committed to Git. For a vendored subtree, use `--root vendor/uss`. Verify the detached SSH signature on `SHA256SUMS` with the independently trusted key fingerprint before trusting the manifest or running the checksum verifier. See [SECURITY-ROOT.md](SECURITY-ROOT.md).
+Commit all intended release source files before creating the source manifest. In Git mode, the tool binds the committed Git file mode (`100644` or `100755`) and canonical committed blob bytes into a USS mode-bound digest, so Windows line-ending conversion does not change the digest. In filesystem mode, it binds the observed executable mode and file bytes. Manifest entries use the USS verifier's mode-bound format, not conventional `sha256sum -c`; verify them with this tool. The first manifest covers Git-tracked source files. The second covers generated task bundles, which are not committed to Git. For a vendored subtree, use `--root vendor/uss`. Verify the detached SSH signature on `SHA256SUMS` with the independently trusted key fingerprint before trusting the manifest or running the checksum verifier. See [SECURITY-ROOT.md](SECURITY-ROOT.md).
 
 ## Core release rules
 
