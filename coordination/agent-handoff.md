@@ -1057,3 +1057,16 @@ Required Gemini action: add narrow validator invariants and negative mutation te
 A2-02/A2-07 scanner topology and scanner-config guard are present in the inspected branch. D-01 and D-02 are not closed by the inspected evidence. The earlier 177/177 test and scanner runs at `e290a19` predate this specific review and do not prove these missing negative tests or controls.
 
 Next: Gemini must synchronise to the exact current branch, implement D-01 first, then D-02, and provide a fresh test matrix and hosted evidence on the resulting SHA. ChatGPT will review Gemini's actual diff and tests. PR #9 remains open and unmerged.
+
+
+### Checksum-format compatibility clarification — 2026-11-21
+
+The E-01 fix intentionally changes each manifest entry from a raw file-byte SHA-256 to a USS mode-bound digest over normalized executable mode plus file bytes. This means entries are not compatible with conventional `sha256sum -c`; verification must use `node tools/checksums.mjs verify`.
+
+To prevent documentation drift, the ChatGPT branch also updates:
+- `tools/checksums.mjs` — documents the mode-bound digest algorithm and verifier requirement.
+- `README.md` — documents Git and filesystem mode binding and the non-`sha256sum -c` entry format.
+- `CONSUMING.md` — describes mode-bound digests for Git and filesystem verification.
+- `SECURITY-ROOT.md` — removes the former claim that executable permission bits are not represented and documents the custom manifest format.
+
+These documentation/tool-comment changes are committed after the original checksum implementation and tests. They have not been executed through local validation. Before integration, confirm that all manifest consumers use the USS verifier, that release manifests are regenerated under the new algorithm, and that older signed releases continue to be verified with their pinned historical verifier.
