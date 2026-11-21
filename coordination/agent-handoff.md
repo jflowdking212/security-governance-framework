@@ -976,3 +976,37 @@ Fresh scanner run `44741749763` at `e290a19`:
 - CodeQL job `136306855460`: still IN PROGRESS at the time this note was written. Re-fetch before claiming the four-scanner run is fully complete.
 
 This correction demonstrates why generated modules must be changed through their canonical builder source, then verified by the drift gate. Do not treat the earlier failed validation as a remaining code defect after the `e290a19` pass; retain it as historical evidence of the corrected workflow.
+
+
+## ChatGPT checksum hardening follow-up — 2026-11-21
+
+**Baseline:** `80754305a9c9ee5d9848b1da17274f9e0cfc39ee` (PR #9 head).
+**Isolated branch:** `chatgpt/checksum-mode-hardening`.
+**Commits:** checksum implementation `d8a94f6bd7f7dcf71e384f514588b94e6e10e450`; regression tests `3918a36c8acdee8ee85509a44c35f16e269f5a56`.
+
+### E-01 — executable mode omitted from checksum (P3)
+
+**Status: IMPLEMENTED, NOT VERIFIED.**
+
+- The digest now incorporates the normalized Git file mode (`100644` or `100755`) in addition to file bytes.
+- Git-mode verification reads the committed mode from `git ls-tree HEAD` and, on POSIX, rejects a worktree executable-bit mismatch.
+- Filesystem mode incorporates the executable bit observed from filesystem metadata.
+- Windows Git worktrees use the committed Git mode because Windows does not reliably expose the executable bit through `stat`.
+- Added regression coverage for Git-mode and filesystem-mode executable-bit changes.
+
+### E-02 — filesystem root .git rejection escaped the controlled error handler (P3)
+
+**Status: IMPLEMENTED, NOT VERIFIED.**
+
+- Moved the filesystem-root Git metadata guard inside the main try/catch.
+- Added regression coverage asserting a controlled diagnostic without an uncaught stack trace.
+
+### Validation
+
+- Remote source inspection confirms both implementation changes and all three new regression tests are present.
+- The isolated branch is two commits ahead of the PR #9 branch and has no unrelated file changes.
+- Local test execution has NOT been performed in this environment.
+- GitHub combined status returned no checks for the latest commit; no hosted CI run was observed.
+- Required next validation: run `node --test tests/checksums.test.mjs`, then `node --test tests/*.test.mjs`, `node tools/validate.mjs`, generator drift checks and `npm audit` in the approved local environment.
+
+Do not merge or cherry-pick this branch until those checks pass. Keep the E-01/E-02 status as IMPLEMENTED, NOT VERIFIED until execution evidence is recorded.
