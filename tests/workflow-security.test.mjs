@@ -85,14 +85,60 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '    exit 1',
     '  fi',
     'fi',
-    'if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk \'$1 == "-" && $2 == "-" { print $3 }\')"; then',
-    "  printf '%s\\n' 'Failed to inspect tracked files for binary content' >&2",
-    '  exit 1',
-    'fi',
-    'if [ -n "$raw_binaries" ]; then',
-    "  printf 'Tracked binary files are not permitted: %s\\n' \"$raw_binaries\" >&2",
-    '  exit 1',
-    'fi',
+    "python3 - <<'EOF'",
+    'import os',
+    'import stat',
+    'import subprocess',
+    'import sys',
+    '',
+    'CHUNK_SIZE = 1024 * 1024',
+    'ROOT = os.getcwd()',
+    '',
+    'try:',
+    '    result = subprocess.run(',
+    '        ["git", "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],',
+    '        cwd=ROOT,',
+    '        stdout=subprocess.PIPE,',
+    '        stderr=subprocess.PIPE,',
+    '        check=True,',
+    '    )',
+    'except (OSError, subprocess.CalledProcessError) as exc:',
+    '    detail = getattr(exc, "stderr", b"")',
+    '    print(f"FAIL CLOSED: cannot enumerate tracked files: {detail.decode(\'utf-8\', \'replace\')}", file=sys.stderr)',
+    '    sys.exit(2)',
+    '',
+    'for rel in result.stdout.split(b"\\0"):',
+    '    if not rel:',
+    '        continue',
+    '    target_path = os.path.join(os.fsencode(ROOT), rel)',
+    '    try:',
+    '        before = os.lstat(target_path)',
+    '        if stat.S_ISLNK(before.st_mode):',
+    '            # Git stores symlink targets as text blobs; do not follow the link.',
+    '            continue',
+    '        if not stat.S_ISREG(before.st_mode):',
+    '            raise OSError("tracked path is not a regular file or symlink")',
+    '        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)',
+    '        fd = os.open(target_path, flags)',
+    '        try:',
+    '            opened = os.fstat(fd)',
+    '            if not stat.S_ISREG(opened.st_mode):',
+    '                raise OSError("opened tracked path is not a regular file")',
+    '            while True:',
+    '                chunk = os.read(fd, CHUNK_SIZE)',
+    '                if not chunk:',
+    '                    break',
+    '                if b"\\0" in chunk:',
+    '                    print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)',
+    '                    sys.exit(1)',
+    '        finally:',
+    '            os.close(fd)',
+    '    except OSError as exc:',
+    '        print("FAIL CLOSED: cannot inspect tracked path " + os.fsdecode(rel) + ": " + str(exc), file=sys.stderr)',
+    '        sys.exit(2)',
+    '',
+    'print("PASS: complete content scan found no NUL bytes in tracked regular files")',
+    'EOF',
     "nested_semgrepignore=\"$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)\"",
     'if [ -n "$nested_semgrepignore" ]; then',
     "  printf 'Nested .semgrepignore is not permitted: %s\\n' \"$nested_semgrepignore\" >&2",
@@ -423,40 +469,14 @@ function assertNoProhibitedGitAttributes(root = ROOT) {
 }
 
 function assertNoTrackedBinaryFiles(root = ROOT) {
-  const result = spawnSync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', 'diff', '--numstat', '4b825dc642cb6eb9a060e54bf8d69288fbee4904'], { cwd: root, encoding: 'utf8' });
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const result = spawnSync(pythonBin, [scannerPath], { cwd: root, encoding: 'utf8' });
   if (result.status !== 0) {
-    assert.fail('Failed to inspect tracked files for binary content: ' + result.stderr);
-  }
-  const lines = result.stdout.split(/\r?\n/).filter(Boolean);
-  for (const line of lines) {
-    const parts = line.split('\t');
-    if (parts[0] === '-' && parts[1] === '-') {
-      const filePath = parts[2];
-      assert.fail('Tracked binary file is not permitted: ' + filePath);
-    }
-  }
-
-  // Check 2: Independent content-based null-byte inspection on all tracked files (defeats diff attribute evasion)
-  const lsResult = spawnSync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', 'ls-files', '-z'], { cwd: root });
-  if (lsResult.status !== 0) {
-    assert.fail('Failed to list tracked files for binary inspection: ' + lsResult.stderr);
-  }
-  const filePaths = lsResult.stdout.toString('utf8').split('\0').filter(Boolean);
-  for (const relPath of filePaths) {
-    const fullPath = path.join(root, relPath);
-    if (!fs.existsSync(fullPath)) continue;
-    const stat = fs.lstatSync(fullPath);
-    if (!stat.isFile()) continue;
-    const fd = fs.openSync(fullPath, 'r');
-    try {
-      const buf = Buffer.alloc(Math.min(8000, stat.size));
-      const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
-      if (buf.subarray(0, bytesRead).includes(0)) {
-        assert.fail('Tracked binary file is not permitted (null byte detected): ' + relPath);
-      }
-    } finally {
-      fs.closeSync(fd);
-    }
+    const detail = (result.stderr || result.stdout).trim();
+    const m = detail.match(/contains NUL byte:\s*(.+)$/m);
+    const file = m ? m[1].trim() : detail;
+    assert.fail('Tracked binary file is not permitted: ' + file + ' (' + detail + ')');
   }
 }
 
@@ -1987,7 +2007,7 @@ test('finding F5: binary file cannot evade detection when positive diff attribut
     // Defense 2: Independent content inspection catches binary null byte even if git diff is tricked
     assert.throws(
       () => assertNoTrackedBinaryFiles(tempDir),
-      /Tracked binary file is not permitted/
+      /Tracked binary/
     );
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -2009,6 +2029,130 @@ test('finding F5: preserves legitimate .gitattributes configurations and comment
       ].join('\n') + '\n'
     );
     assert.doesNotThrow(() => assertNoProhibitedGitAttributes(tempDir));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5: streaming binary scanner detects NUL bytes at multiple offsets including beyond 8000 bytes and near EOF', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const offsetsToTest = [
+    { name: 'start of file (offset 0)', size: 100, offset: 0 },
+    { name: 'middle of small file (offset 512)', size: 1024, offset: 512 },
+    { name: 'beyond 8000-byte heuristic (offset 8500)', size: 12000, offset: 8500 },
+    { name: 'across 1MB chunk boundary (offset 1500000)', size: 1600000, offset: 1500000 },
+    { name: 'near end of large 2MB file (offset 2097140)', size: 2097152, offset: 2097140 }
+  ];
+
+  for (const { name, size, offset } of offsetsToTest) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-offset-'));
+    try {
+      spawnSync('git', ['init', '-q'], { cwd: tempDir });
+      spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+      spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+      spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+      const buf = Buffer.alloc(size, 0x41); // 'A'
+      buf[offset] = 0x00; // NUL byte
+      fs.writeFileSync(path.join(tempDir, 'sample.data'), buf);
+      spawnSync('git', ['add', 'sample.data'], { cwd: tempDir });
+
+      const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+      assert.equal(res.status, 1, `Scanner must exit 1 for NUL byte at ${name}`);
+      assert.match(res.stderr, /FAIL: tracked binary file contains NUL byte: sample\.data/, `Error must identify file with NUL byte at ${name}`);
+
+      assert.throws(
+        () => assertNoTrackedBinaryFiles(tempDir),
+        /Tracked binary file is not permitted/,
+        `assertNoTrackedBinaryFiles must throw for NUL byte at ${name}`
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('finding F5: streaming binary scanner handles unusual filenames and fails closed on missing tracked paths', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-filenames-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.mkdirSync(path.join(tempDir, 'nested dir with spaces'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'nested dir with spaces', 'sub file with spaces.txt'), 'clean text content\n');
+    fs.writeFileSync(path.join(tempDir, 'special-symbols-#@!-$%.txt'), 'more clean content\n');
+    fs.writeFileSync(path.join(tempDir, "quote'file.txt"), 'quote content\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+
+    // Clean pass with unusual filenames
+    const cleanRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(cleanRes.status, 0, 'Clean repository with unusual filenames must pass');
+    assert.match(cleanRes.stdout, /PASS: complete content scan found no NUL bytes/);
+    assert.doesNotThrow(() => assertNoTrackedBinaryFiles(tempDir));
+
+    // Introduce NUL byte into unusual filename
+    const evilBuf = Buffer.alloc(200, 0x42);
+    evilBuf[100] = 0x00;
+    fs.writeFileSync(path.join(tempDir, 'special-symbols-#@!-$%.txt'), evilBuf);
+    const evilRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(evilRes.status, 1, 'Scanner must detect NUL in file with unusual name');
+    assert.match(evilRes.stderr, /FAIL: tracked binary file contains NUL byte: special-symbols-#@!-\$%\.txt/);
+
+    // Fail closed: Tracked file deleted from working tree before scan
+    fs.writeFileSync(path.join(tempDir, 'special-symbols-#@!-$%.txt'), 'restored clean text\n');
+    fs.writeFileSync(path.join(tempDir, 'ghost.txt'), 'ghost file\n');
+    spawnSync('git', ['add', 'ghost.txt'], { cwd: tempDir });
+    fs.rmSync(path.join(tempDir, 'ghost.txt')); // deleted from disk but in index!
+
+    const failClosedRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(failClosedRes.status, 2, 'Scanner must fail closed (exit 2) when a tracked file cannot be inspected');
+    assert.match(failClosedRes.stderr, /FAIL CLOSED: cannot inspect tracked path ghost\.txt/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5: actual workflow guard script executes and rejects malicious binary fixtures', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-guard-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Guard Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'guard-test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+      fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(tempDir, 'tools/clean.txt'), 'clean content\n');
+    fs.writeFileSync(path.join(tempDir, 'tests/check.mjs'), 'const ok = true;\n');
+    fs.writeFileSync(path.join(tempDir, '.github/workflows/test.yml'), 'name: test\n');
+    fs.writeFileSync(path.join(tempDir, 'templates/test.yml'), 'name: test\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean tree'], { cwd: tempDir });
+
+    const bashEnv = process.platform === 'win32'
+      ? { ...process.env, PATH: 'C:\\Program Files\\Git\\usr\\bin;C:\\Users\\HP\\AppData\\Roaming\\Python\\Python314\\Scripts;' + (process.env.PATH || '') }
+      : { ...process.env };
+
+    // Clean run of actual SCANNER_CONFIG_GUARD_RUN
+    const cleanGuardRun = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd: tempDir, encoding: 'utf8', env: bashEnv });
+    assert.equal(cleanGuardRun.status, 0, 'Actual workflow guard must succeed on clean tree: ' + cleanGuardRun.stderr);
+    assert.match(cleanGuardRun.stdout, /PASS: complete content scan found no NUL bytes/);
+
+    // Malicious fixture: binary file with NUL byte beyond 8000 bytes
+    const evilBuf = Buffer.alloc(10000, 0x41);
+    evilBuf[8500] = 0x00;
+    fs.writeFileSync(path.join(tempDir, 'tools/malicious.bin'), evilBuf);
+    spawnSync('git', ['add', 'tools/malicious.bin'], { cwd: tempDir });
+
+    const evilGuardRun = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd: tempDir, encoding: 'utf8', env: bashEnv });
+    assert.notEqual(evilGuardRun.status, 0, 'Actual workflow guard must reject malicious binary fixture');
+    assert.match(evilGuardRun.stderr, /FAIL: tracked binary file contains NUL byte: tools\/malicious\.bin/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

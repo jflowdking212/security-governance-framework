@@ -75,14 +75,60 @@ jobs:
               exit 1
             fi
           fi
-          if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk '$1 == "-" && $2 == "-" { print $3 }')"; then
-            printf '%s\n' 'Failed to inspect tracked files for binary content' >&2
-            exit 1
-          fi
-          if [ -n "$raw_binaries" ]; then
-            printf 'Tracked binary files are not permitted: %s\n' "$raw_binaries" >&2
-            exit 1
-          fi
+          python3 - <<'EOF'
+          import os
+          import stat
+          import subprocess
+          import sys
+
+          CHUNK_SIZE = 1024 * 1024
+          ROOT = os.getcwd()
+
+          try:
+              result = subprocess.run(
+                  ["git", "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],
+                  cwd=ROOT,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=True,
+              )
+          except (OSError, subprocess.CalledProcessError) as exc:
+              detail = getattr(exc, "stderr", b"")
+              print(f"FAIL CLOSED: cannot enumerate tracked files: {detail.decode('utf-8', 'replace')}", file=sys.stderr)
+              sys.exit(2)
+
+          for rel in result.stdout.split(b"\0"):
+              if not rel:
+                  continue
+              target_path = os.path.join(os.fsencode(ROOT), rel)
+              try:
+                  before = os.lstat(target_path)
+                  if stat.S_ISLNK(before.st_mode):
+                      # Git stores symlink targets as text blobs; do not follow the link.
+                      continue
+                  if not stat.S_ISREG(before.st_mode):
+                      raise OSError("tracked path is not a regular file or symlink")
+                  flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+                  fd = os.open(target_path, flags)
+                  try:
+                      opened = os.fstat(fd)
+                      if not stat.S_ISREG(opened.st_mode):
+                          raise OSError("opened tracked path is not a regular file")
+                      while True:
+                          chunk = os.read(fd, CHUNK_SIZE)
+                          if not chunk:
+                              break
+                          if b"\0" in chunk:
+                              print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)
+                              sys.exit(1)
+                  finally:
+                      os.close(fd)
+              except OSError as exc:
+                  print("FAIL CLOSED: cannot inspect tracked path " + os.fsdecode(rel) + ": " + str(exc), file=sys.stderr)
+                  sys.exit(2)
+
+          print("PASS: complete content scan found no NUL bytes in tracked regular files")
+          EOF
           nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
           if [ -n "$nested_semgrepignore" ]; then
             printf 'Nested .semgrepignore is not permitted: %s\n' "$nested_semgrepignore" >&2
@@ -183,14 +229,60 @@ jobs:
               exit 1
             fi
           fi
-          if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk '$1 == "-" && $2 == "-" { print $3 }')"; then
-            printf '%s\n' 'Failed to inspect tracked files for binary content' >&2
-            exit 1
-          fi
-          if [ -n "$raw_binaries" ]; then
-            printf 'Tracked binary files are not permitted: %s\n' "$raw_binaries" >&2
-            exit 1
-          fi
+          python3 - <<'EOF'
+          import os
+          import stat
+          import subprocess
+          import sys
+
+          CHUNK_SIZE = 1024 * 1024
+          ROOT = os.getcwd()
+
+          try:
+              result = subprocess.run(
+                  ["git", "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],
+                  cwd=ROOT,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=True,
+              )
+          except (OSError, subprocess.CalledProcessError) as exc:
+              detail = getattr(exc, "stderr", b"")
+              print(f"FAIL CLOSED: cannot enumerate tracked files: {detail.decode('utf-8', 'replace')}", file=sys.stderr)
+              sys.exit(2)
+
+          for rel in result.stdout.split(b"\0"):
+              if not rel:
+                  continue
+              target_path = os.path.join(os.fsencode(ROOT), rel)
+              try:
+                  before = os.lstat(target_path)
+                  if stat.S_ISLNK(before.st_mode):
+                      # Git stores symlink targets as text blobs; do not follow the link.
+                      continue
+                  if not stat.S_ISREG(before.st_mode):
+                      raise OSError("tracked path is not a regular file or symlink")
+                  flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+                  fd = os.open(target_path, flags)
+                  try:
+                      opened = os.fstat(fd)
+                      if not stat.S_ISREG(opened.st_mode):
+                          raise OSError("opened tracked path is not a regular file")
+                      while True:
+                          chunk = os.read(fd, CHUNK_SIZE)
+                          if not chunk:
+                              break
+                          if b"\0" in chunk:
+                              print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)
+                              sys.exit(1)
+                  finally:
+                      os.close(fd)
+              except OSError as exc:
+                  print("FAIL CLOSED: cannot inspect tracked path " + os.fsdecode(rel) + ": " + str(exc), file=sys.stderr)
+                  sys.exit(2)
+
+          print("PASS: complete content scan found no NUL bytes in tracked regular files")
+          EOF
           nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
           if [ -n "$nested_semgrepignore" ]; then
             printf 'Nested .semgrepignore is not permitted: %s\n' "$nested_semgrepignore" >&2
