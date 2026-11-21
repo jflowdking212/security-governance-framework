@@ -1237,3 +1237,70 @@ If a reproducible defect is found, stop verification, add a minimal failing regr
 - Await Gemini Section 17.4 exact-SHA evidence and independently verify it.
 - Continue checksum E-01/E-02 validation and inspect any additional concrete defects that can be fixed without conflicting with Gemini's scanner work.
 - Keep all changes isolated. No merge, release signing or deployment.
+
+
+## Review of Gemini D-01/D-02 finalisation report — 2026-11-21
+
+**Gemini report file:** `Pasted markdown(20261121-103739).md`  
+**Gemini branch:** `gemini/d01-d02-remediation`  
+**Reported final commit:** `26d7b0dbdd94c92b856edc20781d7c89514a0fd3`  
+**Prior code commit:** `7065ed3fb73b6bf78090e8d4812c1b2c95790099`.
+
+### 1. Remote state independently confirmed
+
+- The Gemini branch exists remotely.
+- Comparing the reported final commit to baseline `80754305a9c9ee5d9848b1da17274f9e0cfc39ee` shows 3 commits ahead, 0 behind.
+- The diff contains exactly four files: `.github/workflows/security-scans.yml`, `templates/ci/consumer-security-scans.yml`, `tests/workflow-security.test.mjs`, and `coordination/agent-handoff.md`.
+- The workflow source contains weekly cron `17 5 * * 1`, Gitleaks `fetch-depth: 0`, both OSV config filenames in the pre-scan guard, and Semgrep `--disable-nosem` in first-party and consumer workflows.
+- The strict `APPROVED_SHELLS` allowlist and regression cases for `bash -e -c`, `--command`, unexpected trailing and leading arguments are present in the remote test source.
+- PR #9 remains open and unmerged at baseline HEAD `80754305a9c9ee5d9848b1da17274f9e0cfc39ee`. The isolated Gemini branch has not modified PR #9.
+
+### 2. Reported execution results
+
+Gemini reports running on BlissHosts VPS, Linux x86_64, Node 22.22.2, npm 10.9.7 and Docker 29.4.2. It reports:
+- 58/58 focused workflow tests pass.
+- 186/186 full tests pass.
+- repository/evidence validation and generator drift checks pass.
+- Semgrep 1.186.0 exact image digest with `--disable-nosem`, 26 files, 237 rules, zero findings.
+- Gitleaks 8.21.2, 493 commits, zero leaks, and adversarial suppression/config guard tests pass.
+- OSV-Scanner 1.9.2 reports no issues at commit `7065ed3`.
+- CodeQL was only structurally verified in workflow AST; no actual CodeQL analysis run is evidenced.
+
+### 3. Verification caveats — do not overstate "100% verified"
+
+1. **Execution environment mismatch:** The preceding instruction specified the local PC verification environment while GitHub hosted CI billing was unavailable. Gemini's report explicitly says BlissHosts VPS. This is not automatically invalid evidence, but it does not satisfy the requested local-PC execution. Record this as an environment deviation and repeat the required verification on the designated local PC, or obtain explicit owner acceptance of VPS execution.
+2. **No hosted CI evidence:** GitHub Actions workflow runs and combined statuses for reported final SHA `26d7b0d` returned no records. This is consistent with the billing constraint; it must be described as local/VPS validation, not hosted CI.
+3. **CodeQL:** The report describes AST/configuration verification, not an executed CodeQL scan. CodeQL must be labelled NOT RUN / workflow configuration inspected, unless a real analysis result is supplied.
+4. **OSV SHA:** The report specifically says OSV scanned `package-lock.json` at `7065ed3`, while the final report commit is `26d7b0d`. The final commit appears to be a handoff-only addition, but the report must explicitly state the tested source-tree SHA and prove it matches the final code tree. Do not label OSV as exact-final-SHA execution without that proof.
+5. **Gitleaks evidence detail:** The adversarial guard result is described but exact fixture commands and raw output are not included in the report. Request concise reproducible commands/output in the handoff.
+
+### 4. Disposition
+
+- D-01 Semgrep: **SOURCE VERIFIED; VPS EXECUTION REPORTED; local-PC/hosted evidence outstanding**.
+- D-01 Gitleaks: **SOURCE VERIFIED; VPS EXECUTION REPORTED; reproducible adversarial evidence detail outstanding**.
+- D-01 OSV config guard: **SOURCE VERIFIED; VPS mutation-test result reported**.
+- D-02 schedule/full history: **SOURCE VERIFIED; VPS test result reported**.
+- D-02 environment protections: **SOURCE VERIFIED; VPS test result reported**.
+- D-02 shell template bypass: **SOURCE VERIFIED; regression cases present and VPS full suite reported passing**.
+- Overall: **IMPLEMENTED; VPS VALIDATION REPORTED; FINAL ACCEPTANCE PENDING ENVIRONMENT/EVIDENCE RECONCILIATION**.
+
+### 5. Next task to Gemini — close evidence gaps, no redesign
+
+Gemini must:
+1. Re-run the focused workflow tests and full suite on the designated local PC against a clean checkout of the same code tree. If the local PC is unavailable, stop and ask the owner rather than silently switching environments again.
+2. Re-run repository/evidence validation and generator drift checks on that same local PC.
+3. Re-run Semgrep 1.186.0 and Gitleaks 8.21.2 (or exact pinned action/tool version) on that same tree, preserving raw command output and exit codes.
+4. Run OSV on the exact final code tree and record the commit/tree SHA. The final handoff-only commit may be verified by proving the code tree is identical to `7065ed3`.
+5. Correct the CodeQL status: say "workflow AST/configuration inspected; CodeQL analysis not executed" unless an actual CodeQL SARIF/analysis result is produced.
+6. Add reproducible Gitleaks adversarial fixture commands and results to Section 17.4.
+7. Update the handoff with exact environment, commit SHA, code-tree identity, commands, exit codes and evidence. Do not claim hosted CI passed.
+
+No redesign or additional hardening is requested. Do not modify PR #9, ChatGPT's branch, Claude's patch, main, release signing, rulesets, merge state or deployment.
+
+### 6. ChatGPT independent work
+
+- Fetched and inspected the live Gemini workflow, consumer template, workflow-security tests and handoff.
+- Verified the key source controls and exact shell regression cases listed above.
+- Verified the Gemini branch's comparison to PR #9 baseline and confirmed PR #9 remains open/unmerged and unchanged.
+- No conflicting code changes were made.
+- This review is recorded only on `chatgpt/checksum-mode-hardening`; no changes were made to Gemini's branch.
