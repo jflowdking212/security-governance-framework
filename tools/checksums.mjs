@@ -42,8 +42,6 @@ function assertFilesystemRootHasNoGitMetadata() {
   const gitEntry=fs.readdirSync(ROOT).find(name=>name.toLowerCase()==='.git');
   if(gitEntry)throw new Error('Root .git metadata is not allowed in filesystem mode: '+gitEntry);
 }
-assertFilesystemRootHasNoGitMetadata();
-
 // Filesystem mode deliberately avoids invoking Git at all. In particular, do
 // not let an untrusted snapshot's Git configuration influence verification.
 const gitRootResult=FILESYSTEM?null:gitAt(START,['rev-parse','--show-toplevel']);
@@ -159,25 +157,47 @@ function assertSafePath(rel) {
   return absolute;
 }
 
+function executableMode(absolute) {
+  return (fs.statSync(absolute).mode&0o111)!==0?'100755':'100644';
+}
+
+function gitModeForPath(rel) {
+  const gitPath=ROOT_PREFIX+rel;
+  const r=gitAt(GIT_ROOT,['ls-tree','-z','HEAD','--',gitPath],{encoding:null});
+  if(r.error||r.status!==0)throw new Error('Unable to read committed file mode from HEAD: '+rel);
+  const records=r.stdout.toString('utf8').split('\0').filter(Boolean);
+  if(records.length!==1)throw new Error('Expected exactly one committed tree entry for: '+rel);
+  const match=/^(100644|100755) blob [a-f0-9]+\t/.exec(records[0]);
+  if(!match)throw new Error('Unsupported committed file mode for checksum path: '+rel);
+  return match[1];
+}
+
+function digestBytes(mode,bytes) {
+  // Bind the executable bit to the digest as well as the file contents.
+  return createHash('sha256').update(mode).update('\0').update(bytes).digest('hex');
+}
+
 function sha256ForPath(rel) {
   const absolute=assertSafePath(rel);
   const diskBytes=fs.readFileSync(absolute);
+  let mode=executableMode(absolute);
   if(GIT_ROOT&&!FILESYSTEM) {
     const gitPath=ROOT_PREFIX+rel;
+    const headMode=gitModeForPath(rel);
+    // Windows worktrees commonly do not expose Git's executable bit through
+    // stat(2); use the committed tree mode there. On POSIX, reject any drift.
+    if(process.platform!=='win32'&&mode!==headMode)throw new Error('Working-tree executable mode differs from committed HEAD: '+rel);
+    mode=headMode;
     const r=gitAt(GIT_ROOT,['show','HEAD:'+gitPath],{encoding:null});
     if(r.error||r.status!==0)throw new Error('Unable to read committed file from HEAD: '+rel);
     const headBytes=r.stdout;
-    if(diskBytes.equals(headBytes)) {
-      return createHash('sha256').update(diskBytes).digest('hex');
-    }
+    if(diskBytes.equals(headBytes))return digestBytes(mode,diskBytes);
     // Allow Windows CRLF conversion if and only if normalized LF bytes match committed HEAD
     const normalized=Buffer.from(diskBytes.toString('utf8').replace(/\r\n/g,'\n'),'utf8');
-    if(normalized.equals(headBytes)) {
-      return createHash('sha256').update(headBytes).digest('hex');
-    }
+    if(normalized.equals(headBytes))return digestBytes(mode,headBytes);
     throw new Error('Working-tree bytes differ from committed HEAD: '+rel);
   }
-  return createHash('sha256').update(diskBytes).digest('hex');
+  return digestBytes(mode,diskBytes);
 }
 
 function walkFiles(dir=ROOT,relative='') {
@@ -265,6 +285,9 @@ function verifyManifest() {
 }
 
 try {
+  // Keep this inside the guarded operation so hostile .git metadata produces
+  // a controlled diagnostic rather than an uncaught exception and stack trace.
+  assertFilesystemRootHasNoGitMetadata();
   if(command==='create')createManifest();
   else if(command==='verify')verifyManifest();
   else {
