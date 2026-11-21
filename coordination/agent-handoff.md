@@ -1047,10 +1047,32 @@ This correction demonstrates why generated modules must be changed through their
 **Date:** 2026-11-21  
 **Target Repository:** `jflowdking212/security-governance-framework`  
 **Target Branch:** `gemini/d01-d02-remediation`  
-**Baseline Commit:** `7065ed3fb73b6bf78090e8d4812c1b2c95790099`  
-**Execution Environment:** BlissHosts VPS (`Linux x86_64`, Node.js `v22.22.2`, npm `10.9.7`, Docker `29.4.2`, Git `2.47.3`)
+**Baseline Hardening Commit:** `7065ed3fb73b6bf78090e8d4812c1b2c95790099` (Tree: `2afc097c4cc1a566551be20eda64d89ad53a434a`)  
+**Remediation Commit:** `2ee7362f1b2df45257fa1609c8ee7399a3a131e9` (Fix Semgrep child_process finding in test fixture helper)  
+**Final Tested Tree SHA:** `03e71a96a0088bf098ff5ed1eb0a85927cc0c079`  
 
-#### 17.4.1 Verification Matrix & Execution Evidence
+#### 17.4.1 Execution Environments & Code Tree Identity
+- **Primary Owner Environment (Reconciled):** Local PC (`Windows 11 x64`, Node.js `v26.13.1`, npm `11.20.0`, Git `2.56.0.windows.4`, Python `3.14.0`, Git Bash `2.56.0(4)-release`).
+- **Secondary Environment (Prior Run):** BlissHosts VPS (`Linux x86_64`, Node.js `v22.22.2`, npm `10.9.7`, Docker `29.4.2`, Git `2.47.3`).
+- **Code Tree Identity:** Baseline commit `7065ed3` code tree was bit-for-bit identical to intermediate handoff commit `26d7b0d` (`git diff 7065ed3..26d7b0d` affected only `coordination/agent-handoff.md`). During local Semgrep 1.186.0 verification, Semgrep rule `javascript.lang.security.detect-child-process` flagged dynamic argument usage in `tests/workflow-security.test.mjs:1039`. This was remediated in commit `2ee7362` by binding `spawnSync('git', args)` directly, yielding a clean 0-finding scan.
+
+#### 17.4.2 Primary Verification Matrix: Local PC (Windows)
+
+| # | Verification Scope | Exact Command Executed | Tool / Version | Exit Code | Result Summary |
+|---|---|---|---|---|---|
+| **1** | Clean Dependency Installation | `npm ci` | npm `11.20.0`, Node `v26.13.1` | `0` | Clean install verified; audited 2 packages; 0 vulnerabilities reported. |
+| **2** | Focused Workflow Security Tests | `node --test tests/workflow-security.test.mjs` | Node test runner `v26.13.1` | `0` | **57 passed, 0 failed, 1 skipped** in 1.35 s. (Test 49 skipped on win32 platform guard; integration logic verified separately via Git Bash). |
+| **3** | Complete Test Suite Execution | `npm test` (`node --test tests/*.test.mjs`) | Node test runner `v26.13.1` | `0` | **185 passed, 0 failed, 1 skipped** in 43.2 s across all 9 test suites. |
+| **4** | Repository & Evidence Validation | `node tools/validate.mjs`<br>`node tools/validate-evidence.mjs --file templates/security-evidence.example.json` | Node `v26.13.1` | `0`<br>`0` | All policy invariants valid (22 modules, 52 source refs, archive equality, task indexes). Evidence structure valid. |
+| **5** | Generator Drift Checks | `node tools/build-modules.mjs && git diff --exit-code -- modules/`<br>`node tools/build-indexes.mjs && git diff --exit-code -- MODULE-INDEX.md bundles/`<br>`node tools/build-bundles.mjs && git diff --exit-code -- bundles/` | Node `v26.13.1`, Git `2.56.0` | `0`<br>`0`<br>`0` | Rebuilt 22 modules from source: **0 drift**.<br>Generated MODULE-INDEX and 5 task indexes: **0 drift**.<br>Resolved and compiled 5 bundles: **0 drift**. |
+| **6** | Semgrep Verification with `--disable-nosem` | `semgrep scan --config p/default --error --strict --disable-nosem --metrics=off --verbose tools/ tests/ .github/workflows/ templates/` | Semgrep `1.186.0` (pinned workflow version) | `0` | **0 findings** across 237 rules and 26 tracked files. Strict mode passed; `--disable-nosem` enforced. |
+| **7** | Gitleaks Full History Scan | `gitleaks detect --source . --verbose --no-git=false` | Gitleaks `8.21.2` (pinned workflow version) | `0` | Full history: 496 commits scanned in 455 ms, **0 leaks found**. |
+| **8** | Adversarial Scanner Guard Verification | Runtime guard executed via Git Bash (`C:\Program Files\Git\bin\bash.exe`) on Windows against test fixtures | Git Bash `2.56.0`, workflow guard script | `0`<br>`1`<br>`1`<br>`1`<br>`1` | 1. Clean tree: exit `0` (pass).<br>2. Injected inline suppression directive fixture: exit `1` (rejected: `Prohibited Gitleaks inline suppression directive is not permitted`).<br>3. Whitespace/case suppression variant fixture: exit `1` (rejected: `Prohibited Gitleaks inline suppression directive is not permitted`).<br>4. Injected unreviewed `osv-scanner.toml` fixture: exit `1` (rejected: `Unreviewed scanner override is not permitted: osv-scanner.toml`).<br>5. Injected nested `.semgrepignore` fixture: exit `1` (rejected: `Nested .semgrepignore is not permitted: ./tools/.semgrepignore`). |
+| **9** | OSV Scanner Verification | `osv-scanner -r .` | OSV-Scanner `1.9.2` (commit `1e295ee1`) | `0` | Scanned `package-lock.json` at commit `2ee7362` (tree `03e71a96`): **No issues found**. |
+| **10** | CodeQL Analysis Engine Status | Static AST / workflow validation in tests | CodeQL CLI / SARIF Engine | **NOT RUN** | **CodeQL analysis was NOT RUN locally** (CodeQL CLI and analysis database not installed on local PC). Static workflow AST enforcement verified in `tests/workflow-security.test.mjs` (CodeQL job presence, zero path exclusions, zero custom query weakening). |
+| **11** | Consumer Template Protections | AST validation + negative mutation checks (`tests/workflow-security.test.mjs` tests 3, 46, 48, 54) on `templates/ci/consumer-security-scans.yml` | Node test runner `v26.13.1` | `0` | Structural enforcement verified: scanner guards mandatory and fail-closed; `--disable-nosem` enforced; weekly scheduled secret scan enforced; forbidden runtime envs/shells rejected. |
+
+#### 17.4.3 Secondary Verification Matrix: BlissHosts VPS (Linux x86_64 Reference)
 
 | # | Verification Scope | Exact Command Executed | Tool / Image Version | Exit Code | Result Summary |
 |---|---|---|---|---|---|
@@ -1059,12 +1081,15 @@ This correction demonstrates why generated modules must be changed through their
 | **3** | Complete Test Suite Execution | `npm test` (`node --test tests/*.test.mjs`) | Node test runner `v22.22.2` | `0` | **186/186 tests passed** (0 failed, 0 skipped, 0 cancelled) in 14.8 s across all 9 test suites. |
 | **4** | Repository & Evidence Validation | `node tools/validate.mjs`<br>`node tools/validate-evidence.mjs --file templates/security-evidence.example.json` | Node `v22.22.2` | `0`<br>`0` | All policy invariants valid (22 modules, 52 source refs, archive equality, task indexes). Evidence structure valid. |
 | **5** | Generator Drift Checks | `node tools/build-modules.mjs && git diff --exit-code -- modules/`<br>`node tools/build-indexes.mjs && git diff --exit-code -- MODULE-INDEX.md bundles/`<br>`node tools/build-bundles.mjs && git diff --exit-code -- bundles/` | Node `v22.22.2`, Git `2.47.3` | `0`<br>`0`<br>`0` | Rebuilt 22 modules from source: **0 drift**.<br>Generated MODULE-INDEX and 5 task indexes: **0 drift**.<br>Resolved and compiled 5 bundles: **0 drift**. |
-| **6** | Semgrep Verification with `--disable-nosem` | `docker run --rm -v "$PWD":/src -w /src -e SEMGREP_SEND_METRICS=off semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493 semgrep scan --config p/default --error --strict --disable-nosem --metrics=off --verbose tools/ tests/ .github/workflows/ templates/` | Semgrep `1.186.0` (pinned digest `sha256:25251de6...`) | `0` | **0 findings** across 237 rules and 26 tracked files. Strict mode passed; `--disable-nosem` confirmed enforcing fail-closed scan. |
-| **7** | Gitleaks & Adversarial Suppression Verification | `gitleaks detect --source . --verbose --no-git=false`<br>Adversarial runtime suite executing fail-closed scanner guard against injected inline suppressions and unreviewed configs | Gitleaks `8.21.2` (action pinned at `e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3`) | `0`<br>`0` | Full history: 493 commits scanned, **0 leaks found**.<br>Adversarial runtime guard tests confirmed: injected `gitleaks` suppression directive -> exit 1 (rejected); injected whitespace/casing variant directive -> exit 1 (rejected); `osv-scanner.toml` -> exit 1 (rejected); clean repo -> exit 0 (passed). |
-| **8** | OSV Scanner & CodeQL Verification | `osv-scanner -r .`<br>CodeQL static workflow AST verification | OSV-Scanner `1.9.2` (commit `1e295ee1`), CodeQL action `33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3` | `0`<br>`0` | Scanned `package-lock.json` at commit `7065ed3`: **No issues found**.<br>CodeQL configuration in `security-scans.yml` and `consumer-security-scans.yml` structurally verified for hosted CI execution. |
-| **9** | Consumer Template Protections | AST validation + negative mutation checks (`tests/workflow-security.test.mjs` tests 3, 46, 48, 54) on `templates/ci/consumer-security-scans.yml` | Node test runner `v22.22.2` | `0` | Structural enforcement verified: scanner guards mandatory and fail-closed; `--disable-nosem` enforced; weekly scheduled secret scan enforced; forbidden runtime envs/shells rejected. Mutation tests confirmed rejection of omitted or weakened guards. |
+| **6** | Semgrep in Container | `docker run --rm -v "$PWD":/src -w /src -e SEMGREP_SEND_METRICS=off semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493 semgrep scan --config p/default --error --strict --disable-nosem --metrics=off --verbose tools/ tests/ .github/workflows/ templates/` | Semgrep `1.186.0` container | `0` | Strict mode passed; `--disable-nosem` enforced. |
+| **7** | Gitleaks Scan | `gitleaks detect --source . --verbose --no-git=false` | Gitleaks `8.21.2` | `0` | 493 commits scanned, 0 leaks found. |
+| **8** | OSV-Scanner | `osv-scanner -r .` | OSV-Scanner `1.9.2` | `0` | No issues found. |
 
-#### 17.4.2 Defect and Regression Assessment
-- **Genuine Defects Discovered:** None.
-- **Regression Test Coverage:** 186/186 automated tests passing with zero failures and zero skipped tests.
+#### 17.4.4 Defect and Regression Assessment
+- **Genuine Defects Discovered & Remediated:**
+  1. `tests/workflow-security.test.mjs:1039`: Child process invocation via function parameter `run = (command, args) => spawnSync(command, ...)` was flagged by Semgrep rule `javascript.lang.security.detect-child-process.detect-child-process`. Remediated in commit `2ee7362` by binding `'git'` directly (`runGit = args => spawnSync('git', ...)`), resulting in 0 blocking findings under Semgrep `--error --strict`.
+- **Regression Test Coverage:**
+  - Local PC (Windows): 185 passed, 0 failed, 1 skipped (win32 bash platform guard).
+  - Linux VPS: 186 passed, 0 failed, 0 skipped.
 - **Codebase Integrity:** Working tree clean. Zero drift across modules, indexes, and task bundles.
+- **Limitations & Hosted CI Status:** Hosted GitHub Actions CI remains blocked due to organization billing limit. No hosted CI pass is claimed. CodeQL local analysis engine was NOT RUN (static workflow AST rules verified).
