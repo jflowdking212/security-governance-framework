@@ -1211,3 +1211,29 @@ Gemini is instructed to execute the following against a clean checkout of the ex
 If a reproducible defect is found, stop verification, add a minimal failing regression test, fix only that defect on the same Gemini branch, then rerun the affected tests and the full required suite. Do not alter PR #9, ChatGPT's branch, Claude's patch, release signing, rulesets, merge state or deployment.
 
 **Acceptance gate:** ChatGPT will independently fetch the Section 17.4 evidence and verify the exact commit and any CI runs. Until that review is complete, D-01/D-02 remain IMPLEMENTED, NOT ACCEPTED. No claim of FIXED AND VERIFIED based only on a narrative report.
+
+
+## Work performed after owner instruction — Gemini task dispatch and independent engineering
+**Date:** 2026-11-21.
+
+### Gemini task actually dispatched
+- Recorded the exact-SHA verification-only task in this handoff branch.
+- Posted the same task directly as a top-level comment on PR #9 so it is visible in the repository conversation.
+- Task target: `gemini/d01-d02-remediation`, SHA `7065ed3fb73b6bf78090e8d4812c1b2c95790099`.
+- Required evidence: clean exact-SHA checkout; `npm ci`; focused and full Node tests; repository/evidence validation; generator drift checks; exact Semgrep 1.186.0 with `--disable-nosem`; pinned Gitleaks adversarial fixture and clean-tree run; CodeQL/OSV availability/results; consumer-template parity; Section 17.4 with commands, exit codes and run IDs.
+- Directive prohibits unnecessary code changes, PR #9 source modification, merge, signing, ruleset changes and deployment. A reproducible defect must be fixed with a regression test on Gemini's own branch and fully retested.
+- Handoff commit containing this task: `90141648e3d9d283ed333a4b789f2e79646e82d4`.
+- PR #9 comment ID: `7060780857`.
+
+### Independent checksum engineering performed by ChatGPT
+- Re-read `tools/checksums.mjs`, `tests/checksums.test.mjs`, `README.md`, `CONSUMING.md` and `SECURITY-ROOT.md` on the ChatGPT branch.
+- Found a contradictory statement in `CONSUMING.md`: it said executable bits were not represented, although the preceding text and implementation bind executable mode into the digest.
+- Corrected the documentation to state that executable permission mode is represented in each mode-bound digest; empty directories, ownership, timestamps and other unrepresented metadata remain excluded.
+- Commit: `e45d29544e751c35f8c9a340d1707b0734866e17`.
+- This is a documentation-only correction on ChatGPT's isolated branch. No Gemini files, PR #9 source branch, Claude patch or main branch were modified.
+- Checksum implementation and regression tests still require execution in an approved local environment. No claim of test pass is made.
+
+### Next
+- Await Gemini Section 17.4 exact-SHA evidence and independently verify it.
+- Continue checksum E-01/E-02 validation and inspect any additional concrete defects that can be fixed without conflicting with Gemini's scanner work.
+- Keep all changes isolated. No merge, release signing or deployment.
