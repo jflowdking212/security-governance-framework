@@ -976,3 +976,42 @@ Fresh scanner run `44741749763` at `e290a19`:
 - CodeQL job `136306855460`: still IN PROGRESS at the time this note was written. Re-fetch before claiming the four-scanner run is fully complete.
 
 This correction demonstrates why generated modules must be changed through their canonical builder source, then verified by the drift gate. Do not treat the earlier failed validation as a remaining code defect after the `e290a19` pass; retain it as historical evidence of the corrected workflow.
+
+---
+
+## 17. Gemini Remediation Handback: D-01 and D-02 Findings
+
+**Date:** 2026-11-21  
+**Author:** Gemini  
+**Working Branch:** `gemini/d01-d02-remediation` (isolated branch from PR #9 baseline `80754305a9c9ee5d9848b1da17274f9e0cfc39ee`)  
+**Scope:** Remediate Claude Independent Adversarial Audit findings D-01 (Priority 1, P2) and D-02 (Priority 2, P3).  
+
+### 17.1 Status Summary
+
+| Finding ID | Priority | Description | Status | Verification Detail |
+|---|---|---|---|---|
+| **D-01.1** | P2 | Semgrep inline suppression bypass via `nosemgrep` | **FIXED AND VERIFIED** | `--disable-nosem` added to Semgrep scan in `.github/workflows/security-scans.yml` and `templates/ci/consumer-security-scans.yml`. AST structural enforcement in `tests/workflow-security.test.mjs` verifies presence of `--disable-nosem` and absence of `--enable-nosem`. Mutation tests pass. Local scan verified with `--disable-nosem`. |
+| **D-01.2** | P2 | Gitleaks inline suppression bypass via inline directives | **FIXED AND VERIFIED** | Fail-closed pre-scan guard (`git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E '[g]itleaks[[:space:]]*:[[:space:]]*allow' -- .`) added to `Reject unreviewed scanner configuration` in both workflows. Exits 1 if directive found; exits with non-zero error if git grep fails; passes only when exit status is 1 (clean). AST enforcement and runtime temp git repo mutation tests pass. |
+| **D-01.3** | P2 | OSV Scanner unreviewed config suppression via `osv-scanner.toml` | **FIXED AND VERIFIED** | `osv-scanner.toml` and `.osv-scanner.toml` added to unreviewed scanner config guard file list in both workflows. AST and runtime mutation tests verify rejection of both files. |
+| **D-02.1** | P3 | Scheduled full-history secret scan silent disappearance | **FIXED AND VERIFIED** | Structural workflow validator in `tests/workflow-security.test.mjs` enforces mandatory `on.schedule` non-empty array including weekly cron `"17 5 * * 1"` in both `security-scans.yml` and `consumer-security-scans.yml`. Mutation tests verify rejection of removed schedule or altered cron. |
+| **D-02.2** | P3 | Weakened Node runtime options via `NODE_OPTIONS` / `NODE_PATH` | **FIXED AND VERIFIED** | `assertSafeEnv` in `tests/workflow-security.test.mjs` asserts workflow-, job-, and step-level env definitions reject forbidden runtime variables (`NODE_OPTIONS`, `NODE_PATH`, `NODE_EXTRA_CA_CERTS`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `PYTHONPATH`). Inline shell assignment to `NODE_OPTIONS` also rejected. Mutation tests verify rejection. |
+| **D-02.3** | P3 | Unsafe shell overrides disabling fail-fast error handling (`bash {0}`, etc.) | **FIXED AND VERIFIED** | `assertSafeShell` in `tests/workflow-security.test.mjs` checks defaults, jobs, and steps to reject `bash {0}`, `sh {0}`, and any shell override omitting `-e`. Mutation tests verify rejection. |
+
+### 17.2 Disposition Details
+
+- **FIXED AND VERIFIED:**
+  1. Semgrep inline suppression bypass (`--disable-nosem` and rejection of `--enable-nosem`).
+  2. Gitleaks inline suppression bypass (pre-scan `git grep` fail-closed detection with case-insensitive whitespace-tolerant regex and runtime repo verification).
+  3. OSV scanner config override protection (`osv-scanner.toml` and `.osv-scanner.toml` rejection).
+  4. Weekly full-history secret scan schedule protection (AST enforcement for `security-scans.yml` and consumer template).
+  5. Forbidden runtime environment variables protection (`NODE_OPTIONS`, `NODE_PATH`, etc. rejected at workflow/job/step env and in inline scripts).
+  6. Unsafe shell override protection (`bash {0}` and error-disabling overrides rejected across defaults, jobs, and steps).
+  7. Test suite coverage expanded to 186 tests (58 workflow security tests, including 11 new/updated negative mutation tests). 186/186 tests passing.
+
+- **IMPLEMENTED NOT VERIFIED:**
+  - Hosted GitHub Actions execution of this isolated branch (`gemini/d01-d02-remediation`). Verified locally via Node test runner (186/186 tests pass), `node tools/validate.mjs`, `node tools/validate-evidence.mjs`, module/index/bundle builds, and local `semgrep scan --config p/default --error --strict --disable-nosem --metrics=off --verbose tools/ tests/ .github/workflows/ templates/` (26 files scanned, 0 findings).
+
+- **OPEN:**
+  - Owner-only items: U-01 release signing ceremony and U-08 main ruleset status check.
+  - Final PR #9 review and merge decisions by repository owner Jude O. Richard / Jay Bliss Tech Limited.
+

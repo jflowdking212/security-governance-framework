@@ -39,12 +39,21 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
   return [
     'set -euo pipefail',
     'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
-    'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do',
+    'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml; do',
     '  if [ -e "$file" ]; then',
     "    printf 'Unreviewed scanner override is not permitted: %s\\n' \"$file\" >&2",
     '    exit 1',
     '  fi',
     'done',
+    'if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E \'[g]itleaks[[:space:]]*:[[:space:]]*allow\' -- . >&2; then',
+    "  printf '%s\\n' 'Prohibited Gitleaks inline suppression directive is not permitted' >&2",
+    '  exit 1',
+    'else',
+    '  status=$?',
+    '  if [ "$status" -ne 1 ]; then',
+    '    exit "$status"',
+    '  fi',
+    'fi',
     "nested_semgrepignore=\"$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)\"",
     'if [ -n "$nested_semgrepignore" ]; then',
     "  printf 'Nested .semgrepignore is not permitted: %s\\n' \"$nested_semgrepignore\" >&2",
@@ -187,13 +196,36 @@ function assertNoUntrustedExpressionsInValue(value, context) {
   }
 }
 
+const FORBIDDEN_ENV_NAMES = new Set(['NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'PYTHONPATH']);
+
 function assertSafeEnv(env, context) {
   if (env === undefined || env === null) return;
   assert.ok(typeof env === 'object' && !Array.isArray(env), context + ' env must be an object');
   for (const [name, value] of Object.entries(env)) {
+    assert.ok(!FORBIDDEN_ENV_NAMES.has(name.toUpperCase()), context + " must not define forbidden runtime environment variable '" + name + "'");
     assert.equal(typeof value, 'string', context + ' env ' + name + ' must be a string');
     assertNoUntrustedExpressionsInValue(value, context + ' env ' + name);
   }
+}
+
+function assertSafeShell(shell, context) {
+  if (shell === undefined || shell === null) return;
+  assert.equal(typeof shell, 'string', context + ' specifies invalid shell type: ' + typeof shell);
+  const trimmed = shell.trim();
+  assert.ok(
+    !/\b(?:ba)?sh\s+(?:--noprofile\s+|--norc\s+)*\{0\}/i.test(trimmed) && trimmed !== 'bash {0}' && trimmed !== 'sh {0}',
+    context + " specifies unsafe shell override '" + trimmed + "' that disables fail-fast error handling (-e)"
+  );
+  if (trimmed.includes('{0}')) {
+    assert.ok(
+      /-(?:[a-zA-Z]*e[a-zA-Z]*)\b/.test(trimmed),
+      context + " custom shell override '" + trimmed + "' lacks fail-fast -e flag"
+    );
+  }
+  assert.ok(
+    trimmed === 'bash' || (trimmed.startsWith('bash ') && /-(?:[a-zA-Z]*e[a-zA-Z]*)\b/.test(trimmed)),
+    context + " specifies unapproved shell '" + trimmed + "'; must be 'bash' with fail-fast enforcement"
+  );
 }
 
 function assertSafeWith(inputs, context) {
@@ -263,6 +295,20 @@ function assertNoSemgrepConfigOverrides(root = ROOT) {
   }
 }
 
+function assertNoOsvConfigOverrides(root = ROOT) {
+  for (const file of ['osv-scanner.toml', '.osv-scanner.toml']) {
+    assert.ok(!fs.existsSync(path.join(root, file)), 'Unreviewed OSV configuration override is not permitted: ' + file);
+  }
+}
+
+function assertNoGitleaksSuppressionDirectives(root = ROOT) {
+  const result = spawnSync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', 'grep', '-n', '-I', '-i', '-E', '[g]itleaks[[:space:]]*:[[:space:]]*allow', '--', '.'], { cwd: root, encoding: 'utf8' });
+  if (result.status === 0) {
+    assert.fail('Prohibited Gitleaks inline suppression directive found in tracked files:\n' + result.stdout);
+  }
+  assert.equal(result.status, 1, 'git grep for inline suppression directive failed: ' + result.stderr);
+}
+
 /**
  * Validates structural security invariants across GitHub Actions workflows.
  */
@@ -292,6 +338,7 @@ function validateWorkflowSecurity(parsed, label) {
   }
 
   assertSafeEnv(parsed.env, label + ' workflow');
+  assertSafeShell(parsed.defaults?.run?.shell, label + ' workflow defaults.run.shell');
   assertPinnedActions(parsed, label);
 
   const jobs = parsed.jobs || {};
@@ -302,6 +349,7 @@ function validateWorkflowSecurity(parsed, label) {
     assert.ok(!job['continue-on-error'], label + ' job ' + jobId + ' must not have continue-on-error: true');
     assertSafeEnv(job.env, label + ' job ' + jobId);
     assertSafeWith(job.with, label + ' job ' + jobId);
+    assertSafeShell(job.defaults?.run?.shell, label + ' job ' + jobId + ' defaults.run.shell');
 
     if (job.uses) {
       assert.equal(job['runs-on'], undefined, label + ' reusable job ' + jobId + ' must not override runs-on');
@@ -318,6 +366,7 @@ function validateWorkflowSecurity(parsed, label) {
       assert.ok(!step['continue-on-error'], label + ' job ' + jobId + ' step ' + i + ' must not have continue-on-error: true');
       assertSafeEnv(step.env, label + ' job ' + jobId + ' step ' + i);
       assertSafeWith(step.with, label + ' job ' + jobId + ' step ' + i);
+      assertSafeShell(step.shell, label + ' job ' + jobId + ' step ' + i + ' shell');
 
       if (step.uses && step.uses.startsWith('actions/checkout')) {
         assert.ok(step.with, label + ' checkout step ' + i + ' must provide with configuration');
@@ -327,6 +376,9 @@ function validateWorkflowSecurity(parsed, label) {
 
       if (step.run) {
         assert.ok(!UNTRUSTED_EXPRESSION_REGEX.test(step.run), label + ' job ' + jobId + ' step ' + i + ' contains forbidden direct expression interpolation: ' + step.run);
+        if (/\bNODE_OPTIONS\s*=/i.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not set NODE_OPTIONS: ' + step.run);
+        }
         for (const pattern of FORBIDDEN_ERROR_SUPPRESSIONS) {
           assert.ok(!pattern.test(step.run), label + ' job ' + jobId + ' step ' + i + ' suppresses errors with ' + pattern + ': ' + step.run);
         }
@@ -392,6 +444,14 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   assertExactObject(parsed.permissions, { contents: 'read' }, label + ' workflow permissions');
   assertBranchCoverage(parsed, label, consumerTemplate ? ['**'] : ['main', 'integration/uss-pr3-pr8-hardening']);
 
+  const triggers = getTriggerMap(parsed);
+  assert.ok(triggers.schedule, label + ' must define schedule trigger for periodic full-history scan');
+  assert.ok(Array.isArray(triggers.schedule) && triggers.schedule.length > 0, label + ' schedule must be a non-empty array');
+  assert.ok(
+    triggers.schedule.some(s => s?.cron === '17 5 * * 1'),
+    label + ' schedule must include weekly full-history scan cron "17 5 * * 1"'
+  );
+
   const jobs = parsed.jobs || {};
   const gitleaksId = consumerTemplate ? 'secrets' : 'gitleaks';
   const gitleaksJob = jobs[gitleaksId];
@@ -402,7 +462,11 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   }
 
   assert.equal(gitleaksJob.name, 'Secret scan (commit range on push/PR, full history on schedule)', 'Gitleaks job name must describe actual scan scope');
-  if (!consumerTemplate) assertNoGitleaksOverrideFiles(ROOT);
+  if (!consumerTemplate) {
+    assertNoGitleaksOverrideFiles(ROOT);
+    assertNoOsvConfigOverrides(ROOT);
+    assertNoGitleaksSuppressionDirectives(ROOT);
+  }
   assertExactObject(gitleaksJob.permissions, { contents: 'read', 'pull-requests': 'read' }, label + ' Gitleaks permissions');
   const gitleaksSteps = gitleaksJob.steps || [];
   assert.equal(gitleaksSteps.length, 3, label + ' Gitleaks job must contain exactly checkout, config guard and scan steps');
@@ -434,6 +498,9 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   const semgrepStep = semgrepSteps[2];
   assert.ok(semgrepStep.run && semgrepStep.run.includes('semgrep scan'), label + ' Semgrep job must execute a scan');
   assert.ok(semgrepStep.run.includes('--error'), 'Semgrep scan must fail on findings with --error');
+  assert.ok(semgrepStep.run.includes('--strict'), 'Semgrep scan must fail on findings with --strict');
+  assert.ok(semgrepStep.run.includes('--disable-nosem'), 'Semgrep scan must disable inline suppression with --disable-nosem');
+  assert.ok(!semgrepStep.run.includes('--enable-nosem'), 'Semgrep scan must not re-enable inline suppression');
   if (!consumerTemplate) {
     assert.ok(semgrepStep.run.includes('tools/') && semgrepStep.run.includes('tests/') && semgrepStep.run.includes('.github/workflows/') && semgrepStep.run.includes('templates/'), 'Semgrep scan must target tools/ tests/ .github/workflows/ templates/');
     assert.ok(!semgrepStep.run.includes('--exclude'), 'Semgrep scan must not use --exclude argument to weaken scan');
@@ -441,8 +508,8 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
     assert.ok(!semgrepStep.run.includes('--exclude'), 'Semgrep scan must not use --exclude argument to weaken scan');
   }
   const expectedSemgrepCommand = consumerTemplate
-    ? 'semgrep scan --config p/default --error --strict --metrics=off .'
-    : 'semgrep scan --config p/default --error --strict --metrics=off --verbose tools/ tests/ .github/workflows/ templates/';
+    ? 'semgrep scan --config p/default --error --strict --disable-nosem --metrics=off .'
+    : 'semgrep scan --config p/default --error --strict --disable-nosem --metrics=off --verbose tools/ tests/ .github/workflows/ templates/';
   assert.equal(semgrepStep.run.trim(), expectedSemgrepCommand, label + ' Semgrep must use the exact approved ruleset, flags and target scope');
   assertExactObject(semgrepStep.env, { SEMGREP_SEND_METRICS: 'off' }, label + ' Semgrep environment');
   if (!consumerTemplate) {
@@ -495,7 +562,7 @@ test('consumer-security-scans.yml template passes structural security validation
   const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
   const parsed = YAML.parse(text);
   validateSecurityScansWorkflow(parsed, 'consumer-security-scans.yml', true);
-  assert.ok(text.includes('semgrep scan --config p/default --error --strict --metrics=off .'));
+  assert.ok(text.includes('semgrep scan --config p/default --error --strict --disable-nosem --metrics=off .'));
   const guide = fs.readFileSync(path.join(ROOT, 'templates/ci/README.md'), 'utf8');
   assert.ok(guide.includes('Change the CodeQL languages'));
 });
@@ -797,7 +864,7 @@ test('negative: rejects reordering of mandatory validation steps', () => {
 test('negative: rejects Semgrep scan omitting .github/workflows/ or templates/', () => {
   const parsed = YAML.parse(read('security-scans.yml'));
   const semgrepStep = parsed.jobs.semgrep.steps.find(s => s.run && s.run.includes('semgrep scan'));
-  semgrepStep.run = 'semgrep scan --config p/default --error --metrics=off --verbose tools/ tests/';
+  semgrepStep.run = 'semgrep scan --config p/default --error --strict --disable-nosem --metrics=off --verbose tools/ tests/';
   assert.throws(() => validateSecurityScansWorkflow(parsed), /Semgrep scan must target tools\/ tests\/ \.github\/workflows\/ templates\//);
 });
 
@@ -996,4 +1063,109 @@ test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-s
   const nested = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
   assert.notEqual(nested.status, 0, 'Guard must reject nested .semgrepignore files');
   assert.match(nested.stderr, /Nested \.semgrepignore is not permitted/);
+
+  fs.rmSync(path.join(cwd, 'tools', '.semgrepignore'));
+  fs.writeFileSync(path.join(cwd, 'osv-scanner.toml'), '[[IgnoredVulns]]\nid = "GO-2023-1234"\n');
+  const osvOverride = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  assert.notEqual(osvOverride.status, 0, 'Guard must reject osv-scanner.toml');
+  assert.match(osvOverride.stderr, /Unreviewed scanner override is not permitted: osv-scanner\.toml/);
+
+  fs.rmSync(path.join(cwd, 'osv-scanner.toml'));
+  fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "secret"; // ' + ['gitleaks', 'allow'].join(':') + '\n');
+  run('git', ['add', 'tools/secret.js']);
+  run('git', ['commit', '-m', 'add secret with suppression']);
+  const gitleaksSuppressed = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  assert.notEqual(gitleaksSuppressed.status, 0, 'Guard must reject inline suppression');
+  assert.match(gitleaksSuppressed.stderr, /Prohibited Gitleaks inline suppression directive/);
+
+  fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "secret"; // ' + ['GITLEAKS', ' ALLOW'].join(' : ') + '\n');
+  run('git', ['add', 'tools/secret.js']);
+  run('git', ['commit', '-m', 'add whitespace suppression']);
+  const whitespaceSuppressed = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  assert.notEqual(whitespaceSuppressed.status, 0, 'Guard must reject whitespace/case variant suppression');
+  assert.match(whitespaceSuppressed.stderr, /Prohibited Gitleaks inline suppression directive/);
+
+  fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "safe";\n');
+  run('git', ['add', 'tools/secret.js']);
+  run('git', ['commit', '-m', 'clean code']);
+  const cleanRun = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  assert.equal(cleanRun.status, 0, 'Guard must pass on clean repository: ' + cleanRun.stderr);
+});
+
+test('negative: rejects Semgrep scan omitting --disable-nosem', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.semgrep.steps[2].run = parsed.jobs.semgrep.steps[2].run.replace(' --disable-nosem', '');
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must disable inline suppression with --disable-nosem/);
+});
+
+test('negative: rejects Semgrep scan re-enabling inline suppression with --enable-nosem', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.semgrep.steps[2].run += ' --enable-nosem';
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must not re-enable inline suppression/);
+});
+
+test('negative: rejects unreviewed osv-scanner.toml configuration overrides', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.gitleaks.steps[1].run = parsed.jobs.gitleaks.steps[1].run.replace(' osv-scanner.toml .osv-scanner.toml;', ';');
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must execute the exact fail-closed scanner configuration guard/);
+});
+
+test('negative: rejects removing weekly scheduled full-history secret scan in security-scans.yml', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  delete parsed.on.schedule;
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must define schedule trigger for periodic full-history scan/);
+});
+
+test('negative: rejects removing weekly scheduled full-history secret scan in consumer template', () => {
+  const parsed = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  delete parsed.on.schedule;
+  assert.throws(() => validateSecurityScansWorkflow(parsed, 'consumer-security-scans.yml', true), /must define schedule trigger for periodic full-history scan/);
+});
+
+test('negative: rejects invalid or empty schedule cron definitions', () => {
+  const parsedEmpty = YAML.parse(read('security-scans.yml'));
+  parsedEmpty.on.schedule = [];
+  assert.throws(() => validateSecurityScansWorkflow(parsedEmpty), /schedule must be a non-empty array/);
+
+  const parsedWrongCron = YAML.parse(read('security-scans.yml'));
+  parsedWrongCron.on.schedule = [{ cron: '0 0 * * *' }];
+  assert.throws(() => validateSecurityScansWorkflow(parsedWrongCron), /schedule must include weekly full-history scan cron "17 5 \* \* 1"/);
+});
+
+test('negative: rejects NODE_OPTIONS and dangerous runtime options in workflow, job, and step env', () => {
+  const parsedWfEnv = YAML.parse(read('security-scans.yml'));
+  parsedWfEnv.env = { NODE_OPTIONS: '--require /tmp/malicious.js' };
+  assert.throws(() => validateSecurityScansWorkflow(parsedWfEnv), /must not define forbidden runtime environment variable 'NODE_OPTIONS'/);
+
+  const parsedJobEnv = YAML.parse(read('security-scans.yml'));
+  parsedJobEnv.jobs.semgrep.env = { NODE_OPTIONS: '--inspect=0.0.0.0' };
+  assert.throws(() => validateSecurityScansWorkflow(parsedJobEnv), /must not define forbidden runtime environment variable 'NODE_OPTIONS'/);
+
+  const parsedStepEnv = YAML.parse(read('uss-validation.yml'));
+  parsedStepEnv.jobs.validate.steps[2].env = { NODE_OPTIONS: '--openssl-legacy-provider' };
+  assert.throws(() => validateUssValidationWorkflow(parsedStepEnv), /must not define forbidden runtime environment variable 'NODE_OPTIONS'/);
+});
+
+test('negative: rejects NODE_OPTIONS inline assignments in run scripts', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps[2].run = 'export NODE_OPTIONS="--require malicious"\n' + parsed.jobs.validate.steps[2].run;
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must not set NODE_OPTIONS/);
+});
+
+test('negative: rejects shell: bash {0} and error-disabling shell overrides', () => {
+  const parsedStep = YAML.parse(read('security-scans.yml'));
+  parsedStep.jobs.gitleaks.steps[1].shell = 'bash {0}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedStep), /disables fail-fast error handling/);
+
+  const parsedSh = YAML.parse(read('security-scans.yml'));
+  parsedSh.jobs.gitleaks.steps[1].shell = 'sh {0}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedSh), /disables fail-fast error handling/);
+
+  const parsedDefaults = YAML.parse(read('security-scans.yml'));
+  parsedDefaults.defaults = { run: { shell: 'bash {0}' } };
+  assert.throws(() => validateSecurityScansWorkflow(parsedDefaults), /disables fail-fast error handling/);
+
+  const parsedUnapproved = YAML.parse(read('security-scans.yml'));
+  parsedUnapproved.jobs.gitleaks.steps[1].shell = 'pwsh';
+  assert.throws(() => validateSecurityScansWorkflow(parsedUnapproved), /specifies unapproved shell 'pwsh'/);
 });

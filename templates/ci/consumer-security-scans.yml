@@ -30,12 +30,21 @@ jobs:
         run: |
           set -euo pipefail
           git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
-          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do
+          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml; do
             if [ -e "$file" ]; then
               printf 'Unreviewed scanner override is not permitted: %s\n' "$file" >&2
               exit 1
             fi
           done
+          if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E '[g]itleaks[[:space:]]*:[[:space:]]*allow' -- . >&2; then
+            printf '%s\n' 'Prohibited Gitleaks inline suppression directive is not permitted' >&2
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              exit "$status"
+            fi
+          fi
           nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
           if [ -n "$nested_semgrepignore" ]; then
             printf 'Nested .semgrepignore is not permitted: %s\n' "$nested_semgrepignore" >&2
@@ -91,12 +100,21 @@ jobs:
         run: |
           set -euo pipefail
           git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
-          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml; do
+          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml; do
             if [ -e "$file" ]; then
               printf 'Unreviewed scanner override is not permitted: %s\n' "$file" >&2
               exit 1
             fi
           done
+          if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E '[g]itleaks[[:space:]]*:[[:space:]]*allow' -- . >&2; then
+            printf '%s\n' 'Prohibited Gitleaks inline suppression directive is not permitted' >&2
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              exit "$status"
+            fi
+          fi
           nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
           if [ -n "$nested_semgrepignore" ]; then
             printf 'Nested .semgrepignore is not permitted: %s\n' "$nested_semgrepignore" >&2
@@ -134,7 +152,7 @@ jobs:
       - name: Run Semgrep
         env:
           SEMGREP_SEND_METRICS: "off"
-        run: semgrep scan --config p/default --error --strict --metrics=off .
+        run: semgrep scan --config p/default --error --strict --disable-nosem --metrics=off .
 
   codeql:
     name: CodeQL SAST
