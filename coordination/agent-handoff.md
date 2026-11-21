@@ -1304,3 +1304,63 @@ No redesign or additional hardening is requested. Do not modify PR #9, ChatGPT's
 - Verified the Gemini branch's comparison to PR #9 baseline and confirmed PR #9 remains open/unmerged and unchanged.
 - No conflicting code changes were made.
 - This review is recorded only on `chatgpt/checksum-mode-hardening`; no changes were made to Gemini's branch.
+
+
+## Review of Gemini's reconciled Local PC D-01/D-02 report — 2026-11-21
+
+**Gemini final commit:** `83e2b1ca8f5742d9e15e2ca9faed7e8e85c2fe52`  
+**Branch:** `gemini/d01-d02-remediation`  
+**Code remediation commit:** `2ee7362f1b2df45257fa1609c8ee7399a3a131e9`  
+**Final code tree:** `8afbcfc46ddff1e2efd06209de3b72cbfa0a06e9`.
+
+### 1. Local PC requirement now satisfied
+
+Gemini's latest report identifies the designated Local PC as Windows 11 x64, Node 26.13.1, npm 11.20.0, Git 2.56.0.windows.4, Python 3.14.0 and Git Bash 2.56.0(4)-release. This closes the prior VPS-vs-local-PC evidence mismatch.
+
+### 2. Execution evidence reported
+
+- `npm ci`: exit 0, 0 vulnerabilities.
+- Focused workflow tests: 57 passed, 0 failed, 1 skipped (Windows platform guard); integration logic reportedly exercised separately through Git Bash.
+- Full suite: 185 passed, 0 failed, 1 skipped on Windows. The prior Linux VPS run reports 186/186, zero skips.
+- `tools/validate.mjs` and evidence validation: exit 0.
+- All module/index/bundle generator drift checks: exit 0, zero drift.
+- Semgrep 1.186.0 with `--disable-nosem`: exit 0, 237 rules, 26 files, zero findings after the child-process test-helper remediation.
+- Gitleaks 8.21.2: exit 0, 496 commits scanned, zero leaks.
+- Adversarial guard fixtures: clean tree exit 0; Gitleaks directive, case/whitespace variant, OSV config override and nested Semgrep ignore fixtures each rejected with exit 1.
+- OSV 1.9.2: exit 0, no issues on code commit `2ee7362`.
+- CodeQL analysis engine: explicitly NOT RUN locally. Workflow AST/configuration structure is tested, but this is not an executed CodeQL analysis.
+
+### 3. Independent remote checks
+
+- Gemini branch exists and is five commits ahead of PR #9's baseline, zero behind.
+- The final commit `83e2b1c` adds only a coordination handoff change relative to code remediation commit `2ee7362`. Thus the code tree scanned by OSV at `2ee7362` is the same code tree as the final commit, with only the handoff document changed afterward.
+- The remote workflow and consumer template both contain weekly schedule `17 5 * * 1`, full-history fetch, prohibited scanner config names and Semgrep `--disable-nosem`.
+- The remote test file contains the exact shell allowlist and negative cases for `bash -e -c`, `--command`, extra trailing and leading arguments.
+- PR #9 remains open/unmerged at original baseline SHA `80754305a9c9ee5d9848b1da17274f9e0cfc39ee`.
+- No GitHub Actions workflow runs or combined statuses are available for the final Gemini SHA. Hosted CI is still unavailable; do not claim hosted CI passed.
+
+### 4. Disposition
+
+- D-01 Semgrep suppression control: **IMPLEMENTED AND LOCAL-PC VERIFIED**.
+- D-01 Gitleaks suppression guard: **IMPLEMENTED AND LOCAL-PC VERIFIED**.
+- D-01 OSV config override guard: **IMPLEMENTED AND LOCAL-PC VERIFIED**.
+- D-02 weekly full-history schedule: **IMPLEMENTED AND LOCAL-PC VERIFIED**.
+- D-02 runtime environment guard: **IMPLEMENTED AND LOCAL-PC VERIFIED**.
+- D-02 shell-template bypass: **IMPLEMENTED AND LOCAL-PC VERIFIED**.
+- CodeQL analysis: **NOT RUN** (workflow configuration/AST only).
+- Hosted GitHub Actions: **NOT RUN / UNAVAILABLE**.
+- Overall D-01/D-02 engineering disposition: **READY FOR FINAL INDEPENDENT ADVERSARIAL AUDIT**, not yet release-certified.
+
+### 5. Next stage — Claude final adversarial audit
+
+Claude should audit the exact final code tree `8afbcfc46ddff1e2efd06209de3b72cbfa0a06e9` / commit `2ee7362` (final handoff commit `83e2b1c`) without changing it initially. Focus on bypasses in scanner suppression guards, workflow AST validation, shell allowlisting, schedule/full-history enforcement, environment restrictions and consumer-template parity. Reproduce every finding with a failing regression test. Classify findings by severity and distinguish code defects from unavailable hosted CI/CodeQL execution.
+
+Only genuine P1/P2 findings should trigger another remediation cycle. P3/P4 observations should be documented and dispositioned rather than expanding scope indefinitely. No merge, signing, ruleset change or deployment until the owner gates are completed.
+
+### 6. ChatGPT work
+
+- Read Gemini's uploaded final report.
+- Independently fetched the final Gemini handoff, workflow, consumer template and test source.
+- Compared final Gemini branch against PR #9 baseline and compared the OSV-tested code commit against final handoff commit.
+- Confirmed the local-PC evidence and clarified the CodeQL/hosted-CI limitations.
+- No conflicting source code changes made.
