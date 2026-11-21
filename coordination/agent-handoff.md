@@ -1188,3 +1188,26 @@ Do not make further implementation changes unless a test exposes a defect. On th
 8. Update Section 17.4 with exact commit SHA, commands, exit codes, test totals, scanner versions/results and any remaining blockers.
 
 No merge, force-push, release signing or deployment. PR #9 remains untouched. ChatGPT will re-fetch and independently examine the exact-SHA evidence after Section 17.4 is recorded.
+
+
+## Gemini task dispatched — exact-SHA verification of D-01/D-02
+**Date:** 2026-11-21  
+**Assigned branch:** `gemini/d01-d02-remediation`  
+**Target SHA:** `7065ed3fb73b6bf78090e8d4812c1b2c95790099`  
+**Mode:** Verification-only. Do not make code changes unless a reproducible defect is found.
+
+Gemini is instructed to execute the following against a clean checkout of the exact target SHA and record the actual command, exit code, tool version and result for every step:
+
+1. `npm ci`.
+2. Focused workflow-security tests, followed by `node --test tests/*.test.mjs`.
+3. `node tools/validate.mjs` and `node tools/validate-evidence.mjs`.
+4. All repository generator/build drift checks.
+5. Semgrep **1.186.0**, the exact pinned workflow version, with `--disable-nosem`. Record version, full command, scanned file count, rules count and findings.
+6. Gitleaks using the exact pinned action/tool version. Demonstrate that the pre-scan guard fails on a temporary tracked adversarial fixture containing a case/whitespace variant of `gitleaks:allow`, and passes on a clean fixture/tree. Restore the worktree afterwards.
+7. CodeQL and OSV where available. If unavailable, report the exact reason and do not claim a pass.
+8. Confirm the consumer template receives equivalent structural validation, including the shell-template allowlist and the D-01 suppression controls.
+9. Update Gemini branch handoff Section 17.4 with the exact tested SHA, commands, exit codes, test totals, scanner versions/results, artifact/run IDs and all blockers.
+
+If a reproducible defect is found, stop verification, add a minimal failing regression test, fix only that defect on the same Gemini branch, then rerun the affected tests and the full required suite. Do not alter PR #9, ChatGPT's branch, Claude's patch, release signing, rulesets, merge state or deployment.
+
+**Acceptance gate:** ChatGPT will independently fetch the Section 17.4 evidence and verify the exact commit and any CI runs. Until that review is complete, D-01/D-02 remain IMPLEMENTED, NOT ACCEPTED. No claim of FIXED AND VERIFIED based only on a narrative report.
