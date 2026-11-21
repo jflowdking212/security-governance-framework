@@ -173,6 +173,9 @@ function gitModeForPath(rel) {
 }
 
 function digestBytes(mode,bytes) {
+  // USS uses a mode-bound digest, not the conventional raw-file sha256sum
+  // format: bind the normalized executable mode and file bytes together.
+  // Consumers must verify entries with this tool, not `sha256sum -c`.
   // Bind the executable bit to the digest as well as the file contents.
   return createHash('sha256').update(mode).update('\0').update(bytes).digest('hex');
 }
