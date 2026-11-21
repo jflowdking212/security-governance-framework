@@ -1035,15 +1035,15 @@ test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-s
   }
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-scanner-guard-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-  const run = (command, args) => {
-    const result = spawnSync(command, args, { cwd, encoding: 'utf8' });
-    assert.equal(result.status, 0, command + ' ' + args.join(' ') + ' failed: ' + result.stderr);
+  const runGit = args => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    assert.equal(result.status, 0, 'git ' + args.join(' ') + ' failed: ' + result.stderr);
     return result;
   };
-  run('git', ['init', '-q']);
-  run('git', ['config', 'user.name', 'USS Scanner Guard Test']);
-  run('git', ['config', 'user.email', 'uss-scanner-guard@example.invalid']);
-  run('git', ['config', 'commit.gpgsign', 'false']);
+  runGit(['init', '-q']);
+  runGit(['config', 'user.name', 'USS Scanner Guard Test']);
+  runGit(['config', 'user.email', 'uss-scanner-guard@example.invalid']);
+  runGit(['config', 'commit.gpgsign', 'false']);
   for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
     fs.mkdirSync(path.join(cwd, dir), { recursive: true });
   }
@@ -1052,17 +1052,17 @@ test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-s
   fs.writeFileSync(path.join(cwd, 'tests/check.mjs'), 'const ok = true;\n');
   fs.writeFileSync(path.join(cwd, '.github/workflows/test.yml'), 'name: test\n');
   fs.writeFileSync(path.join(cwd, 'templates/template.yml'), 'name: template\n');
-  run('git', ['add', '.gitignore', 'tests/check.mjs', '.github/workflows/test.yml', 'templates/template.yml']);
-  run('git', ['add', '-f', 'tools/guard.js']);
-  run('git', ['commit', '-m', 'scanner guard fixture']);
+  runGit(['add', '.gitignore', 'tests/check.mjs', '.github/workflows/test.yml', 'templates/template.yml']);
+  runGit(['add', '-f', 'tools/guard.js']);
+  runGit(['commit', '-m', 'scanner guard fixture']);
 
   const ignored = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
   assert.notEqual(ignored.status, 0, 'Guard must reject a tracked scanner target hidden by .gitignore');
   assert.match(ignored.stderr, /excluded by \.gitignore/);
 
   fs.writeFileSync(path.join(cwd, '.gitignore'), '');
-  run('git', ['add', '.gitignore']);
-  run('git', ['commit', '-m', 'remove ignored target pattern']);
+  runGit(['add', '.gitignore']);
+  runGit(['commit', '-m', 'remove ignored target pattern']);
   fs.writeFileSync(path.join(cwd, 'tools', '.semgrepignore'), 'sensitive-source/\n');
   const nested = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
   assert.notEqual(nested.status, 0, 'Guard must reject nested .semgrepignore files');
@@ -1076,22 +1076,22 @@ test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-s
 
   fs.rmSync(path.join(cwd, 'osv-scanner.toml'));
   fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "secret"; // ' + ['gitleaks', 'allow'].join(':') + '\n');
-  run('git', ['add', 'tools/secret.js']);
-  run('git', ['commit', '-m', 'add secret with suppression']);
+  runGit(['add', 'tools/secret.js']);
+  runGit(['commit', '-m', 'add secret with suppression']);
   const gitleaksSuppressed = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
   assert.notEqual(gitleaksSuppressed.status, 0, 'Guard must reject inline suppression');
   assert.match(gitleaksSuppressed.stderr, /Prohibited Gitleaks inline suppression directive/);
 
   fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "secret"; // ' + ['GITLEAKS', ' ALLOW'].join(' : ') + '\n');
-  run('git', ['add', 'tools/secret.js']);
-  run('git', ['commit', '-m', 'add whitespace suppression']);
+  runGit(['add', 'tools/secret.js']);
+  runGit(['commit', '-m', 'add whitespace suppression']);
   const whitespaceSuppressed = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
   assert.notEqual(whitespaceSuppressed.status, 0, 'Guard must reject whitespace/case variant suppression');
   assert.match(whitespaceSuppressed.stderr, /Prohibited Gitleaks inline suppression directive/);
 
   fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "safe";\n');
-  run('git', ['add', 'tools/secret.js']);
-  run('git', ['commit', '-m', 'clean code']);
+  runGit(['add', 'tools/secret.js']);
+  runGit(['commit', '-m', 'clean code']);
   const cleanRun = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
   assert.equal(cleanRun.status, 0, 'Guard must pass on clean repository: ' + cleanRun.stderr);
 });
