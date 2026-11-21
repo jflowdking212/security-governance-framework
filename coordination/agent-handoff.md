@@ -1119,3 +1119,72 @@ Required correction: replace permissive substring checks with a strict allowlist
 - D-02 shell-template validation: OPEN; the `bash -e -c ... {0}` bypass must be closed before acceptance.
 
 Do not merge or cherry-pick Gemini's branch until the shell-template bypass is corrected and all required validation evidence is available.
+
+
+## Independent review of Gemini D-02 shell-template remediation — 2026-11-21
+
+**Gemini branch:** `gemini/d01-d02-remediation`  
+**Latest commit:** `7065ed3fb73b6bf78090e8d4812c1b2c95790099`  
+**Base:** `80754305a9c9ee5d9848b1da17274f9e0cfc39ee`  
+**Review branch:** `chatgpt/checksum-mode-hardening`
+
+### 1. Remote evidence confirmed
+
+- The Gemini branch now exists remotely.
+- It is two commits ahead of the PR #9 baseline and zero commits behind.
+- The comparison contains four changed files: first-party scanner workflow, consumer scanner template, workflow-security tests and coordination handoff.
+- The latest commit message records the strict shell allowlist and regression tests.
+- Handoff Section 17.3 is present and records the claimed 186/186 local test result.
+- The exact commit has no GitHub Actions workflow run or combined status result available from the connected GitHub evidence. Therefore the local result remains self-reported, not hosted verification.
+
+### 2. D-02 shell-template source review
+
+Inspected `tests/workflow-security.test.mjs` at blob `68514f6b372b611fb704fe6821b61cd63aca7e1b`.
+
+The previous permissive prefix/substring validation is replaced by an exact allowlist:
+- `bash`
+- `bash --noprofile --norc -eo pipefail {0}`
+- `bash --noprofile --norc -e -o pipefail {0}`
+
+The validator rejects command-execution flags (`-c` variants and `--command`), rejects `bash {0}` / `sh {0}` without fail-fast handling, and requires any supplied shell string to exactly match the allowlist. The exact allowlist is the decisive control: unexpected leading/trailing arguments and arbitrary command strings cannot pass merely by including `-e`.
+
+The new regression cases reject:
+- `bash -e -c 'exit 0' {0}`
+- `bash -e --command "exit 0" {0}`
+- `bash -eo pipefail {0} extra`
+- `bash -eo pipefail /bin/true {0}`
+
+Positive tests accept `bash` and the two canonical runner templates. The first-party and consumer workflows continue to declare `shell: bash` for scanner-guard steps.
+
+**Review conclusion for the specific bypass:** FIXED IN SOURCE / REGRESSION CASES PRESENT. I found no equivalent `bash -e -c ... {0}` route through the exact allowlist.
+
+### 3. Remaining verification gaps
+
+- The reported 186/186 full test result has not been independently reproduced.
+- No hosted Actions run/status exists for the latest Gemini commit.
+- The earlier Semgrep local run was reported as version 1.136.0, while the workflow pins 1.186.0. Run the exact pinned version or provide scanner image/action evidence showing the pinned workflow execution.
+- Run the complete required validation suite against the exact commit, not a dirty or later workspace.
+- Confirm both workflow validators actually execute in repository validation and that the consumer-template mutation tests cover the shell-template invariants, not only the first-party workflow.
+
+### 4. Disposition
+
+- D-02 shell-template bypass: **IMPLEMENTED; SOURCE REVIEW PASSED; EXECUTION VERIFICATION PENDING**.
+- D-01 Semgrep suppression: implemented in prior Gemini commit; exact pinned-version/hosted verification pending.
+- D-01 Gitleaks suppression: implemented in prior Gemini commit; full scanner execution evidence pending.
+- D-02 weekly schedule/full-history and environment protections: implemented; full exact-SHA verification pending.
+- Overall D-01/D-02: **NOT YET ACCEPTED AS FIXED AND VERIFIED** because the latest exact-SHA execution evidence is absent.
+
+### 5. Next Gemini task — verification-only handback
+
+Do not make further implementation changes unless a test exposes a defect. On the exact commit `7065ed3fb73b6bf78090e8d4812c1b2c95790099`:
+
+1. Run `npm ci`.
+2. Run the focused workflow-security tests, then `node --test tests/*.test.mjs`.
+3. Run `node tools/validate.mjs`, `node tools/validate-evidence.mjs`, and all generator drift checks.
+4. Execute Semgrep at the exact workflow-pinned version 1.186.0 with `--disable-nosem`; record version, command, scanned file count, rules and findings.
+5. Execute Gitleaks using the pinned workflow version/action and confirm the inline suppression guard fails on an adversarial temporary tracked fixture, then passes on a clean tree.
+6. Run available CodeQL and OSV checks, recording any unavailable tooling explicitly.
+7. Push no changes unless a real defect is found. If a defect is found, make a narrowly scoped follow-up commit on this same branch and report the before/after regression.
+8. Update Section 17.4 with exact commit SHA, commands, exit codes, test totals, scanner versions/results and any remaining blockers.
+
+No merge, force-push, release signing or deployment. PR #9 remains untouched. ChatGPT will re-fetch and independently examine the exact-SHA evidence after Section 17.4 is recorded.
