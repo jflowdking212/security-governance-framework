@@ -1010,3 +1010,50 @@ This correction demonstrates why generated modules must be changed through their
 - Required next validation: run `node --test tests/checksums.test.mjs`, then `node --test tests/*.test.mjs`, `node tools/validate.mjs`, generator drift checks and `npm audit` in the approved local environment.
 
 Do not merge or cherry-pick this branch until those checks pass. Keep the E-01/E-02 status as IMPLEMENTED, NOT VERIFIED until execution evidence is recorded.
+
+
+## Independent review of Gemini A2-02/A2-07 handoff and live workflow — 2026-11-21
+
+**Reviewer:** ChatGPT  
+**Inspected branch:** `fix/uss-final-audit-remediation`  
+**Inspected workflow blob:** `f0bc1016500e006e5dcf3911c0acc3269cd9b053`  
+**Inspected workflow-test blob:** `2c6e04b39ebd18b45d71ab374669bae83e837d69`  
+**Inspected consumer-template blob:** `5b69e524612e0b81ef4d2dc93c535970c74b22b0`
+
+### Handoff/report status
+
+The shared `coordination/agent-handoff.md` currently ends at Section 16.5. It records the earlier Gemini scanner-topology repair and successful historical hosted checks, and says Gemini's next task is the final A2-02/A2-07 adversarial coverage matrix. It does not contain a newer Gemini completion handback for the specific D-01/D-02 assignment (inline scanner suppression, weekly-scan enforcement, NODE_OPTIONS and shell override protections).
+
+The Gemini prompt file also records an independent-review assignment and scanner-guard checks, but no completed D-01/D-02 closure report. Do not mark those findings closed from the earlier green scanner runs.
+
+### Current code review
+
+**Confirmed present:**
+- Separate Gitleaks, Semgrep, CodeQL and OSV jobs.
+- Pinned Gitleaks action and Semgrep container digest.
+- Gitleaks checkout uses `fetch-depth: 0`.
+- Weekly schedule exists: `17 5 * * 1`.
+- Runtime guard rejects unreviewed scanner configuration files, nested Semgrep ignore files, symlinked root `.semgrepignore`, and tracked scan targets hidden by `.gitignore`.
+- Tests include negative cases for scanner config overrides, Gitleaks ignore files, Semgrep ignore rules, nested ignore files and tracked scan targets suppressed by `.gitignore`.
+
+**D-01 — inline suppression bypass: OPEN / NOT VERIFIED.**
+- The inspected first-party workflow does not invoke Semgrep with `--disable-nosem`.
+- The workflow and consumer template do not visibly reject inline `nosemgrep` directives or Gitleaks `gitleaks:allow` directives.
+- The inspected workflow-security tests do not contain regression cases for either inline suppression mechanism.
+- Existing scanner-config guards do not, by themselves, prove that inline source suppressions are blocked.
+
+Required Gemini action: implement and test suppression protection for Semgrep and Gitleaks, or provide a documented, reproducible proof that the pinned scanner versions disable these mechanisms by another enforceable control. Tests must cover case/spacing/comment variations and ensure the guard itself cannot be bypassed.
+
+**D-02 — workflow structural protections: PARTIALLY PRESENT, OPEN.**
+- Weekly schedule and full-history checkout are present in the workflow.
+- The inspected tests assert Gitleaks full-history checkout, but no explicit negative mutation test was found that removes or changes the weekly cron schedule.
+- No explicit `NODE_OPTIONS` override protection or corresponding regression test was found in the inspected workflow/test files.
+- The workflow contains explicit `shell: bash` scanner-guard steps; the inspected test file did not contain a structural regression test against a malicious `shell: bash {0}` override.
+
+Required Gemini action: add narrow validator invariants and negative mutation tests for schedule removal/change, unsafe `NODE_OPTIONS` injection and shell override mutations. Preserve legitimate explicit Bash usage while rejecting unsafe template overrides.
+
+### Disposition
+
+A2-02/A2-07 scanner topology and scanner-config guard are present in the inspected branch. D-01 and D-02 are not closed by the inspected evidence. The earlier 177/177 test and scanner runs at `e290a19` predate this specific review and do not prove these missing negative tests or controls.
+
+Next: Gemini must synchronise to the exact current branch, implement D-01 first, then D-02, and provide a fresh test matrix and hosted evidence on the resulting SHA. ChatGPT will review Gemini's actual diff and tests. PR #9 remains open and unmerged.
