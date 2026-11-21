@@ -69,6 +69,39 @@ const APPROVED_SHELLS = new Set([
 ]);
 const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
 
+const ALLOWED_SCANNER_JOB_KEYS = new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'container', 'steps']);
+const ALLOWED_OSV_JOB_KEYS = new Set(['name', 'uses', 'with', 'permissions']);
+const ALLOWED_STEP_KEYS = new Set(['name', 'uses', 'with', 'run', 'shell', 'env']);
+
+function validateMandatoryJobControl(job, jobId, label) {
+  if (job.if !== undefined) {
+    throw new Error(`${label}: mandatory job '${jobId}' declares unapproved condition '${job.if}'; mandatory security jobs must not be conditional`);
+  }
+  if (job['continue-on-error'] !== undefined) {
+    throw new Error(`${label}: mandatory job '${jobId}' must not define continue-on-error`);
+  }
+  if (job.needs !== undefined) {
+    throw new Error(`${label}: mandatory job '${jobId}' must not define dependencies (needs: ...)`);
+  }
+  if (job.strategy !== undefined) {
+    throw new Error(`${label}: mandatory job '${jobId}' must not define strategy matrix`);
+  }
+}
+
+function validateMandatoryStepControl(step, index, jobId, label) {
+  if (step.if !== undefined) {
+    throw new Error(`${label}: mandatory step ${index} in job '${jobId}' declares unapproved condition '${step.if}'; mandatory security steps must not be conditional`);
+  }
+  if (step['continue-on-error'] !== undefined) {
+    throw new Error(`${label}: mandatory step ${index} in job '${jobId}' must not define continue-on-error`);
+  }
+  for (const k of Object.keys(step)) {
+    if (!ALLOWED_STEP_KEYS.has(k)) {
+      throw new Error(`${label}: job '${jobId}' step ${index} contains unapproved key '${k}'`);
+    }
+  }
+}
+
 export function buildExpectedConsumerGuard() {
   return [
     'set -euo pipefail',
@@ -107,13 +140,13 @@ export function buildExpectedConsumerGuard() {
     "    printf 'Symlinked .gitattributes is not permitted: %s\\n' \"$attr_file\" >&2",
     '    exit 1',
     '  fi',
-    "  if grep -n -E '(-diff|\\bbinary\\b|\\bdiff[[:space:]]*=|\\bfilter[[:space:]]*=|\\bmerge[[:space:]]*=)' \"$attr_file\" >&2; then",
+    "  if grep -v '^[[:space:]]*#' \"$attr_file\" | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then",
     "    printf 'Prohibited .gitattributes configuration is not permitted: %s\\n' \"$attr_file\" >&2",
     '    exit 1',
     '  fi',
     "done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)",
     'if [ -e .git/info/attributes ]; then',
-    "  if grep -n -E '(-diff|\\bbinary\\b|\\bdiff[[:space:]]*=|\\bfilter[[:space:]]*=|\\bmerge[[:space:]]*=)' .git/info/attributes >&2; then",
+    "  if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then",
     "    printf '%s\\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2",
     '    exit 1',
     '  fi',
@@ -286,8 +319,14 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     if (!jobs[req]) throw new Error(`${label}: missing required job '${req}'`);
   }
 
-  // 7. Validate Secrets / Gitleaks job (F2, F3, F4)
+  // 7. Validate Secrets / Gitleaks job (F2, F3, F4, F6)
   const secJob = jobs[secretJobId];
+  validateMandatoryJobControl(secJob, secretJobId, label);
+  for (const k of Object.keys(secJob)) {
+    if (!ALLOWED_SCANNER_JOB_KEYS.has(k)) {
+      throw new Error(`${label}: job '${secretJobId}' contains unapproved key '${k}'`);
+    }
+  }
   if (secJob['runs-on'] !== 'ubuntu-latest') throw new Error(`${label}: ${secretJobId} job runs-on must be 'ubuntu-latest'`);
   if (!Number.isInteger(secJob['timeout-minutes']) || secJob['timeout-minutes'] <= 0) throw new Error(`${label}: ${secretJobId} job must set positive timeout-minutes`);
   assertExactObject(secJob.permissions, { contents: 'read', 'pull-requests': 'read' }, `${label} ${secretJobId} permissions`);
@@ -298,6 +337,9 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   const secSteps = secJob.steps || [];
   if (secSteps.length !== 3) {
     throw new Error(`${label}: ${secretJobId} job must contain exactly 3 steps (checkout, config guard, scan), got ${secSteps.length}`);
+  }
+  for (let i = 0; i < secSteps.length; i++) {
+    validateMandatoryStepControl(secSteps[i], i, secretJobId, label);
   }
 
   // Step 0: Checkout
@@ -331,8 +373,14 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   }, `${label} ${secretJobId} scan env`);
   if (secStep2.with) throw new Error(`${label}: ${secretJobId} scan step must not define inputs`);
 
-  // 8. Validate Semgrep job (F2, F3, F4)
+  // 8. Validate Semgrep job (F2, F3, F4, F6)
   const semJob = jobs.semgrep;
+  validateMandatoryJobControl(semJob, 'semgrep', label);
+  for (const k of Object.keys(semJob)) {
+    if (!ALLOWED_SCANNER_JOB_KEYS.has(k)) {
+      throw new Error(`${label}: job 'semgrep' contains unapproved key '${k}'`);
+    }
+  }
   if (semJob['runs-on'] !== 'ubuntu-latest') throw new Error(`${label}: semgrep job runs-on must be 'ubuntu-latest'`);
   if (!Number.isInteger(semJob['timeout-minutes']) || semJob['timeout-minutes'] <= 0) throw new Error(`${label}: semgrep job must set positive timeout-minutes`);
   if (semJob.permissions !== undefined) throw new Error(`${label}: semgrep job must inherit read-only workflow permissions`);
@@ -345,6 +393,9 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   const semSteps = semJob.steps || [];
   if (semSteps.length !== 3) {
     throw new Error(`${label}: semgrep job must contain exactly 3 steps (checkout, config guard, scan), got ${semSteps.length}`);
+  }
+  for (let i = 0; i < semSteps.length; i++) {
+    validateMandatoryStepControl(semSteps[i], i, 'semgrep', label);
   }
 
   // Step 0: Checkout
@@ -375,8 +426,14 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   assertExactObject(semStep2.env, { SEMGREP_SEND_METRICS: 'off' }, `${label} semgrep scan env`);
   if (semStep2.with) throw new Error(`${label}: semgrep scan step must not define inputs`);
 
-  // 9. Validate CodeQL job (F2, F4)
+  // 9. Validate CodeQL job (F2, F4, F6)
   const codeJob = jobs.codeql;
+  validateMandatoryJobControl(codeJob, 'codeql', label);
+  for (const k of Object.keys(codeJob)) {
+    if (!ALLOWED_SCANNER_JOB_KEYS.has(k)) {
+      throw new Error(`${label}: job 'codeql' contains unapproved key '${k}'`);
+    }
+  }
   if (codeJob['runs-on'] !== 'ubuntu-latest') throw new Error(`${label}: codeql job runs-on must be 'ubuntu-latest'`);
   if (!Number.isInteger(codeJob['timeout-minutes']) || codeJob['timeout-minutes'] <= 0) throw new Error(`${label}: codeql job must set positive timeout-minutes`);
   assertExactObject(codeJob.permissions, {
@@ -391,6 +448,9 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   const codeSteps = codeJob.steps || [];
   if (codeSteps.length !== 3) {
     throw new Error(`${label}: codeql job must contain exactly 3 steps (checkout, init, analyze), got ${codeSteps.length}`);
+  }
+  for (let i = 0; i < codeSteps.length; i++) {
+    validateMandatoryStepControl(codeSteps[i], i, 'codeql', label);
   }
 
   // Step 0: Checkout
@@ -427,8 +487,9 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   if (codeStep2.with) throw new Error(`${label}: codeql analyze step must not define inputs`);
   if (codeStep2.env) throw new Error(`${label}: codeql analyze step must not define env`);
 
-  // 10. Validate OSV job (F2, F4)
+  // 10. Validate OSV job (F2, F4, F6)
   const osvJob = jobs.osv;
+  validateMandatoryJobControl(osvJob, 'osv', label);
   assertExactObject(osvJob.permissions, {
     actions: 'read',
     contents: 'read',
@@ -442,8 +503,8 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     'fail-on-vuln': true,
     'upload-sarif': true
   }, `${label} osv reusable workflow inputs`);
-  for (const k of ['runs-on', 'steps', 'env', 'secrets', 'container']) {
-    if (osvJob[k] !== undefined) {
+  for (const k of Object.keys(osvJob)) {
+    if (!ALLOWED_OSV_JOB_KEYS.has(k)) {
       throw new Error(`${label}: osv reusable job must not override '${k}'`);
     }
   }

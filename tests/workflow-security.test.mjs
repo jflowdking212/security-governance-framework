@@ -74,13 +74,13 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     "    printf 'Symlinked .gitattributes is not permitted: %s\\n' \"$attr_file\" >&2",
     '    exit 1',
     '  fi',
-    "  if grep -n -E '(-diff|\\bbinary\\b|\\bdiff[[:space:]]*=|\\bfilter[[:space:]]*=|\\bmerge[[:space:]]*=)' \"$attr_file\" >&2; then",
+    "  if grep -v '^[[:space:]]*#' \"$attr_file\" | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then",
     "    printf 'Prohibited .gitattributes configuration is not permitted: %s\\n' \"$attr_file\" >&2",
     '    exit 1',
     '  fi',
     "done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)",
     'if [ -e .git/info/attributes ]; then',
-    "  if grep -n -E '(-diff|\\bbinary\\b|\\bdiff[[:space:]]*=|\\bfilter[[:space:]]*=|\\bmerge[[:space:]]*=)' .git/info/attributes >&2; then",
+    "  if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then",
     "    printf '%s\\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2",
     '    exit 1',
     '  fi',
@@ -381,6 +381,18 @@ function assertNoOsvConfigOverrides(root = ROOT) {
   scan(root);
 }
 
+function hasProhibitedGitAttributes(content) {
+  const lines = content.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    if (/(?:^|\s)[-!]?(?:diff|binary|filter|merge)(?:[\s=]|$)/.test(trimmed)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function assertNoProhibitedGitAttributes(root = ROOT) {
   function scan(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -394,7 +406,7 @@ function assertNoProhibitedGitAttributes(root = ROOT) {
           assert.fail('Symlinked .gitattributes is not permitted: ' + path.relative(root, fullPath));
         }
         const content = fs.readFileSync(fullPath, 'utf8');
-        if (/(-diff|\bbinary\b|\bdiff\s*=|\bfilter\s*=|\bmerge\s*=)/.test(content)) {
+        if (hasProhibitedGitAttributes(content)) {
           assert.fail('Prohibited .gitattributes configuration is not permitted: ' + path.relative(root, fullPath));
         }
       }
@@ -404,7 +416,7 @@ function assertNoProhibitedGitAttributes(root = ROOT) {
   const infoAttr = path.join(root, '.git', 'info', 'attributes');
   if (fs.existsSync(infoAttr)) {
     const content = fs.readFileSync(infoAttr, 'utf8');
-    if (/(-diff|\bbinary\b|\bdiff\s*=|\bfilter\s*=|\bmerge\s*=)/.test(content)) {
+    if (hasProhibitedGitAttributes(content)) {
       assert.fail('Prohibited .git/info/attributes configuration is not permitted');
     }
   }
@@ -421,6 +433,29 @@ function assertNoTrackedBinaryFiles(root = ROOT) {
     if (parts[0] === '-' && parts[1] === '-') {
       const filePath = parts[2];
       assert.fail('Tracked binary file is not permitted: ' + filePath);
+    }
+  }
+
+  // Check 2: Independent content-based null-byte inspection on all tracked files (defeats diff attribute evasion)
+  const lsResult = spawnSync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', 'ls-files', '-z'], { cwd: root });
+  if (lsResult.status !== 0) {
+    assert.fail('Failed to list tracked files for binary inspection: ' + lsResult.stderr);
+  }
+  const filePaths = lsResult.stdout.toString('utf8').split('\0').filter(Boolean);
+  for (const relPath of filePaths) {
+    const fullPath = path.join(root, relPath);
+    if (!fs.existsSync(fullPath)) continue;
+    const stat = fs.lstatSync(fullPath);
+    if (!stat.isFile()) continue;
+    const fd = fs.openSync(fullPath, 'r');
+    try {
+      const buf = Buffer.alloc(Math.min(8000, stat.size));
+      const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+      if (buf.subarray(0, bytesRead).includes(0)) {
+        assert.fail('Tracked binary file is not permitted (null byte detected): ' + relPath);
+      }
+    } finally {
+      fs.closeSync(fd);
     }
   }
 }
@@ -1764,7 +1799,7 @@ test('finding C1: reusable consumer workflow validator rejects unpinned actions 
   // Dangerous env variable in job env
   const dangerousJobEnv = YAML.parse(text);
   dangerousJobEnv.jobs.semgrep.env = { BASH_ENV: '/tmp/bad' };
-  assert.throws(() => validateConsumerWorkflowStructure(dangerousJobEnv), /job-level env is not permitted/);
+  assert.throws(() => validateConsumerWorkflowStructure(dangerousJobEnv), /job-level env is not permitted|contains unapproved key 'env'/);
 
   // Failure masking via cat
   const failureMasking = YAML.parse(text);
@@ -1899,4 +1934,165 @@ test('finding F4: rejects all execution-sensitive environment variables across w
     inlineRun.jobs.validate.steps[2].run = `${v}=/malicious\n` + inlineRun.jobs.validate.steps[2].run;
     assert.throws(() => validateUssValidationWorkflow(inlineRun), /assigns to dangerous environment variable|does not match exact approved execution contract/);
   }
+});
+
+// Supervisory Finding F5: Positive Git Attributes and Binary Detection Bypass
+test('finding F5: rejects positive diff attribute in .gitattributes and .git/info/attributes', () => {
+  for (const directive of ['diff', '*.bin diff', '!diff', '-diff', 'diff=custom', 'binary', '-binary', '!binary', 'filter=lfs', 'merge=ours']) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-attr-'));
+    try {
+      fs.writeFileSync(path.join(tempDir, '.gitattributes'), `secret.bin ${directive}\n`);
+      assert.throws(
+        () => assertNoProhibitedGitAttributes(tempDir),
+        /Prohibited \.gitattributes configuration is not permitted/
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+
+    const tempDirInfo = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-infoattr-'));
+    try {
+      fs.mkdirSync(path.join(tempDirInfo, '.git', 'info'), { recursive: true });
+      fs.writeFileSync(path.join(tempDirInfo, '.git', 'info', 'attributes'), `secret.bin ${directive}\n`);
+      assert.throws(
+        () => assertNoProhibitedGitAttributes(tempDirInfo),
+        /Prohibited \.git\/info\/attributes configuration is not permitted/
+      );
+    } finally {
+      fs.rmSync(tempDirInfo, { recursive: true, force: true });
+    }
+  }
+});
+
+test('finding F5: binary file cannot evade detection when positive diff attribute is set', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-evasion-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    // Track a binary file and attempt evasion with positive diff attribute
+    fs.writeFileSync(path.join(tempDir, 'payload.bin'), Buffer.from([0, 1, 2, 3, 4]));
+    fs.writeFileSync(path.join(tempDir, '.gitattributes'), '*.bin diff\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'attempt binary evasion with diff attr'], { cwd: tempDir });
+
+    // Defense 1: Attribute check catches positive diff attribute
+    assert.throws(
+      () => assertNoProhibitedGitAttributes(tempDir),
+      /Prohibited \.gitattributes configuration is not permitted/
+    );
+
+    // Defense 2: Independent content inspection catches binary null byte even if git diff is tricked
+    assert.throws(
+      () => assertNoTrackedBinaryFiles(tempDir),
+      /Tracked binary file is not permitted/
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5: preserves legitimate .gitattributes configurations and comments', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-legit-'));
+  try {
+    fs.writeFileSync(
+      path.join(tempDir, '.gitattributes'),
+      [
+        '# This comment mentions diff and binary without configuring them',
+        '* text=auto',
+        '*.sh text eol=lf',
+        '*.bat text eol=crlf',
+        '*.ps1 text eol=crlf',
+        '*.md text'
+      ].join('\n') + '\n'
+    );
+    assert.doesNotThrow(() => assertNoProhibitedGitAttributes(tempDir));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// Supervisory Finding F6: Consumer Validator continue-on-error and Conditionality Bypass
+test('finding F6: rejects continue-on-error on mandatory jobs and steps in consumer validator', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  // Job-level continue-on-error
+  for (const jobId of ['secrets', 'semgrep', 'codeql', 'osv']) {
+    const parsedJob = YAML.parse(text);
+    parsedJob.jobs[jobId]['continue-on-error'] = true;
+    assert.throws(
+      () => validateConsumerWorkflowStructure(parsedJob),
+      new RegExp(`mandatory job '${jobId}' must not define continue-on-error`)
+    );
+  }
+
+  // Step-level continue-on-error
+  for (const jobId of ['secrets', 'semgrep', 'codeql']) {
+    const parsedStep = YAML.parse(text);
+    parsedStep.jobs[jobId].steps[0]['continue-on-error'] = true;
+    assert.throws(
+      () => validateConsumerWorkflowStructure(parsedStep),
+      new RegExp(`mandatory step 0 in job '${jobId}' must not define continue-on-error`)
+    );
+  }
+});
+
+test('finding F6: rejects if conditions on mandatory jobs and steps in consumer validator', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  const conditions = [
+    false,
+    'false',
+    '${{ false }}',
+    "github.event_name == 'never'",
+    "github.ref == 'refs/heads/main'"
+  ];
+
+  // Job-level if conditions
+  for (const cond of conditions) {
+    for (const jobId of ['secrets', 'semgrep', 'codeql', 'osv']) {
+      const parsedJob = YAML.parse(text);
+      parsedJob.jobs[jobId].if = cond;
+      assert.throws(
+        () => validateConsumerWorkflowStructure(parsedJob),
+        new RegExp(`mandatory job '${jobId}' declares unapproved condition`)
+      );
+    }
+  }
+
+  // Step-level if conditions
+  for (const cond of conditions) {
+    for (const jobId of ['secrets', 'semgrep', 'codeql']) {
+      for (let i = 0; i < 3; i++) {
+        const parsedStep = YAML.parse(text);
+        parsedStep.jobs[jobId].steps[i].if = cond;
+        assert.throws(
+          () => validateConsumerWorkflowStructure(parsedStep),
+          new RegExp(`mandatory step ${i} in job '${jobId}' declares unapproved condition`)
+        );
+      }
+    }
+  }
+});
+
+test('finding F6: rejects needs dependencies and strategy matrices on mandatory jobs', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  // needs dependency
+  const parsedNeeds = YAML.parse(text);
+  parsedNeeds.jobs.semgrep.needs = ['secrets'];
+  assert.throws(
+    () => validateConsumerWorkflowStructure(parsedNeeds),
+    /mandatory job 'semgrep' must not define dependencies/
+  );
+
+  // strategy matrix
+  const parsedStrategy = YAML.parse(text);
+  parsedStrategy.jobs.semgrep.strategy = { matrix: { os: ['ubuntu-latest'] } };
+  assert.throws(
+    () => validateConsumerWorkflowStructure(parsedStrategy),
+    /mandatory job 'semgrep' must not define strategy matrix/
+  );
 });

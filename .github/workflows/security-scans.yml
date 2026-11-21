@@ -65,13 +65,13 @@ jobs:
               printf 'Symlinked .gitattributes is not permitted: %s\n' "$attr_file" >&2
               exit 1
             fi
-            if grep -n -E '(-diff|\bbinary\b|\bdiff[[:space:]]*=|\bfilter[[:space:]]*=|\bmerge[[:space:]]*=)' "$attr_file" >&2; then
+            if grep -v '^[[:space:]]*#' "$attr_file" | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then
               printf 'Prohibited .gitattributes configuration is not permitted: %s\n' "$attr_file" >&2
               exit 1
             fi
           done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)
           if [ -e .git/info/attributes ]; then
-            if grep -n -E '(-diff|\bbinary\b|\bdiff[[:space:]]*=|\bfilter[[:space:]]*=|\bmerge[[:space:]]*=)' .git/info/attributes >&2; then
+            if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then
               printf '%s\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2
               exit 1
             fi
@@ -175,13 +175,13 @@ jobs:
               printf 'Symlinked .gitattributes is not permitted: %s\n' "$attr_file" >&2
               exit 1
             fi
-            if grep -n -E '(-diff|\bbinary\b|\bdiff[[:space:]]*=|\bfilter[[:space:]]*=|\bmerge[[:space:]]*=)' "$attr_file" >&2; then
+            if grep -v '^[[:space:]]*#' "$attr_file" | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then
               printf 'Prohibited .gitattributes configuration is not permitted: %s\n' "$attr_file" >&2
               exit 1
             fi
           done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)
           if [ -e .git/info/attributes ]; then
-            if grep -n -E '(-diff|\bbinary\b|\bdiff[[:space:]]*=|\bfilter[[:space:]]*=|\bmerge[[:space:]]*=)' .git/info/attributes >&2; then
+            if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then
               printf '%s\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2
               exit 1
             fi
