@@ -40,7 +40,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
   return [
     'set -euo pipefail',
     'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
-    'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml; do',
+    'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do',
     '  if [ -e "$file" ]; then',
     "    printf 'Unreviewed scanner override is not permitted: %s\\n' \"$file\" >&2",
     '    exit 1',
@@ -85,31 +85,13 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '    exit 1',
     '  fi',
     'fi',
-    'allowed_binaries_file=".allowed-binaries"',
-    'binary_allowlist=""',
-    'if [ -f "$allowed_binaries_file" ]; then',
-    '  if [ -L "$allowed_binaries_file" ]; then',
-    "    printf 'Symlinked %s is not permitted\\n' \"$allowed_binaries_file\" >&2",
-    '    exit 1',
-    '  fi',
-    "  binary_allowlist=\"$(awk 'NF && $1 !~ /^#/ { print $1 }' \"$allowed_binaries_file\" | sort)\"",
-    'fi',
     'if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk \'$1 == "-" && $2 == "-" { print $3 }\')"; then',
     "  printf '%s\\n' 'Failed to inspect tracked files for binary content' >&2",
     '  exit 1',
     'fi',
     'if [ -n "$raw_binaries" ]; then',
-    '  unapproved_binaries=""',
-    '  while IFS= read -r bin_file; do',
-    '    [ -z "$bin_file" ] && continue',
-    '    if ! printf \'%s\\n\' "$binary_allowlist" | grep -F -x -q "$bin_file"; then',
-    '      unapproved_binaries="${unapproved_binaries} ${bin_file}"',
-    '    fi',
-    '  done < <(printf \'%s\\n\' "$raw_binaries")',
-    '  if [ -n "$unapproved_binaries" ]; then',
-    "    printf 'Unapproved binary files are not permitted:%s\\n' \"$unapproved_binaries\" >&2",
-    '    exit 1',
-    '  fi',
+    "  printf 'Tracked binary files are not permitted: %s\\n' \"$raw_binaries\" >&2",
+    '  exit 1',
     'fi',
     "nested_semgrepignore=\"$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)\"",
     'if [ -n "$nested_semgrepignore" ]; then',
@@ -264,7 +246,15 @@ const FORBIDDEN_ENV_NAMES = new Set([
   'NODE_EXTRA_CA_CERTS',
   'LD_PRELOAD',
   'LD_LIBRARY_PATH',
-  'PYTHONPATH'
+  'PYTHONPATH',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'PERL5LIB',
+  'RUBYOPT',
+  'IFS',
+  'SHELLOPTS',
+  'BASHOPTS',
+  'ENV'
 ]);
 
 function assertSafeEnv(env, context, allowedKeys = null) {
@@ -421,15 +411,6 @@ function assertNoProhibitedGitAttributes(root = ROOT) {
 }
 
 function assertNoTrackedBinaryFiles(root = ROOT) {
-  const allowlistPath = path.join(root, '.allowed-binaries');
-  let allowlist = new Set();
-  if (fs.existsSync(allowlistPath)) {
-    if (fs.lstatSync(allowlistPath).isSymbolicLink()) {
-      assert.fail('Symlinked .allowed-binaries is not permitted');
-    }
-    const lines = fs.readFileSync(allowlistPath, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-    allowlist = new Set(lines);
-  }
   const result = spawnSync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', 'diff', '--numstat', '4b825dc642cb6eb9a060e54bf8d69288fbee4904'], { cwd: root, encoding: 'utf8' });
   if (result.status !== 0) {
     assert.fail('Failed to inspect tracked files for binary content: ' + result.stderr);
@@ -439,10 +420,15 @@ function assertNoTrackedBinaryFiles(root = ROOT) {
     const parts = line.split('\t');
     if (parts[0] === '-' && parts[1] === '-') {
       const filePath = parts[2];
-      if (!allowlist.has(filePath)) {
-        assert.fail('Unapproved binary file is not permitted: ' + filePath);
-      }
+      assert.fail('Tracked binary file is not permitted: ' + filePath);
     }
+  }
+}
+
+function assertNoAllowedBinariesFile(root = ROOT) {
+  const allowlistPath = path.join(root, '.allowed-binaries');
+  if (fs.existsSync(allowlistPath)) {
+    assert.fail('.allowed-binaries file is prohibited');
   }
 }
 
@@ -565,7 +551,7 @@ function validateWorkflowSecurity(parsed, label) {
         if (/\bNODE_OPTIONS\s*=/i.test(step.run)) {
           assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not set NODE_OPTIONS: ' + step.run);
         }
-        if (/\b(?:BASH_ENV|PATH|NPM_CONFIG_[A-Z_]+|NODE_PATH|NODE_TLS_REJECT_UNAUTHORIZED|GIT_CONFIG_[A-Z0-9_]+|LD_PRELOAD|LD_LIBRARY_PATH|PYTHONPATH)\s*=/i.test(step.run)) {
+        if (/(?:^|\s|;)(?:BASH_ENV|PATH|NPM_CONFIG_[A-Z_]+|NODE_PATH|NODE_TLS_REJECT_UNAUTHORIZED|GIT_CONFIG_[A-Z0-9_]+|LD_PRELOAD|LD_LIBRARY_PATH|PYTHONPATH|NODE_EXTRA_CA_CERTS|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|PERL5LIB|RUBYOPT|SHELLOPTS|BASHOPTS|ENV)\s*=|(?<!while\s+)(?:^|\s|;)IFS\s*=(?!\s*read\b)/i.test(step.run)) {
           assert.fail(label + ' job ' + jobId + ' step ' + i + ' assigns to dangerous environment variable: ' + step.run);
         }
         for (const pattern of FORBIDDEN_ERROR_SUPPRESSIONS) {
@@ -621,12 +607,26 @@ function validateUssValidationWorkflow(parsed) {
     s => s.run && s.run.includes('validate-evidence.mjs'),
     s => s.run && s.run.includes('node --test tests/*.test.mjs')
   ];
+  const EXPECTED_USS_COMMANDS = [
+    'npm ci --ignore-scripts --no-audit --no-fund',
+    'node tools/build-modules.mjs',
+    'git diff --exit-code -- modules/',
+    'node tools/build-indexes.mjs\ngit diff --exit-code -- MODULE-INDEX.md bundles/',
+    'node tools/build-bundles.mjs',
+    'node tools/validate.mjs',
+    'node tools/validate-evidence.mjs --file templates/security-evidence.example.json',
+    'node --test tests/*.test.mjs'
+  ];
   assert.equal(steps.length, 10, 'uss-validation.yml validate job must contain exactly 10 steps, got ' + steps.length);
   for (let idx = 0; idx < stepMatchers.length; idx++) {
     assert.ok(stepMatchers[idx](steps[idx]), 'uss-validation.yml step ' + idx + ' does not match required step sequence: ' + (steps[idx].name || steps[idx].run || steps[idx].uses));
     assert.equal(steps[idx].if, undefined, 'uss-validation.yml mandatory step ' + idx + ' must not be conditional');
-    if (idx >= 2 && steps[idx].run && /(?:^|\s)\|(?:\s|$)/.test(steps[idx].run)) {
-      assert.fail('uss-validation.yml step ' + idx + ' must not pipe commands (|): ' + steps[idx].run);
+    if (idx >= 2) {
+      const normalizedRun = (steps[idx].run || '').replace(/\r\n/g, '\n').trim();
+      assert.equal(normalizedRun, EXPECTED_USS_COMMANDS[idx - 2], 'uss-validation.yml step ' + idx + ' does not match exact approved execution contract');
+      if (/(?:^|\s)\|(?:\s|$)/.test(steps[idx].run)) {
+        assert.fail('uss-validation.yml step ' + idx + ' must not pipe commands (|): ' + steps[idx].run);
+      }
     }
   }
 
@@ -676,6 +676,7 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
     assertNoHistoricalGitleaksDirectives(ROOT);
     assertNoProhibitedGitAttributes(ROOT);
     assertNoTrackedBinaryFiles(ROOT);
+    assertNoAllowedBinariesFile(ROOT);
   }
   assertExactObject(gitleaksJob.permissions, { contents: 'read', 'pull-requests': 'read' }, label + ' Gitleaks permissions');
   const gitleaksSteps = gitleaksJob.steps || [];
@@ -1059,7 +1060,7 @@ test('negative: rejects replacing real evidence validation with --help', () => {
   const parsed = YAML.parse(read('uss-validation.yml'));
   const evidenceStep = parsed.jobs.validate.steps[8];
   evidenceStep.run = 'node tools/validate-evidence.mjs --help';
-  assert.throws(() => validateUssValidationWorkflow(parsed), /Evidence validation must not be replaced with --help/);
+  assert.throws(() => validateUssValidationWorkflow(parsed), /does not match exact approved execution contract|Evidence validation must not be replaced with --help/);
 });
 
 test('negative: rejects reordering of mandatory validation steps', () => {
@@ -1316,7 +1317,7 @@ test('negative: rejects Semgrep scan re-enabling inline suppression with --enabl
 
 test('negative: rejects unreviewed osv-scanner.toml configuration overrides', () => {
   const parsed = YAML.parse(read('security-scans.yml'));
-  parsed.jobs.gitleaks.steps[1].run = parsed.jobs.gitleaks.steps[1].run.replace(' osv-scanner.toml .osv-scanner.toml;', ';');
+  parsed.jobs.gitleaks.steps[1].run = parsed.jobs.gitleaks.steps[1].run.replace(' osv-scanner.toml .osv-scanner.toml', '');
   assert.throws(() => validateSecurityScansWorkflow(parsed), /must execute the exact fail-closed scanner configuration guard/);
 });
 
@@ -1559,15 +1560,15 @@ test('finding A2: detects newly introduced binary files in tracked history', () 
 
     assert.throws(
       () => assertNoTrackedBinaryFiles(tempDir),
-      /Unapproved binary file is not permitted: data\.bin/
+      /Tracked binary file is not permitted: data\.bin/
     );
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
-test('finding A2: allows binary file explicitly listed in .allowed-binaries allowlist', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a2-binallow-'));
+test('finding F1: rejects binary file even if contributor attempts self-authorising .allowed-binaries', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f1-binallow-'));
   try {
     spawnSync('git', ['init', '-q'], { cwd: tempDir });
     spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
@@ -1577,9 +1578,16 @@ test('finding A2: allows binary file explicitly listed in .allowed-binaries allo
     fs.writeFileSync(path.join(tempDir, 'data.bin'), Buffer.from([0, 1, 2, 3, 4]));
     fs.writeFileSync(path.join(tempDir, '.allowed-binaries'), 'data.bin\n');
     spawnSync('git', ['add', '.'], { cwd: tempDir });
-    spawnSync('git', ['commit', '-m', 'add approved binary file'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'attempt binary and self-authorising allowlist'], { cwd: tempDir });
 
-    assert.doesNotThrow(() => assertNoTrackedBinaryFiles(tempDir));
+    assert.throws(
+      () => assertNoTrackedBinaryFiles(tempDir),
+      /Tracked binary file is not permitted: data\.bin/
+    );
+    assert.throws(
+      () => assertNoAllowedBinariesFile(tempDir),
+      /\.allowed-binaries file is prohibited/
+    );
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1657,7 +1665,7 @@ test('finding B2: rejects piping (|) in uss-validation.yml steps that can mask e
   for (const pipeTarget of ['cat', 'tee /tmp/log', 'true', 'head -n 5']) {
     const parsed = YAML.parse(read('uss-validation.yml'));
     parsed.jobs.validate.steps[3].run = `node tools/build-modules.mjs | ${pipeTarget}`;
-    assert.throws(() => validateUssValidationWorkflow(parsed), /must not pipe commands/);
+    assert.throws(() => validateUssValidationWorkflow(parsed), /does not match exact approved execution contract|must not pipe commands/);
   }
 });
 
@@ -1741,20 +1749,154 @@ test('finding C1: reusable consumer workflow validator rejects unpinned actions 
   // Unpinned action
   const unpinned = YAML.parse(text);
   unpinned.jobs.secrets.steps[0].uses = 'actions/checkout@v4';
-  assert.throws(() => validateConsumerWorkflowStructure(unpinned), /unpinned action/);
+  assert.throws(() => validateConsumerWorkflowStructure(unpinned), /must use pinned action/);
 
   // Missing config guard
   const missingGuard = YAML.parse(text);
   missingGuard.jobs.secrets.steps = missingGuard.jobs.secrets.steps.filter(s => s.name !== 'Reject unreviewed scanner configuration');
-  assert.throws(() => validateConsumerWorkflowStructure(missingGuard), /missing required/i);
+  assert.throws(() => validateConsumerWorkflowStructure(missingGuard), /must contain exactly 3 steps/);
 
-  // Dangerous env variable
+  // Dangerous env variable in semgrep step run (violates execution contract)
   const dangerousEnv = YAML.parse(text);
   dangerousEnv.jobs.semgrep.steps[2].run = 'BASH_ENV=/tmp/bad\n' + dangerousEnv.jobs.semgrep.steps[2].run;
-  assert.throws(() => validateConsumerWorkflowStructure(dangerousEnv), /assigns to dangerous environment variable/);
+  assert.throws(() => validateConsumerWorkflowStructure(dangerousEnv), /violates strict execution contract/);
+
+  // Dangerous env variable in job env
+  const dangerousJobEnv = YAML.parse(text);
+  dangerousJobEnv.jobs.semgrep.env = { BASH_ENV: '/tmp/bad' };
+  assert.throws(() => validateConsumerWorkflowStructure(dangerousJobEnv), /job-level env is not permitted/);
 
   // Failure masking via cat
   const failureMasking = YAML.parse(text);
   failureMasking.jobs.semgrep.steps[2].run += ' | cat';
-  assert.throws(() => validateConsumerWorkflowStructure(failureMasking), /masks failures with piping/);
+  assert.throws(() => validateConsumerWorkflowStructure(failureMasking), /violates strict execution contract/);
+});
+
+// Supervisory Finding F2: Arbitrary Pinned Action Acceptance & Structural Control
+test('finding F2: consumer validator rejects third-party actions pinned to valid-looking SHAs', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  // Third-party substitute with valid 40-char SHA
+  const maliciousCheckout = YAML.parse(text);
+  maliciousCheckout.jobs.secrets.steps[0].uses = 'malicious/checkout@d23441a48e516b6c34aea4fa41551a30e30af803';
+  assert.throws(() => validateConsumerWorkflowStructure(maliciousCheckout), /must use pinned action 'actions\/checkout@d23441a48e516b6c34aea4fa41551a30e30af803'/);
+
+  // Approved action name with unapproved SHA
+  const unapprovedShaCheckout = YAML.parse(text);
+  unapprovedShaCheckout.jobs.secrets.steps[0].uses = 'actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  assert.throws(() => validateConsumerWorkflowStructure(unapprovedShaCheckout), /must use pinned action 'actions\/checkout@d23441a48e516b6c34aea4fa41551a30e30af803'/);
+
+  // Malicious secret scanner substitute
+  const maliciousGitleaks = YAML.parse(text);
+  maliciousGitleaks.jobs.secrets.steps[2].uses = 'attacker/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e';
+  assert.throws(() => validateConsumerWorkflowStructure(maliciousGitleaks), /must use pinned action 'gitleaks\/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e'/);
+
+  // Malicious CodeQL init substitute
+  const maliciousCodeql = YAML.parse(text);
+  maliciousCodeql.jobs.codeql.steps[1].uses = 'attacker/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066';
+  assert.throws(() => validateConsumerWorkflowStructure(maliciousCodeql), /must use pinned action 'github\/codeql-action\/init@33d7b85da1a04171e211befe2c739303b9a4c066'/);
+
+  // Malicious OSV reusable workflow substitute
+  const maliciousOsv = YAML.parse(text);
+  maliciousOsv.jobs.osv.uses = 'attacker/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@d3c1414ded37de590f207572e37a7d180f1d0ef7';
+  assert.throws(() => validateConsumerWorkflowStructure(maliciousOsv), /must use pinned reusable workflow/);
+});
+
+test('finding F2: consumer validator rejects unapproved action steps, permissions, and altered container digests', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  // Additional action step in secrets job
+  const extraStep = YAML.parse(text);
+  extraStep.jobs.secrets.steps.push({ name: 'Exfiltrate', uses: 'actions/upload-artifact@v4' });
+  assert.throws(() => validateConsumerWorkflowStructure(extraStep), /must contain exactly 3 steps/);
+
+  // Altered container image/digest in semgrep job
+  const alteredContainer = YAML.parse(text);
+  alteredContainer.jobs.semgrep.container.image = 'semgrep/semgrep:1.186.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  assert.throws(() => validateConsumerWorkflowStructure(alteredContainer), /semgrep container image must be exactly/);
+
+  // Altered permissions in secrets job
+  const alteredPerms = YAML.parse(text);
+  alteredPerms.jobs.secrets.permissions['contents'] = 'write';
+  assert.throws(() => validateConsumerWorkflowStructure(alteredPerms), /configuration mismatch|contains unexpected values/);
+
+  // Permissions added to semgrep job
+  const semgrepPerms = YAML.parse(text);
+  semgrepPerms.jobs.semgrep.permissions = { contents: 'read' };
+  assert.throws(() => validateConsumerWorkflowStructure(semgrepPerms), /must inherit read-only workflow permissions/);
+});
+
+// Supervisory Finding F3: Strict Execution Contracts and Pipeline Masking Prevention
+test('finding F3: rejects pipeline failure masking in uss-validation and consumer workflow', () => {
+  // Example pipeline from ChatGPT: node tools/validate.mjs | sed -n '1,10p'
+  const parsedUss = YAML.parse(read('uss-validation.yml'));
+  parsedUss.jobs.validate.steps[7].run = "node tools/validate.mjs | sed -n '1,10p'";
+  assert.throws(() => validateUssValidationWorkflow(parsedUss), /does not match exact approved execution contract|must not pipe commands/);
+
+  // Pipeline in consumer semgrep scan step
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+  const parsedConsumer = YAML.parse(text);
+  parsedConsumer.jobs.semgrep.steps[2].run = "semgrep scan --config p/default --error --strict --disable-nosem --metrics=off . | sed -n '1,10p'";
+  assert.throws(() => validateConsumerWorkflowStructure(parsedConsumer), /violates strict execution contract/);
+
+  // Pipeline in security-scans.yml semgrep scan step
+  const parsedSec = YAML.parse(read('security-scans.yml'));
+  parsedSec.jobs.semgrep.steps[2].run += " | sed -n '1,10p'";
+  assert.throws(() => validateSecurityScansWorkflow(parsedSec), /Semgrep must use the exact approved ruleset|must not pipe commands/);
+
+  // Additional pipeline variants: awk, head, tee, true
+  for (const pipeTarget of ['awk \'{print}\'', 'head -n 1', 'tee /tmp/out', 'true']) {
+    const parsed = YAML.parse(read('uss-validation.yml'));
+    parsed.jobs.validate.steps[7].run = `node tools/validate.mjs | ${pipeTarget}`;
+    assert.throws(() => validateUssValidationWorkflow(parsed), /does not match exact approved execution contract|must not pipe commands/);
+  }
+});
+
+// Supervisory Finding F4: Comprehensive Sensitive Execution Environment Protection
+test('finding F4: rejects all execution-sensitive environment variables across workflows', () => {
+  const sensitiveVars = [
+    'LD_PRELOAD',
+    'LD_LIBRARY_PATH',
+    'NODE_EXTRA_CA_CERTS',
+    'PYTHONPATH',
+    'DYLD_INSERT_LIBRARIES',
+    'DYLD_LIBRARY_PATH',
+    'PERL5LIB',
+    'RUBYOPT',
+    'BASH_ENV',
+    'PATH',
+    'IFS',
+    'SHELLOPTS',
+    'BASHOPTS',
+    'ENV'
+  ];
+
+  const consumerText = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  for (const v of sensitiveVars) {
+    // Workflow-level env injection
+    const wfEnv = YAML.parse(read('security-scans.yml'));
+    wfEnv.env = { [v]: '/malicious' };
+    assert.throws(() => validateSecurityScansWorkflow(wfEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+
+    // Consumer workflow-level env injection
+    const consumerWfEnv = YAML.parse(consumerText);
+    consumerWfEnv.env = { [v]: '/malicious' };
+    assert.throws(() => validateConsumerWorkflowStructure(consumerWfEnv), /workflow-level env is not permitted|unapproved workflow-level key 'env'/);
+
+    // Job-level env injection
+    const jobEnv = YAML.parse(read('security-scans.yml'));
+    jobEnv.jobs.semgrep.env = { [v]: '/malicious' };
+    assert.throws(() => validateSecurityScansWorkflow(jobEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+
+    // Step-level env injection in uss-validation.yml
+    const stepEnv = YAML.parse(read('uss-validation.yml'));
+    stepEnv.jobs.validate.steps[2].env = { [v]: '/malicious' };
+    assert.throws(() => validateUssValidationWorkflow(stepEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+
+    // Inline assignment in run script
+    const inlineRun = YAML.parse(read('uss-validation.yml'));
+    inlineRun.jobs.validate.steps[2].run = `${v}=/malicious\n` + inlineRun.jobs.validate.steps[2].run;
+    assert.throws(() => validateUssValidationWorkflow(inlineRun), /assigns to dangerous environment variable|does not match exact approved execution contract/);
+  }
 });

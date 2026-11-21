@@ -5,7 +5,15 @@
  *
  * Validates consumer CI workflow files (e.g. .github/workflows/consumer-security-scans.yml)
  * against mandatory structural security invariants, ensuring protections are not
- * weakened or removed by subsequent edits in consuming repositories.
+ * weakened, bypassed, or removed by subsequent edits in consuming repositories.
+ *
+ * Enforces:
+ *   - Strict action and reusable workflow allowlists with exact reviewed commit SHAs (F2)
+ *   - Exact approved job identities, job-level permissions, and step sequences (F2)
+ *   - Approved immutable container image and sha256 digest (F2)
+ *   - Exact execution contracts rejecting arbitrary pipelines and failure masking (F3)
+ *   - Strict environment allowlists rejecting execution-sensitive overrides (F4)
+ *   - Complete rejection of .allowed-binaries and tracked binary content (F1)
  *
  * Usage:
  *   node tools/validate-consumer-workflow.mjs [--file <path-to-workflow>]
@@ -15,25 +23,145 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ALLOWED_WORKFLOW_KEYS = new Set(['name', 'on', 'permissions', 'jobs', 'defaults', 'concurrency']);
-const APPROVED_JOB_KEYS = {
-  secrets: new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'steps']),
-  gitleaks: new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'steps']),
-  semgrep: new Set(['name', 'runs-on', 'timeout-minutes', 'container', 'permissions', 'steps']),
-  codeql: new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'steps']),
-  osv: new Set(['name', 'permissions', 'uses', 'with'])
-};
-const ALLOWED_STEP_KEYS = new Set(['name', 'uses', 'with', 'shell', 'run', 'env', 'id']);
+export const APPROVED_ACTIONS = new Map([
+  ['actions/checkout', 'd23441a48e516b6c34aea4fa41551a30e30af803'],
+  ['gitleaks/gitleaks-action', 'e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e'],
+  ['github/codeql-action/init', '33d7b85da1a04171e211befe2c739303b9a4c066'],
+  ['github/codeql-action/analyze', '33d7b85da1a04171e211befe2c739303b9a4c066']
+]);
+
+export const APPROVED_REUSABLE_WORKFLOWS = new Map([
+  ['google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml', 'd3c1414ded37de590f207572e37a7d180f1d0ef7']
+]);
+
+export const APPROVED_CONTAINER_IMAGES = new Set([
+  'semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493'
+]);
+
+export const SENSITIVE_EXECUTION_VARS = new Set([
+  'BASH_ENV',
+  'PATH',
+  'NPM_CONFIG_IGNORE_SCRIPTS',
+  'NODE_TLS_REJECT_UNAUTHORIZED',
+  'GIT_CONFIG_COUNT',
+  'NODE_OPTIONS',
+  'NODE_PATH',
+  'NODE_EXTRA_CA_CERTS',
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'PYTHONPATH',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'PERL5LIB',
+  'RUBYOPT',
+  'IFS',
+  'SHELLOPTS',
+  'BASHOPTS',
+  'ENV'
+]);
+
+const ALLOWED_WORKFLOW_KEYS = new Set(['name', 'on', 'true', 'permissions', 'jobs', 'defaults', 'concurrency']);
+const APPROVED_JOB_IDS = new Set(['secrets', 'gitleaks', 'semgrep', 'codeql', 'osv']);
 const APPROVED_SHELLS = new Set([
   'bash',
   'bash --noprofile --norc -eo pipefail {0}',
   'bash --noprofile --norc -e -o pipefail {0}'
 ]);
-const APPROVED_STEP_ENVS = {
-  gitleaks: new Set(['GITHUB_TOKEN', 'GITLEAKS_ENABLE_COMMENTS', 'GITLEAKS_ENABLE_UPLOAD_ARTIFACT']),
-  semgrep: new Set(['SEMGREP_SEND_METRICS'])
-};
 const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
+
+export function buildExpectedConsumerGuard() {
+  return [
+    'set -euo pipefail',
+    'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
+    'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do',
+    '  if [ -e "$file" ]; then',
+    "    printf 'Unreviewed scanner override is not permitted: %s\\n' \"$file\" >&2",
+    '    exit 1',
+    '  fi',
+    'done',
+    "nested_osv_config=\"$(find . -path './.git' -prune -o -path './node_modules' -prune -o \\( -name 'osv-scanner.toml' -o -name '.osv-scanner.toml' \\) -print)\"",
+    'if [ -n "$nested_osv_config" ]; then',
+    "  printf 'Unreviewed OSV configuration is not permitted: %s\\n' \"$nested_osv_config\" >&2",
+    '  exit 1',
+    'fi',
+    'if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E \'[g]itleaks[[:space:]]*:[[:space:]]*allow\' -- . >&2; then',
+    "  printf '%s\\n' 'Prohibited Gitleaks inline suppression directive is not permitted' >&2",
+    '  exit 1',
+    'else',
+    '  status=$?',
+    '  if [ "$status" -ne 1 ]; then',
+    '    exit "$status"',
+    '  fi',
+    'fi',
+    'if ! historical_suppression="$(git -c safe.directory="$PWD" -c core.fsmonitor=false log -n 1 -i -E -G\'[g]itleaks[[:space:]]*:[[:space:]]*allow\' --format=\'%H %s\')"; then',
+    "  printf '%s\\n' 'Failed to inspect Git history for prohibited Gitleaks directives' >&2",
+    '  exit 1',
+    'fi',
+    'if [ -n "$historical_suppression" ]; then',
+    "  printf 'Prohibited Gitleaks inline suppression directive found in Git history: %s\\n' \"$historical_suppression\" >&2",
+    '  exit 1',
+    'fi',
+    'while IFS= read -r attr_file; do',
+    '  [ -z "$attr_file" ] && continue',
+    '  if [ -L "$attr_file" ]; then',
+    "    printf 'Symlinked .gitattributes is not permitted: %s\\n' \"$attr_file\" >&2",
+    '    exit 1',
+    '  fi',
+    "  if grep -n -E '(-diff|\\bbinary\\b|\\bdiff[[:space:]]*=|\\bfilter[[:space:]]*=|\\bmerge[[:space:]]*=)' \"$attr_file\" >&2; then",
+    "    printf 'Prohibited .gitattributes configuration is not permitted: %s\\n' \"$attr_file\" >&2",
+    '    exit 1',
+    '  fi',
+    "done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)",
+    'if [ -e .git/info/attributes ]; then',
+    "  if grep -n -E '(-diff|\\bbinary\\b|\\bdiff[[:space:]]*=|\\bfilter[[:space:]]*=|\\bmerge[[:space:]]*=)' .git/info/attributes >&2; then",
+    "    printf '%s\\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2",
+    '    exit 1',
+    '  fi',
+    'fi',
+    'if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk \'$1 == "-" && $2 == "-" { print $3 }\')"; then',
+    "  printf '%s\\n' 'Failed to inspect tracked files for binary content' >&2",
+    '  exit 1',
+    'fi',
+    'if [ -n "$raw_binaries" ]; then',
+    "  printf 'Tracked binary files are not permitted: %s\\n' \"$raw_binaries\" >&2",
+    '  exit 1',
+    'fi',
+    "nested_semgrepignore=\"$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)\"",
+    'if [ -n "$nested_semgrepignore" ]; then',
+    "  printf 'Nested .semgrepignore is not permitted: %s\\n' \"$nested_semgrepignore\" >&2",
+    '  exit 1',
+    'fi',
+    'if [ -L .semgrepignore ]; then',
+    "  printf '%s\\n' 'A symlinked .semgrepignore is not permitted' >&2",
+    '  exit 1',
+    'fi',
+    'if [ -f .semgrepignore ]; then',
+    "  actual=\"$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)\"",
+    "  expected=\"$(printf '.git/\\nnode_modules/\\n' | sort)\"",
+    '  if [ "$actual" != "$expected" ]; then',
+    "    printf '%s\\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2",
+    '    exit 1',
+    '  fi',
+    'fi',
+    'target_count=0',
+    "while IFS= read -r -d '' file; do",
+    '  target_count=$((target_count+1))',
+    '  if git -c safe.directory="$PWD" -c core.fsmonitor=false check-ignore --no-index -q -- "$file"; then',
+    "    printf 'Tracked Semgrep target is excluded by .gitignore: %s\\n' \"$file\" >&2",
+    '    exit 1',
+    '  else',
+    '    status=$?',
+    '    if [ "$status" -ne 1 ]; then',
+    '      exit "$status"',
+    '    fi',
+    '  fi',
+    'done < <(git -c safe.directory="$PWD" -c core.fsmonitor=false ls-files -z)',
+    'if [ "$target_count" -eq 0 ]; then',
+    "  printf '%s\\n' 'No tracked files found for Semgrep scan' >&2",
+    '  exit 1',
+    'fi'
+  ].join('\n');
+}
 
 export function parseArgs(argv) {
   let filePath = null;
@@ -59,6 +187,14 @@ export async function loadYamlParser() {
     } catch {
       throw new Error("The 'yaml' parser is required to validate workflows. Run 'npm ci --ignore-scripts' in USS root first.");
     }
+  }
+}
+
+function assertExactObject(actual, expected, context) {
+  const actualStr = JSON.stringify(actual);
+  const expectedStr = JSON.stringify(expected);
+  if (actualStr !== expectedStr) {
+    throw new Error(`${context}: configuration mismatch. Expected ${expectedStr}, got ${actualStr}`);
   }
 }
 
@@ -128,164 +264,187 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     }
   }
 
-  // 5. Environment allowlist at workflow level: none allowed
+  // 5. Environment allowlist at workflow level: none allowed (F4)
   if (parsed.env && Object.keys(parsed.env).length > 0) {
     throw new Error(`${label}: workflow-level env is not permitted`);
   }
 
-  // 6. Mandatory jobs
+  // 6. Mandatory exact jobs (F2)
   const jobs = parsed.jobs || {};
+  const jobKeys = Object.keys(jobs);
+  if (jobKeys.length !== 4) {
+    throw new Error(`${label}: must declare exactly 4 security scanner jobs (secrets, semgrep, codeql, osv), got ${jobKeys.length}`);
+  }
+  for (const jId of jobKeys) {
+    if (!APPROVED_JOB_IDS.has(jId)) {
+      throw new Error(`${label}: unapproved job '${jId}' is not permitted`);
+    }
+  }
   const secretJobId = jobs.secrets ? 'secrets' : (jobs.gitleaks ? 'gitleaks' : null);
-  if (!secretJobId) throw new Error(`${label}: missing secret scan job ('secrets' or 'gitleaks')`);
+  if (!secretJobId) throw new Error(`${label}: missing required secret scan job ('secrets' or 'gitleaks')`);
   for (const req of [secretJobId, 'semgrep', 'codeql', 'osv']) {
     if (!jobs[req]) throw new Error(`${label}: missing required job '${req}'`);
   }
 
-  // 7. Validate each job
-  for (const [jobId, job] of Object.entries(jobs)) {
-    const allowedKeys = APPROVED_JOB_KEYS[jobId];
-    if (!allowedKeys) {
-      throw new Error(`${label}: unapproved job '${jobId}'`);
+  // 7. Validate Secrets / Gitleaks job (F2, F3, F4)
+  const secJob = jobs[secretJobId];
+  if (secJob['runs-on'] !== 'ubuntu-latest') throw new Error(`${label}: ${secretJobId} job runs-on must be 'ubuntu-latest'`);
+  if (!Number.isInteger(secJob['timeout-minutes']) || secJob['timeout-minutes'] <= 0) throw new Error(`${label}: ${secretJobId} job must set positive timeout-minutes`);
+  assertExactObject(secJob.permissions, { contents: 'read', 'pull-requests': 'read' }, `${label} ${secretJobId} permissions`);
+  if (secJob.env && Object.keys(secJob.env).length > 0) throw new Error(`${label}: ${secretJobId} job-level env is not permitted`);
+  if (secJob.services) throw new Error(`${label}: ${secretJobId} job must not declare services`);
+  if (secJob.container) throw new Error(`${label}: ${secretJobId} job must not declare a container`);
+
+  const secSteps = secJob.steps || [];
+  if (secSteps.length !== 3) {
+    throw new Error(`${label}: ${secretJobId} job must contain exactly 3 steps (checkout, config guard, scan), got ${secSteps.length}`);
+  }
+
+  // Step 0: Checkout
+  const secStep0 = secSteps[0];
+  if (secStep0.uses !== `actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}`) {
+    throw new Error(`${label}: ${secretJobId} checkout step must use pinned action 'actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}', got '${secStep0.uses}'`);
+  }
+  assertExactObject(secStep0.with, { 'fetch-depth': 0, 'persist-credentials': false }, `${label} ${secretJobId} checkout inputs`);
+  if (secStep0.env) throw new Error(`${label}: ${secretJobId} checkout step must not define env`);
+
+  // Step 1: Config guard
+  const secStep1 = secSteps[1];
+  if (secStep1.name !== 'Reject unreviewed scanner configuration') {
+    throw new Error(`${label}: ${secretJobId} step 1 must be named 'Reject unreviewed scanner configuration'`);
+  }
+  if (secStep1.shell !== 'bash') throw new Error(`${label}: ${secretJobId} config guard must use bash`);
+  if (secStep1.run?.trim() !== buildExpectedConsumerGuard().trim()) {
+    throw new Error(`${label}: ${secretJobId} config guard must execute the exact canonical fail-closed guard script`);
+  }
+  if (secStep1.env) throw new Error(`${label}: ${secretJobId} config guard step must not define env`);
+
+  // Step 2: Gitleaks scan
+  const secStep2 = secSteps[2];
+  if (secStep2.uses !== `gitleaks/gitleaks-action@${APPROVED_ACTIONS.get('gitleaks/gitleaks-action')}`) {
+    throw new Error(`${label}: ${secretJobId} scan step must use pinned action 'gitleaks/gitleaks-action@${APPROVED_ACTIONS.get('gitleaks/gitleaks-action')}', got '${secStep2.uses}'`);
+  }
+  assertExactObject(secStep2.env, {
+    GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+    GITLEAKS_ENABLE_COMMENTS: 'false',
+    GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
+  }, `${label} ${secretJobId} scan env`);
+  if (secStep2.with) throw new Error(`${label}: ${secretJobId} scan step must not define inputs`);
+
+  // 8. Validate Semgrep job (F2, F3, F4)
+  const semJob = jobs.semgrep;
+  if (semJob['runs-on'] !== 'ubuntu-latest') throw new Error(`${label}: semgrep job runs-on must be 'ubuntu-latest'`);
+  if (!Number.isInteger(semJob['timeout-minutes']) || semJob['timeout-minutes'] <= 0) throw new Error(`${label}: semgrep job must set positive timeout-minutes`);
+  if (semJob.permissions !== undefined) throw new Error(`${label}: semgrep job must inherit read-only workflow permissions`);
+  if (semJob.env && Object.keys(semJob.env).length > 0) throw new Error(`${label}: semgrep job-level env is not permitted`);
+  if (semJob.services) throw new Error(`${label}: semgrep job must not declare services`);
+  if (!APPROVED_CONTAINER_IMAGES.has(semJob.container?.image)) {
+    throw new Error(`${label}: semgrep container image must be exactly 'semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493'`);
+  }
+
+  const semSteps = semJob.steps || [];
+  if (semSteps.length !== 3) {
+    throw new Error(`${label}: semgrep job must contain exactly 3 steps (checkout, config guard, scan), got ${semSteps.length}`);
+  }
+
+  // Step 0: Checkout
+  const semStep0 = semSteps[0];
+  if (semStep0.uses !== `actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}`) {
+    throw new Error(`${label}: semgrep checkout step must use pinned action 'actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}', got '${semStep0.uses}'`);
+  }
+  assertExactObject(semStep0.with, { 'persist-credentials': false }, `${label} semgrep checkout inputs`);
+  if (semStep0.env) throw new Error(`${label}: semgrep checkout step must not define env`);
+
+  // Step 1: Config guard
+  const semStep1 = semSteps[1];
+  if (semStep1.name !== 'Reject unreviewed scanner configuration') {
+    throw new Error(`${label}: semgrep step 1 must be named 'Reject unreviewed scanner configuration'`);
+  }
+  if (semStep1.shell !== 'bash') throw new Error(`${label}: semgrep config guard must use bash`);
+  if (semStep1.run?.trim() !== buildExpectedConsumerGuard().trim()) {
+    throw new Error(`${label}: semgrep config guard must execute the exact canonical fail-closed guard script`);
+  }
+  if (semStep1.env) throw new Error(`${label}: semgrep config guard step must not define env`);
+
+  // Step 2: Semgrep scan execution contract (F3)
+  const semStep2 = semSteps[2];
+  const expectedSemgrepCommand = 'semgrep scan --config p/default --error --strict --disable-nosem --metrics=off .';
+  if (semStep2.run?.trim() !== expectedSemgrepCommand) {
+    throw new Error(`${label}: semgrep scan command violates strict execution contract; expected '${expectedSemgrepCommand}', got '${semStep2.run?.trim()}'`);
+  }
+  assertExactObject(semStep2.env, { SEMGREP_SEND_METRICS: 'off' }, `${label} semgrep scan env`);
+  if (semStep2.with) throw new Error(`${label}: semgrep scan step must not define inputs`);
+
+  // 9. Validate CodeQL job (F2, F4)
+  const codeJob = jobs.codeql;
+  if (codeJob['runs-on'] !== 'ubuntu-latest') throw new Error(`${label}: codeql job runs-on must be 'ubuntu-latest'`);
+  if (!Number.isInteger(codeJob['timeout-minutes']) || codeJob['timeout-minutes'] <= 0) throw new Error(`${label}: codeql job must set positive timeout-minutes`);
+  assertExactObject(codeJob.permissions, {
+    actions: 'read',
+    contents: 'read',
+    'security-events': 'write'
+  }, `${label} codeql permissions`);
+  if (codeJob.env && Object.keys(codeJob.env).length > 0) throw new Error(`${label}: codeql job-level env is not permitted`);
+  if (codeJob.services) throw new Error(`${label}: codeql job must not declare services`);
+  if (codeJob.container) throw new Error(`${label}: codeql job must not declare a container`);
+
+  const codeSteps = codeJob.steps || [];
+  if (codeSteps.length !== 3) {
+    throw new Error(`${label}: codeql job must contain exactly 3 steps (checkout, init, analyze), got ${codeSteps.length}`);
+  }
+
+  // Step 0: Checkout
+  const codeStep0 = codeSteps[0];
+  if (codeStep0.uses !== `actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}`) {
+    throw new Error(`${label}: codeql checkout step must use pinned action 'actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}', got '${codeStep0.uses}'`);
+  }
+  assertExactObject(codeStep0.with, { 'persist-credentials': false }, `${label} codeql checkout inputs`);
+  if (codeStep0.env) throw new Error(`${label}: codeql checkout step must not define env`);
+
+  // Step 1: CodeQL Init
+  const codeStep1 = codeSteps[1];
+  if (codeStep1.uses !== `github/codeql-action/init@${APPROVED_ACTIONS.get('github/codeql-action/init')}`) {
+    throw new Error(`${label}: codeql init step must use pinned action 'github/codeql-action/init@${APPROVED_ACTIONS.get('github/codeql-action/init')}', got '${codeStep1.uses}'`);
+  }
+  if (!codeStep1.with || typeof codeStep1.with !== 'object') {
+    throw new Error(`${label}: codeql init step must configure inputs`);
+  }
+  for (const k of Object.keys(codeStep1.with)) {
+    if (k !== 'languages' && k !== 'build-mode') {
+      throw new Error(`${label}: codeql init step contains unapproved input '${k}'`);
     }
-    for (const key of Object.keys(job)) {
-      if (!allowedKeys.has(key)) {
-        throw new Error(`${label}: job '${jobId}' contains unapproved key '${key}'`);
-      }
-    }
+  }
+  if (typeof codeStep1.with.languages !== 'string' || !codeStep1.with.languages.trim()) {
+    throw new Error(`${label}: codeql init step must specify languages string`);
+  }
+  if (codeStep1.env) throw new Error(`${label}: codeql init step must not define env`);
 
-    if (job.if !== undefined) throw new Error(`${label}: mandatory job '${jobId}' must not be conditional`);
-    if (job.needs !== undefined) throw new Error(`${label}: mandatory job '${jobId}' must not depend on other jobs`);
-    if (job['continue-on-error']) throw new Error(`${label}: job '${jobId}' must not set continue-on-error: true`);
-    if (job.env && Object.keys(job.env).length > 0) throw new Error(`${label}: job '${jobId}' env is not permitted`);
+  // Step 2: CodeQL Analyze
+  const codeStep2 = codeSteps[2];
+  if (codeStep2.uses !== `github/codeql-action/analyze@${APPROVED_ACTIONS.get('github/codeql-action/analyze')}`) {
+    throw new Error(`${label}: codeql analyze step must use pinned action 'github/codeql-action/analyze@${APPROVED_ACTIONS.get('github/codeql-action/analyze')}', got '${codeStep2.uses}'`);
+  }
+  if (codeStep2.with) throw new Error(`${label}: codeql analyze step must not define inputs`);
+  if (codeStep2.env) throw new Error(`${label}: codeql analyze step must not define env`);
 
-    if (jobId === 'osv') {
-      if (!job.uses || !job.uses.startsWith('google/osv-scanner-action/')) {
-        throw new Error(`${label}: osv job must use google/osv-scanner-action reusable workflow`);
-      }
-      const parts = job.uses.split('@');
-      if (parts.length !== 2 || !/^[0-9a-f]{40}$/i.test(parts[1])) {
-        throw new Error(`${label}: osv job must pin reusable workflow to a full 40-character commit SHA`);
-      }
-      if (job.with?.['fail-on-vuln'] !== true) {
-        throw new Error(`${label}: osv job must set fail-on-vuln: true`);
-      }
-      continue;
-    }
-
-    if (job['runs-on'] !== 'ubuntu-latest') {
-      throw new Error(`${label}: job '${jobId}' runs-on must be 'ubuntu-latest'`);
-    }
-    if (!Number.isInteger(job['timeout-minutes']) || job['timeout-minutes'] <= 0) {
-      throw new Error(`${label}: job '${jobId}' must set positive timeout-minutes`);
-    }
-
-    if (jobId === 'semgrep') {
-      if (!job.container?.image || !/^semgrep\/semgrep:[^@]+@sha256:[a-f0-9]{64}$/.test(job.container.image)) {
-        throw new Error(`${label}: semgrep job must pin container image by immutable sha256 digest`);
-      }
-    }
-
-    const steps = job.steps || [];
-    if (steps.length === 0) throw new Error(`${label}: job '${jobId}' has no steps`);
-
-    if (jobId === secretJobId || jobId === 'semgrep') {
-      const guardStep = steps.find(s => s.name === 'Reject unreviewed scanner configuration');
-      if (!guardStep) {
-        throw new Error(`${label}: job '${jobId}' is missing required scanner configuration guard`);
-      }
-    }
-
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      for (const k of Object.keys(step)) {
-        if (!ALLOWED_STEP_KEYS.has(k)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} contains unapproved key '${k}'`);
-        }
-      }
-      if (step.if !== undefined) throw new Error(`${label}: job '${jobId}' step ${i} must not be conditional`);
-      if (step['continue-on-error']) throw new Error(`${label}: job '${jobId}' step ${i} must not set continue-on-error`);
-      if (step['working-directory']) throw new Error(`${label}: job '${jobId}' step ${i} must not set working-directory`);
-
-      if (step.shell && !APPROVED_SHELLS.has(step.shell.trim())) {
-        throw new Error(`${label}: job '${jobId}' step ${i} specifies unapproved shell '${step.shell}'`);
-      }
-
-      if (step.uses) {
-        const parts = step.uses.split('@');
-        if (parts.length !== 2 || !/^[0-9a-f]{40}$/i.test(parts[1])) {
-          throw new Error(`${label}: job '${jobId}' step ${i} unpinned action: '${step.uses}'`);
-        }
-        if (step.uses.startsWith('actions/checkout')) {
-          if (step.with?.['persist-credentials'] !== false) {
-            throw new Error(`${label}: checkout step must set persist-credentials: false`);
-          }
-        }
-      }
-
-      if (step.env) {
-        let allowed = new Set();
-        if (jobId === secretJobId && step.uses?.includes('gitleaks')) allowed = APPROVED_STEP_ENVS.gitleaks;
-        else if (jobId === 'semgrep' && step.run?.includes('semgrep')) allowed = APPROVED_STEP_ENVS.semgrep;
-        for (const [envKey, envVal] of Object.entries(step.env)) {
-          if (!allowed.has(envKey)) {
-            throw new Error(`${label}: job '${jobId}' step ${i} defines unapproved env '${envKey}'`);
-          }
-          if (typeof envVal === 'string' && UNTRUSTED_EXPRESSION_REGEX.test(envVal)) {
-            throw new Error(`${label}: job '${jobId}' step ${i} env contains untrusted expression: ${envVal}`);
-          }
-        }
-      }
-
-      if (step.run) {
-        if (UNTRUSTED_EXPRESSION_REGEX.test(step.run)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} contains untrusted expression interpolation`);
-        }
-        if (/(?:^|\s|;)export\s+/i.test(step.run)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} must not use export statements`);
-        }
-        if (/\b(?:BASH_ENV|PATH|NPM_CONFIG_[A-Z_]+|NODE_OPTIONS|NODE_PATH|NODE_TLS_REJECT_UNAUTHORIZED|GIT_CONFIG_[A-Z0-9_]+)\s*=/i.test(step.run)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} assigns to dangerous environment variable`);
-        }
-        if (/(?:^|[^&])&\s*(?:$|\n)/.test(step.run)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} must not background commands (&)`);
-        }
-        if (/(?:\||\&)\s*(?:cat|tee|true|exit\s+0|echo|printf|head|tail)\b/.test(step.run)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} masks failures with piping or command list`);
-        }
-        if (/\b(?:echo|printf|eval)\s+["']?\$\(/.test(step.run)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} masks failure inside echo/eval command substitution`);
-        }
-        if (/\bif\s+[^;\n]+;\s*then\s*:\s*;\s*fi\b/.test(step.run)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} masks failures with empty if-then block`);
-        }
-        if (/\b(?:git|npm|node|semgrep|gitleaks|find|grep|awk|diff)\s*\(\s*\)\s*\{/.test(step.run)) {
-          throw new Error(`${label}: job '${jobId}' step ${i} attempts shell function shadowing`);
-        }
-
-        // Semgrep scan step checks
-        if (step.run.includes('semgrep scan')) {
-          if (!step.run.includes('--error')) throw new Error(`${label}: Semgrep must include --error`);
-          if (!step.run.includes('--strict')) throw new Error(`${label}: Semgrep must include --strict`);
-          if (!step.run.includes('--disable-nosem')) throw new Error(`${label}: Semgrep must include --disable-nosem`);
-          if (step.run.includes('--exclude')) throw new Error(`${label}: Semgrep must not use --exclude`);
-        }
-
-        // Scanner configuration guard step checks
-        if (step.name === 'Reject unreviewed scanner configuration') {
-          if (!step.run.includes('historical_suppression')) {
-            throw new Error(`${label}: scanner configuration guard must verify Git history for prohibited directives`);
-          }
-          if (!step.run.includes('nested_osv_config')) {
-            throw new Error(`${label}: scanner configuration guard must detect nested OSV configs`);
-          }
-          if (!step.run.includes('attr_file')) {
-            throw new Error(`${label}: scanner configuration guard must inspect .gitattributes`);
-          }
-          if (!step.run.includes('raw_binaries')) {
-            throw new Error(`${label}: scanner configuration guard must detect binary files`);
-          }
-        }
-      }
+  // 10. Validate OSV job (F2, F4)
+  const osvJob = jobs.osv;
+  assertExactObject(osvJob.permissions, {
+    actions: 'read',
+    contents: 'read',
+    'security-events': 'write'
+  }, `${label} osv permissions`);
+  const expectedOsvRef = `google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@${APPROVED_REUSABLE_WORKFLOWS.get('google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml')}`;
+  if (osvJob.uses !== expectedOsvRef) {
+    throw new Error(`${label}: osv job must use pinned reusable workflow '${expectedOsvRef}', got '${osvJob.uses}'`);
+  }
+  assertExactObject(osvJob.with, {
+    'fail-on-vuln': true,
+    'upload-sarif': true
+  }, `${label} osv reusable workflow inputs`);
+  for (const k of ['runs-on', 'steps', 'env', 'secrets', 'container']) {
+    if (osvJob[k] !== undefined) {
+      throw new Error(`${label}: osv reusable job must not override '${k}'`);
     }
   }
 

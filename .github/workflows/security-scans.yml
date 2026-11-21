@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
-          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml; do
+          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do
             if [ -e "$file" ]; then
               printf 'Unreviewed scanner override is not permitted: %s\n' "$file" >&2
               exit 1
@@ -76,31 +76,13 @@ jobs:
               exit 1
             fi
           fi
-          allowed_binaries_file=".allowed-binaries"
-          binary_allowlist=""
-          if [ -f "$allowed_binaries_file" ]; then
-            if [ -L "$allowed_binaries_file" ]; then
-              printf 'Symlinked %s is not permitted\n' "$allowed_binaries_file" >&2
-              exit 1
-            fi
-            binary_allowlist="$(awk 'NF && $1 !~ /^#/ { print $1 }' "$allowed_binaries_file" | sort)"
-          fi
           if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk '$1 == "-" && $2 == "-" { print $3 }')"; then
             printf '%s\n' 'Failed to inspect tracked files for binary content' >&2
             exit 1
           fi
           if [ -n "$raw_binaries" ]; then
-            unapproved_binaries=""
-            while IFS= read -r bin_file; do
-              [ -z "$bin_file" ] && continue
-              if ! printf '%s\n' "$binary_allowlist" | grep -F -x -q "$bin_file"; then
-                unapproved_binaries="${unapproved_binaries} ${bin_file}"
-              fi
-            done < <(printf '%s\n' "$raw_binaries")
-            if [ -n "$unapproved_binaries" ]; then
-              printf 'Unapproved binary files are not permitted:%s\n' "$unapproved_binaries" >&2
-              exit 1
-            fi
+            printf 'Tracked binary files are not permitted: %s\n' "$raw_binaries" >&2
+            exit 1
           fi
           nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
           if [ -n "$nested_semgrepignore" ]; then
@@ -159,7 +141,7 @@ jobs:
         run: |
           set -euo pipefail
           git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
-          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml; do
+          for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do
             if [ -e "$file" ]; then
               printf 'Unreviewed scanner override is not permitted: %s\n' "$file" >&2
               exit 1
@@ -204,31 +186,13 @@ jobs:
               exit 1
             fi
           fi
-          allowed_binaries_file=".allowed-binaries"
-          binary_allowlist=""
-          if [ -f "$allowed_binaries_file" ]; then
-            if [ -L "$allowed_binaries_file" ]; then
-              printf 'Symlinked %s is not permitted\n' "$allowed_binaries_file" >&2
-              exit 1
-            fi
-            binary_allowlist="$(awk 'NF && $1 !~ /^#/ { print $1 }' "$allowed_binaries_file" | sort)"
-          fi
           if ! raw_binaries="$(git -c safe.directory="$PWD" -c core.fsmonitor=false diff --numstat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 | awk '$1 == "-" && $2 == "-" { print $3 }')"; then
             printf '%s\n' 'Failed to inspect tracked files for binary content' >&2
             exit 1
           fi
           if [ -n "$raw_binaries" ]; then
-            unapproved_binaries=""
-            while IFS= read -r bin_file; do
-              [ -z "$bin_file" ] && continue
-              if ! printf '%s\n' "$binary_allowlist" | grep -F -x -q "$bin_file"; then
-                unapproved_binaries="${unapproved_binaries} ${bin_file}"
-              fi
-            done < <(printf '%s\n' "$raw_binaries")
-            if [ -n "$unapproved_binaries" ]; then
-              printf 'Unapproved binary files are not permitted:%s\n' "$unapproved_binaries" >&2
-              exit 1
-            fi
+            printf 'Tracked binary files are not permitted: %s\n' "$raw_binaries" >&2
+            exit 1
           fi
           nested_semgrepignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)"
           if [ -n "$nested_semgrepignore" ]; then
