@@ -1070,3 +1070,52 @@ To prevent documentation drift, the ChatGPT branch also updates:
 - `SECURITY-ROOT.md` — removes the former claim that executable permission bits are not represented and documents the custom manifest format.
 
 These documentation/tool-comment changes are committed after the original checksum implementation and tests. They have not been executed through local validation. Before integration, confirm that all manifest consumers use the USS verifier, that release manifests are regenerated under the new algorithm, and that older signed releases continue to be verified with their pinned historical verifier.
+
+
+## Independent review of Gemini D-01/D-02 remediation — 2026-11-21
+
+**Gemini branch:** `gemini/d01-d02-remediation`  
+**Commit:** `c5c67559bfbb7086cbf4818384c2627edaa00614`  
+**Base:** `80754305a9c9ee5d9848b1da17274f9e0cfc39ee`  
+**Comparison:** one commit ahead, zero commits behind; four files changed.
+
+### Confirmed present by direct GitHub inspection
+
+- Semgrep command includes `--disable-nosem` in first-party workflow and consumer template.
+- Both workflows include a case-insensitive, whitespace-tolerant `git grep` guard for Gitleaks inline allow directives.
+- OSV scanner configuration filenames are included in the guard.
+- Both workflows include weekly cron `17 5 * * 1`.
+- Gitleaks checkout uses `fetch-depth: 0`.
+- Tests include mutations for missing/re-enabled Semgrep suppression, Gitleaks suppression, schedule removal/cron weakening, forbidden environment values and shell override examples.
+- Handoff Section 17 is present.
+
+### Remaining independent finding — D-02 shell-template bypass (OPEN, P2)
+
+The new `assertSafeShell` implementation checks only that a custom shell starts with `bash ` and contains an `-e` token. It does not reject shell command-template options that prevent the runner's script file from being executed.
+
+Example mutation that appears to pass the current checks:
+
+```yaml
+shell: "bash -e -c 'exit 0' {0}"
+```
+
+For a GitHub Actions custom shell template, `-c` makes Bash execute the supplied command string and treat the runner's script path as positional `$0`, rather than executing the generated script. This can turn a mandatory scanner-guard step into a successful no-op. The current tests cover `bash {0}`, `sh {0}`, and `pwsh`, but not command-execution overrides such as `-c`.
+
+Required correction: replace permissive substring checks with a strict allowlist of safe shell templates (prefer the literal `bash` default, or a narrowly defined canonical template that preserves execution of `{0}` and fail-fast semantics). Add negative tests for `bash -e -c 'exit 0' {0}`, equivalent `--command` forms, and unexpected arguments before/after `{0}`.
+
+### Validation limitations and discrepancies
+
+- Gemini's handoff reports local Semgrep 1.136.0, but the workflow pins 1.186.0. The exact pinned scanner version has not been independently demonstrated by the reported local run.
+- Gemini reports 186/186 local tests and 26 Semgrep files scanned; these remain self-reported local results until reproduced.
+- No GitHub Actions runs or combined status checks were returned for this isolated commit.
+- Therefore D-01/D-02 are not accepted as FIXED AND VERIFIED yet. The branch is available for review, but hosted CI and the shell-template correction remain outstanding.
+
+### Disposition
+
+- D-01 Semgrep suppression: IMPLEMENTED, pending exact pinned-version/hosted verification.
+- D-01 Gitleaks suppression: IMPLEMENTED, pending further bypass review and hosted verification.
+- D-02 schedule/full-history: IMPLEMENTED, pending hosted verification.
+- D-02 environment guards: IMPLEMENTED, with broader shell-assignment coverage still advisable.
+- D-02 shell-template validation: OPEN; the `bash -e -c ... {0}` bypass must be closed before acceptance.
+
+Do not merge or cherry-pick Gemini's branch until the shell-template bypass is corrected and all required validation evidence is available.
