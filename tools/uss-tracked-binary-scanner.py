@@ -29,44 +29,99 @@ if not SECURE_DIR_FD:
     )
     sys.exit(2)
 
-def resolve_trusted_git(clean_env):
+def resolve_trusted_git(clean_env, candidate_dirs=None):
     untrusted_prefixes = [
         os.path.realpath(ROOT),
         os.path.realpath(tempfile.gettempdir()),
     ]
-    for v in ("RUNNER_TEMP", "TEMP", "TMP", "TMPDIR"):
+    for v in (
+        "RUNNER_TEMP",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "USERPROFILE",
+        "HOME",
+        "HOMEPATH",
+        "LOCALAPPDATA",
+        "APPDATA",
+    ):
         val = os.environ.get(v)
         if val:
             try:
                 untrusted_prefixes.append(os.path.realpath(val))
             except Exception:
                 pass
+    try:
+        user_home = os.path.realpath(os.path.expanduser("~"))
+        if user_home:
+            untrusted_prefixes.append(user_home)
+    except Exception:
+        pass
     if sys.platform != "win32":
         untrusted_prefixes.extend(["/tmp", "/var/tmp", "/dev/shm"])
 
-    path_dirs = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
-    system_dirs = []
+    def is_untrusted_path(p):
+        try:
+            rp = os.path.realpath(p)
+        except Exception:
+            return True
+        for prefix in untrusted_prefixes:
+            try:
+                if rp == prefix or os.path.commonpath([rp, prefix]) == prefix:
+                    return True
+            except ValueError:
+                pass
+        if sys.platform == "win32":
+            p_lower = rp.lower()
+            if "\\users\\" in p_lower or p_lower.startswith(("\\\\", "//")):
+                return True
+        else:
+            if rp.startswith(("/home/", "/Users/")):
+                return True
+        return False
+
+    trusted_roots = []
     if sys.platform == "win32":
-        for var_name in ("ProgramFiles", "ProgramFiles(x86)", "SystemRoot"):
+        for var_name in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "SystemRoot", "windir"):
             base = os.environ.get(var_name)
             if base:
-                system_dirs.extend([
-                    os.path.join(base, "Git", "cmd"),
-                    os.path.join(base, "Git", "bin"),
-                ])
-        local_app = os.environ.get("LOCALAPPDATA")
-        if local_app:
-            system_dirs.extend([
-                os.path.join(local_app, "Programs", "Git", "cmd"),
-                os.path.join(local_app, "Programs", "Git", "bin"),
-            ])
+                try:
+                    trusted_roots.append(os.path.realpath(base))
+                except Exception:
+                    pass
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion") as k:
+                for reg_val in ("ProgramFilesDir", "ProgramFilesDir (x86)", "ProgramFilesDir (Arm)"):
+                    try:
+                        rv, _ = winreg.QueryValueEx(k, reg_val)
+                        if rv:
+                            trusted_roots.append(os.path.realpath(rv))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         exe_names = ["git.exe", "git.cmd"]
     else:
-        system_dirs = ["/usr/bin", "/bin", "/usr/local/bin"]
         exe_names = ["git"]
 
+    if candidate_dirs is not None:
+        search_dirs = list(candidate_dirs)
+    else:
+        path_dirs = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+        system_dirs = []
+        if sys.platform == "win32":
+            for r in list(trusted_roots):
+                system_dirs.extend([
+                    os.path.join(r, "Git", "cmd"),
+                    os.path.join(r, "Git", "bin"),
+                ])
+        else:
+            system_dirs = ["/usr/bin", "/bin", "/usr/local/bin"]
+        search_dirs = path_dirs + system_dirs
+
     seen_dirs = set()
-    for d in path_dirs + system_dirs:
+    for d in search_dirs:
         if not os.path.isabs(d):
             continue
         try:
@@ -79,23 +134,26 @@ def resolve_trusted_git(clean_env):
         if not os.path.isdir(real_d):
             continue
 
-        is_untrusted = False
-        for prefix in untrusted_prefixes:
-            try:
-                if real_d == prefix or os.path.commonpath([real_d, prefix]) == prefix:
-                    is_untrusted = True
-                    break
-            except ValueError:
-                pass
-        if is_untrusted:
+        if is_untrusted_path(d) or is_untrusted_path(real_d):
             continue
 
-        if sys.platform != "win32":
+        if sys.platform == "win32":
+            in_trusted_root = False
+            for troot in trusted_roots:
+                try:
+                    if real_d == troot or os.path.commonpath([real_d, troot]) == troot:
+                        in_trusted_root = True
+                        break
+                except ValueError:
+                    pass
+            if not in_trusted_root:
+                continue
+        else:
             try:
                 st_d = os.stat(real_d)
-                if st_d.st_mode & 0o002 != 0:
+                if st_d.st_uid != 0:
                     continue
-                if (st_d.st_mode & 0o020 != 0) and st_d.st_uid != 0:
+                if (st_d.st_mode & 0o022) != 0:
                     continue
             except OSError:
                 continue
@@ -111,21 +169,26 @@ def resolve_trusted_git(clean_env):
             if not (os.path.isfile(real_exe) and os.access(real_exe, os.X_OK)):
                 continue
 
-            exe_untrusted = False
-            for prefix in untrusted_prefixes:
-                try:
-                    if real_exe == prefix or os.path.commonpath([real_exe, prefix]) == prefix:
-                        exe_untrusted = True
-                        break
-                except ValueError:
-                    pass
-            if exe_untrusted:
+            if is_untrusted_path(candidate) or is_untrusted_path(real_exe):
                 continue
 
-            if sys.platform != "win32":
+            if sys.platform == "win32":
+                in_trusted_root = False
+                for troot in trusted_roots:
+                    try:
+                        if real_exe == troot or os.path.commonpath([real_exe, troot]) == troot:
+                            in_trusted_root = True
+                            break
+                    except ValueError:
+                        pass
+                if not in_trusted_root:
+                    continue
+            else:
                 try:
                     st_exe = os.stat(real_exe)
-                    if st_exe.st_mode & 0o002 != 0:
+                    if st_exe.st_uid != 0:
+                        continue
+                    if (st_exe.st_mode & 0o022) != 0:
                         continue
                 except OSError:
                     continue
