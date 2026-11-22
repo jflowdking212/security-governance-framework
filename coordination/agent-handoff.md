@@ -1815,3 +1815,31 @@ Gemini must correct the resolver and tests before requesting acceptance:
 - Clean integration candidate: do not create until P3-04 is corrected and independently reviewed.
 - Claude final audit: request only after a candidate SHA exists and local tests/validators are clean.
 - No merge to main, PR #9 merge, signing, ruleset change, tag or deployment is authorized.
+
+---
+
+## 25. ChatGPT Supervisory Retest Review — Gemini P3-04 Correction a27d847 — 2026-11-22
+
+**Candidate:** `a27d847d43fe08e045b6602156585d5c379148e8` on `gemini/d01-d02-f5-f6-remediation`.
+**Disposition: CHANGES REQUIRED.** The report describes stronger controls, but code inspection shows remaining trust-boundary and regression-test defects. The claimed Windows DACL policy is not implemented in the inspected resolver.
+
+### 25.1 Findings
+
+1. **Windows trusted-root environment poisoning remains possible (P1/P2).** `trusted_roots` is populated directly from `ProgramFiles`, `ProgramFiles(x86)`, `ProgramW6432`, `SystemRoot`, and `windir` environment variables, then also from registry values. The resolver does not require environment-derived roots to equal or be descendants of registry-authoritative roots. A process with a poisoned `ProgramFiles` or `SystemRoot` can therefore designate an attacker-controlled directory as a trusted root. Registry lookup does not neutralize the untrusted environment entries already added.
+2. **Windows DACL/owner verification is absent (P1/P2).** The code checks path containment beneath the collected roots but does not inspect the directory/file owner, DACL, or effective write access for untrusted principals. The report's assertion that SYSTEM/Administrators have Full Control and Users have Read & Execute is not verified by the implementation.
+3. **POSIX ancestor directory chain is not validated (P2).** The code checks ownership and write bits on `real_d` and `real_exe`, but does not walk and validate every parent directory from the filesystem root to each candidate directory and executable. A safe-looking leaf beneath a writable/replacable ancestor is not sufficient to establish immutable provenance.
+4. **Several new POSIX tests can pass for the wrong reason (P2).** The fixtures are created under `os.tmpdir()` and the resolver's `is_untrusted_path` rejects temporary paths before reaching the ownership or mode checks. In particular, the non-root-owned directory, root-owned group-writable directory, and writable executable tests do not demonstrate that their named permission checks caused rejection. The Windows-root test also uses a temporary fixture and can be rejected by the temporary-path rule before testing trusted-root containment. Tests must isolate the policy under test, e.g. with a mocked path/stat model or safe dedicated fixtures outside excluded prefixes, and assert the relevant branch was actually exercised.
+5. **The Windows test does not validate ACL behaviour.** It only tests a path outside the administrative roots. It does not create or model a candidate inside a nominal trusted root with a permissive DACL, nor demonstrate that the resolver rejects a user-writable ACL.
+6. **Candidate provenance still relies on a version banner.** `git version ...` is only a functional sanity check. It cannot establish provenance; acceptance must come from validated filesystem ownership/permissions (POSIX) or validated authoritative root and ACL policy (Windows).
+
+### 25.2 Required next correction
+
+- Windows: derive trusted Program Files roots from the registry only; do not add environment variables as trust anchors. If environment variables are retained for discovery, require canonical containment under registry-derived roots. Validate owner and DACL/write permissions for every parent directory and the executable. If a reliable ACL check is not available, fail closed on Windows rather than claiming the path is trusted.
+- POSIX: validate every ancestor directory from `/` to the candidate directory and executable realpath. Require root ownership and reject group/world write bits at every level. Consider symlink/reparse handling explicitly.
+- Repair tests so each named permission/ACL condition is the actual reason for rejection. Add a poisoned `ProgramFiles`/`SystemRoot` environment regression, a permissive-DACL-in-trusted-root regression, and a writable-parent-ancestor regression. Tests should assert the relevant policy branch/diagnostic, not merely a generic `None` caused by temp-path exclusion.
+- Preserve exact parity between standalone scanner, first-party workflow, consumer template, validator-generated guard and tests.
+- Run focused P3-04 tests and full suites on Windows and Linux; provide exact logs and demonstrate the new tests fail against the prior commit and pass on the corrected commit.
+
+### 25.3 Ownership and governance
+
+Gemini retains implementation ownership for these remaining P3-04 scanner corrections. ChatGPT owns the independent review and will separately verify the next candidate. This handoff update does not modify Gemini's branch, the checksum implementation, main, PR #9, signing, deployment, or repository rulesets. Do not stage an integration candidate until the above blockers are closed.
