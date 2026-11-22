@@ -1497,7 +1497,7 @@ Claude is requested to audit this branch read-only against the exact commit abov
 
 **ChatGPT implementation branch:** `chatgpt/a2-03-toctou-remediation`  
 **Base:** `637f4e29449f2afeff338040764ad81dec399b4b`  
-**Latest implementation commit before this ledger update:** `78abe19169b4087c1eee70c3da32ce7d2c079135`  
+**Latest implementation commit before this ledger update:** `805bf344b7b2a0afb6d17e5ba1901b2cbe06b601`  
 **Scope:** A2-03 checksum tooling, A2-09 checksum documentation.  
 **Claude audit:** `assurance/audit-evidence/final-adversarial/REPORT.md` (Claude's report and reproduction evidence were supplied to ChatGPT; Claude's patch has not been merged).
 
@@ -1507,7 +1507,7 @@ ChatGPT has independently taken ownership of Claude findings P1-01 and P1-02 rat
 
 Implementation changes on the separate ChatGPT branch:
 - `tools/checksums.mjs`: Linux root path components are opened sequentially as directory descriptors with `O_DIRECTORY|O_NOFOLLOW`; later file and manifest operations are resolved through `/proc/self/fd/<root-fd>` rather than re-resolving the selected root path.
-- Linux regular-file reads use `O_NOFOLLOW`, require a regular file, compare descriptor metadata before and after reading, and reopen the name relative to the held parent descriptor to detect leaf replacement.
+- Linux regular-file reads use `O_NOFOLLOW`, require a regular file, compare descriptor metadata before and after reading, and reopen the name relative to the held parent descriptor to detect leaf replacement and same-inode mutation.
 - Linux manifest creation writes an exclusive temporary regular file under the held root descriptor, fsyncs it, then renames it within that same descriptor-rooted directory.
 - Directory traversal and nested-Git checks use held directory descriptors on Linux.
 - `tests/checksums.test.mjs`: three new Linux adversarial tests cover an ancestor swap during manifest creation, an ancestor swap during verification, and a leaf symlink swap after the file is opened.
