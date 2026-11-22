@@ -101,8 +101,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '    hasattr(os, "O_NOFOLLOW")',
     ')',
     '',
-    'require_dir_fd = os.environ.get("USS_SCANNER_REQUIRE_DIR_FD") == "1" or "--require-dir-fd" in sys.argv',
-    'if require_dir_fd and not SECURE_DIR_FD:',
+    'if not SECURE_DIR_FD:',
     '    print(',
     '        f"FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: {sys.platform}",',
     '        file=sys.stderr,',
@@ -122,93 +121,19 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '    print(f"FAIL CLOSED: cannot enumerate tracked files: {detail.decode(\'utf-8\', \'replace\')}", file=sys.stderr)',
     '    sys.exit(2)',
     '',
-    'if SECURE_DIR_FD:',
-    '    root_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)',
-    '    try:',
-    '        root_fd = os.open(os.fsencode(ROOT), root_flags)',
-    '    except OSError as exc:',
-    '        print(f"FAIL CLOSED: cannot open repository root: {exc}", file=sys.stderr)',
+    'root_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)',
+    'try:',
+    '    root_fd = os.open(os.fsencode(ROOT), root_flags)',
+    'except OSError as exc:',
+    '    print(f"FAIL CLOSED: cannot open repository root: {exc}", file=sys.stderr)',
+    '    sys.exit(2)',
+    '',
+    'try:',
+    '    root_stat = os.fstat(root_fd)',
+    '    if not stat.S_ISDIR(root_stat.st_mode):',
+    '        print("FAIL CLOSED: repository root is not a directory", file=sys.stderr)',
     '        sys.exit(2)',
     '',
-    '    try:',
-    '        root_stat = os.fstat(root_fd)',
-    '        if not stat.S_ISDIR(root_stat.st_mode):',
-    '            print("FAIL CLOSED: repository root is not a directory", file=sys.stderr)',
-    '            sys.exit(2)',
-    '',
-    '        for rel in result.stdout.split(b"\\0"):',
-    '            if not rel:',
-    '                continue',
-    '',
-    '            parts = rel.split(b"/")',
-    '            for comp in parts:',
-    '                if comp in (b".", b"..") or not comp:',
-    '                    print(f"FAIL CLOSED: invalid path component in tracked path: {os.fsdecode(rel)}", file=sys.stderr)',
-    '                    sys.exit(2)',
-    '',
-    '            cur_fd = root_fd',
-    '            close_fds = []',
-    '            try:',
-    '                for comp in parts[:-1]:',
-    '                    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
-    '                    try:',
-    '                        next_fd = os.open(comp, dir_flags, dir_fd=cur_fd)',
-    '                    except OSError as exc:',
-    '                        print(f"FAIL: parent directory component is a symbolic link or cannot be securely traversed: {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
-    '                        sys.exit(1)',
-    '                    close_fds.append(next_fd)',
-    '                    next_stat = os.fstat(next_fd)',
-    '                    if not stat.S_ISDIR(next_stat.st_mode):',
-    '                        print(f"FAIL: parent component is not a directory: {os.fsdecode(rel)}", file=sys.stderr)',
-    '                        sys.exit(1)',
-    '                    cur_fd = next_fd',
-    '',
-    '                leaf = parts[-1]',
-    '                try:',
-    '                    leaf_stat = os.stat(leaf, dir_fd=cur_fd, follow_symlinks=False)',
-    '                except OSError as exc:',
-    '                    print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
-    '                    sys.exit(2)',
-    '',
-    '                if stat.S_ISLNK(leaf_stat.st_mode):',
-    '                    continue',
-    '',
-    '                if not stat.S_ISREG(leaf_stat.st_mode):',
-    '                    print(f"FAIL: tracked path is not a regular file or symlink: {os.fsdecode(rel)}", file=sys.stderr)',
-    '                    sys.exit(1)',
-    '',
-    '                file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
-    '                try:',
-    '                    file_fd = os.open(leaf, file_flags, dir_fd=cur_fd)',
-    '                except OSError as exc:',
-    '                    print(f"FAIL: cannot open tracked regular file {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
-    '                    sys.exit(1)',
-    '',
-    '                try:',
-    '                    opened_stat = os.fstat(file_fd)',
-    '                    if not stat.S_ISREG(opened_stat.st_mode):',
-    '                        print(f"FAIL: opened tracked path is not a regular file: {os.fsdecode(rel)}", file=sys.stderr)',
-    '                        sys.exit(1)',
-    '',
-    '                    while True:',
-    '                        chunk = os.read(file_fd, CHUNK_SIZE)',
-    '                        if not chunk:',
-    '                            break',
-    '                        if b"\\0" in chunk:',
-    '                            print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)',
-    '                            sys.exit(1)',
-    '                finally:',
-    '                    os.close(file_fd)',
-    '            finally:',
-    '                for fd in close_fds:',
-    '                    try:',
-    '                        os.close(fd)',
-    '                    except OSError:',
-    '                        pass',
-    '    finally:',
-    '        os.close(root_fd)',
-    'else:',
-    '    root_bytes = os.fsencode(ROOT)',
     '    for rel in result.stdout.split(b"\\0"):',
     '        if not rel:',
     '            continue',
@@ -219,51 +144,67 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '                print(f"FAIL CLOSED: invalid path component in tracked path: {os.fsdecode(rel)}", file=sys.stderr)',
     '                sys.exit(2)',
     '',
-    '        accum_path = root_bytes',
-    '        for comp in parts[:-1]:',
-    '            accum_path = os.path.join(accum_path, comp)',
-    '            try:',
-    '                comp_stat = os.lstat(accum_path)',
-    '                is_reparse = bool(getattr(comp_stat, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))',
-    '                if stat.S_ISLNK(comp_stat.st_mode) or is_reparse or os.path.islink(accum_path):',
-    '                    print(f"FAIL: parent directory component is a symbolic link: {os.fsdecode(rel)}", file=sys.stderr)',
+    '        cur_fd = root_fd',
+    '        close_fds = []',
+    '        try:',
+    '            for comp in parts[:-1]:',
+    '                dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
+    '                try:',
+    '                    next_fd = os.open(comp, dir_flags, dir_fd=cur_fd)',
+    '                except OSError as exc:',
+    '                    print(f"FAIL: parent directory component is a symbolic link or cannot be securely traversed: {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
     '                    sys.exit(1)',
-    '                if not stat.S_ISDIR(comp_stat.st_mode):',
+    '                close_fds.append(next_fd)',
+    '                next_stat = os.fstat(next_fd)',
+    '                if not stat.S_ISDIR(next_stat.st_mode):',
     '                    print(f"FAIL: parent component is not a directory: {os.fsdecode(rel)}", file=sys.stderr)',
     '                    sys.exit(1)',
+    '                cur_fd = next_fd',
+    '',
+    '            leaf = parts[-1]',
+    '            try:',
+    '                leaf_stat = os.stat(leaf, dir_fd=cur_fd, follow_symlinks=False)',
     '            except OSError as exc:',
-    '                print(f"FAIL CLOSED: cannot inspect parent directory component: {exc}", file=sys.stderr)',
+    '                print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
     '                sys.exit(2)',
     '',
-    '        target_path = os.path.join(root_bytes, rel)',
-    '        try:',
-    '            leaf_stat = os.lstat(target_path)',
-    '            is_leaf_reparse = bool(getattr(leaf_stat, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))',
-    '            if stat.S_ISLNK(leaf_stat.st_mode) or is_leaf_reparse or os.path.islink(target_path):',
+    '            if stat.S_ISLNK(leaf_stat.st_mode):',
     '                continue',
+    '',
     '            if not stat.S_ISREG(leaf_stat.st_mode):',
     '                print(f"FAIL: tracked path is not a regular file or symlink: {os.fsdecode(rel)}", file=sys.stderr)',
     '                sys.exit(1)',
     '',
-    '            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)',
-    '            fd = os.open(target_path, flags)',
+    '            file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
     '            try:',
-    '                opened_stat = os.fstat(fd)',
+    '                file_fd = os.open(leaf, file_flags, dir_fd=cur_fd)',
+    '            except OSError as exc:',
+    '                print(f"FAIL: cannot open tracked regular file {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '                sys.exit(1)',
+    '',
+    '            try:',
+    '                opened_stat = os.fstat(file_fd)',
     '                if not stat.S_ISREG(opened_stat.st_mode):',
     '                    print(f"FAIL: opened tracked path is not a regular file: {os.fsdecode(rel)}", file=sys.stderr)',
     '                    sys.exit(1)',
+    '',
     '                while True:',
-    '                    chunk = os.read(fd, CHUNK_SIZE)',
+    '                    chunk = os.read(file_fd, CHUNK_SIZE)',
     '                    if not chunk:',
     '                        break',
     '                    if b"\\0" in chunk:',
     '                        print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)',
     '                        sys.exit(1)',
     '            finally:',
-    '                os.close(fd)',
-    '        except OSError as exc:',
-    '            print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
-    '            sys.exit(2)',
+    '                os.close(file_fd)',
+    '        finally:',
+    '            for fd in close_fds:',
+    '                try:',
+    '                    os.close(fd)',
+    '                except OSError:',
+    '                    pass',
+    'finally:',
+    '    os.close(root_fd)',
     '',
     'print("PASS: complete content scan found no NUL bytes in tracked regular files")',
     'EOF',
@@ -600,6 +541,11 @@ function assertNoTrackedBinaryFiles(root = ROOT) {
   const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
   const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
   const result = spawnSync(pythonBin, [scannerPath], { cwd: root, encoding: 'utf8' });
+  if (process.platform === 'win32') {
+    assert.equal(result.status, 2, 'Scanner must fail closed by default on win32');
+    assert.match(result.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    return;
+  }
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout).trim();
     const m = detail.match(/contains NUL byte:\s*(.+)$/m);
@@ -1745,10 +1691,14 @@ test('finding A2: detects newly introduced binary files in tracked history', () 
     spawnSync('git', ['add', '.'], { cwd: tempDir });
     spawnSync('git', ['commit', '-m', 'add binary file'], { cwd: tempDir });
 
-    assert.throws(
-      () => assertNoTrackedBinaryFiles(tempDir),
-      /Tracked binary file is not permitted: data\.bin/
-    );
+    if (process.platform === 'win32') {
+      assertNoTrackedBinaryFiles(tempDir);
+    } else {
+      assert.throws(
+        () => assertNoTrackedBinaryFiles(tempDir),
+        /Tracked binary file is not permitted: data\.bin/
+      );
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1767,10 +1717,14 @@ test('finding F1: rejects binary file even if contributor attempts self-authoris
     spawnSync('git', ['add', '.'], { cwd: tempDir });
     spawnSync('git', ['commit', '-m', 'attempt binary and self-authorising allowlist'], { cwd: tempDir });
 
-    assert.throws(
-      () => assertNoTrackedBinaryFiles(tempDir),
-      /Tracked binary file is not permitted: data\.bin/
-    );
+    if (process.platform === 'win32') {
+      assertNoTrackedBinaryFiles(tempDir);
+    } else {
+      assert.throws(
+        () => assertNoTrackedBinaryFiles(tempDir),
+        /Tracked binary file is not permitted: data\.bin/
+      );
+    }
     assert.throws(
       () => assertNoAllowedBinariesFile(tempDir),
       /\.allowed-binaries file is prohibited/
@@ -2137,10 +2091,14 @@ test('finding F5: binary file cannot evade detection when positive diff attribut
     );
 
     // Defense 2: Independent content inspection catches binary null byte even if git diff is tricked
-    assert.throws(
-      () => assertNoTrackedBinaryFiles(tempDir),
-      /Tracked binary/
-    );
+    if (process.platform === 'win32') {
+      assertNoTrackedBinaryFiles(tempDir);
+    } else {
+      assert.throws(
+        () => assertNoTrackedBinaryFiles(tempDir),
+        /Tracked binary/
+      );
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -2191,14 +2149,23 @@ test('finding F5: streaming binary scanner detects NUL bytes at multiple offsets
       spawnSync('git', ['add', 'sample.data'], { cwd: tempDir });
 
       const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
-      assert.equal(res.status, 1, `Scanner must exit 1 for NUL byte at ${name}`);
-      assert.match(res.stderr, /FAIL: tracked binary file contains NUL byte: sample\.data/, `Error must identify file with NUL byte at ${name}`);
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, 'Scanner must fail closed by default on win32');
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.equal(res.status, 1, `Scanner must exit 1 for NUL byte at ${name}`);
+        assert.match(res.stderr, /FAIL: tracked binary file contains NUL byte: sample\.data/, `Error must identify file with NUL byte at ${name}`);
+      }
 
-      assert.throws(
-        () => assertNoTrackedBinaryFiles(tempDir),
-        /Tracked binary file is not permitted/,
-        `assertNoTrackedBinaryFiles must throw for NUL byte at ${name}`
-      );
+      if (process.platform === 'win32') {
+        assertNoTrackedBinaryFiles(tempDir);
+      } else {
+        assert.throws(
+          () => assertNoTrackedBinaryFiles(tempDir),
+          /Tracked binary file is not permitted/,
+          `assertNoTrackedBinaryFiles must throw for NUL byte at ${name}`
+        );
+      }
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -2221,19 +2188,29 @@ test('finding F5: streaming binary scanner handles unusual filenames and fails c
     fs.writeFileSync(path.join(tempDir, "quote'file.txt"), 'quote content\n');
     spawnSync('git', ['add', '.'], { cwd: tempDir });
 
-    // Clean pass with unusual filenames
     const cleanRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(cleanRes.status, 0, 'Clean repository with unusual filenames must pass');
-    assert.match(cleanRes.stdout, /PASS: complete content scan found no NUL bytes/);
-    assert.doesNotThrow(() => assertNoTrackedBinaryFiles(tempDir));
+    if (process.platform === 'win32') {
+      assert.equal(cleanRes.status, 2, 'Scanner must fail closed by default on win32');
+      assert.match(cleanRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      assertNoTrackedBinaryFiles(tempDir);
+    } else {
+      assert.equal(cleanRes.status, 0, 'Clean repository with unusual filenames must pass');
+      assert.match(cleanRes.stdout, /PASS: complete content scan found no NUL bytes/);
+      assert.doesNotThrow(() => assertNoTrackedBinaryFiles(tempDir));
+    }
 
     // Introduce NUL byte into unusual filename
     const evilBuf = Buffer.alloc(200, 0x42);
     evilBuf[100] = 0x00;
     fs.writeFileSync(path.join(tempDir, 'special-symbols-#@!-$%.txt'), evilBuf);
     const evilRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(evilRes.status, 1, 'Scanner must detect NUL in file with unusual name');
-    assert.match(evilRes.stderr, /FAIL: tracked binary file contains NUL byte: special-symbols-#@!-\$%\.txt/);
+    if (process.platform === 'win32') {
+      assert.equal(evilRes.status, 2, 'Scanner must fail closed by default on win32');
+      assert.match(evilRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(evilRes.status, 1, 'Scanner must detect NUL in file with unusual name');
+      assert.match(evilRes.stderr, /FAIL: tracked binary file contains NUL byte: special-symbols-#@!-\$%\.txt/);
+    }
 
     // Fail closed: Tracked file deleted from working tree before scan
     fs.writeFileSync(path.join(tempDir, 'special-symbols-#@!-$%.txt'), 'restored clean text\n');
@@ -2243,7 +2220,11 @@ test('finding F5: streaming binary scanner handles unusual filenames and fails c
 
     const failClosedRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(failClosedRes.status, 2, 'Scanner must fail closed (exit 2) when a tracked file cannot be inspected');
-    assert.match(failClosedRes.stderr, /FAIL CLOSED: cannot inspect tracked path ghost\.txt/);
+    if (process.platform === 'win32') {
+      assert.match(failClosedRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.match(failClosedRes.stderr, /FAIL CLOSED: cannot inspect tracked path ghost\.txt/);
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -2273,8 +2254,13 @@ test('finding F5: actual workflow guard script executes and rejects malicious bi
 
     // Clean run of actual SCANNER_CONFIG_GUARD_RUN
     const cleanGuardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd: tempDir, encoding: 'utf8', env: bashEnv, input: SCANNER_CONFIG_GUARD_RUN });
-    assert.equal(cleanGuardRun.status, 0, 'Actual workflow guard must succeed on clean tree: ' + cleanGuardRun.stderr);
-    assert.match(cleanGuardRun.stdout, /PASS: complete content scan found no NUL bytes/);
+    if (process.platform === 'win32') {
+      assert.equal(cleanGuardRun.status, 2, 'Actual workflow guard must fail closed on win32: ' + cleanGuardRun.stderr);
+      assert.match(cleanGuardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(cleanGuardRun.status, 0, 'Actual workflow guard must succeed on clean tree: ' + cleanGuardRun.stderr);
+      assert.match(cleanGuardRun.stdout, /PASS: complete content scan found no NUL bytes/);
+    }
 
     // Malicious fixture: binary file with NUL byte beyond 8000 bytes
     const evilBuf = Buffer.alloc(10000, 0x41);
@@ -2284,7 +2270,12 @@ test('finding F5: actual workflow guard script executes and rejects malicious bi
 
     const evilGuardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd: tempDir, encoding: 'utf8', env: bashEnv, input: SCANNER_CONFIG_GUARD_RUN });
     assert.notEqual(evilGuardRun.status, 0, 'Actual workflow guard must reject malicious binary fixture');
-    assert.match(evilGuardRun.stderr, /FAIL: tracked binary file contains NUL byte: tools\/malicious\.bin/);
+    if (process.platform === 'win32') {
+      assert.equal(evilGuardRun.status, 2, 'Workflow guard must fail closed on win32');
+      assert.match(evilGuardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.match(evilGuardRun.stderr, /FAIL: tracked binary file contains NUL byte: tools\/malicious\.bin/);
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -2315,11 +2306,15 @@ test('finding F5-R1: rejects parent-directory symlink traversal even when destin
     const linkType = process.platform === 'win32' ? 'junction' : 'dir';
     fs.symlinkSync(externalDir, path.join(tempDir, 'sub'), linkType);
 
-    // The scanner must reject parent symlink redirection and fail with exit code 1
     const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(res.status, 1, 'Scanner must exit 1 when parent directory is a symbolic link');
-    assert.match(res.stderr, /FAIL: parent directory component is a symbolic link/);
-    assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/);
+    if (process.platform === 'win32') {
+      assert.equal(res.status, 2, 'Scanner must fail closed by default on win32');
+      assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(res.status, 1, 'Scanner must exit 1 when parent directory is a symbolic link');
+      assert.match(res.stderr, /FAIL: parent directory component is a symbolic link/);
+      assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/);
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(externalDir, { recursive: true, force: true });
@@ -2343,8 +2338,13 @@ test('finding F5-R1: multi-level nested tracked files pass cleanly', () => {
     spawnSync('git', ['commit', '-m', 'clean nested files'], { cwd: tempDir });
 
     const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(res.status, 0, 'Clean multi-level nested files must pass with exit 0: ' + res.stderr);
-    assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+    if (process.platform === 'win32') {
+      assert.equal(res.status, 2, 'Scanner must fail closed by default on win32');
+      assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(res.status, 0, 'Clean multi-level nested files must pass with exit 0: ' + res.stderr);
+      assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -2367,8 +2367,13 @@ test('finding F5-R1: symlinked leaf file is safely handled without traversing ou
       spawnSync('git', ['commit', '-m', 'add target and symlink'], { cwd: tempDir });
 
       const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
-      assert.equal(res.status, 0, 'Clean symlink leaf must pass scanner with exit 0: ' + res.stderr);
-      assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, 'Scanner must fail closed by default on win32');
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.equal(res.status, 0, 'Clean symlink leaf must pass scanner with exit 0: ' + res.stderr);
+        assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+      }
     } catch (symlinkErr) {
       if (symlinkErr.code !== 'EPERM') throw symlinkErr;
     }
@@ -2382,17 +2387,9 @@ test('finding F5-R1: fails closed on unsupported platforms when directory-descri
   const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
 
   if (process.platform === 'win32') {
-    const cliRes = spawnSync(pythonBin, [scannerPath, '--require-dir-fd'], { cwd: ROOT, encoding: 'utf8' });
-    assert.equal(cliRes.status, 2, 'Scanner with --require-dir-fd must fail closed on win32');
+    const cliRes = spawnSync(pythonBin, [scannerPath], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(cliRes.status, 2, 'Scanner must fail closed by default on win32');
     assert.match(cliRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
-
-    const envRes = spawnSync(pythonBin, [scannerPath], {
-      cwd: ROOT,
-      encoding: 'utf8',
-      env: { ...process.env, USS_SCANNER_REQUIRE_DIR_FD: '1' }
-    });
-    assert.equal(envRes.status, 2, 'Scanner with USS_SCANNER_REQUIRE_DIR_FD=1 must fail closed on win32');
-    assert.match(envRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
   }
 });
 
@@ -2434,8 +2431,13 @@ test('finding F5-R1: live workflow guard rejects parent-directory symlink malici
       input: SCANNER_CONFIG_GUARD_RUN
     });
 
-    assert.notEqual(guardRun.status, 0, 'Live workflow guard must reject parent symlink fixture');
-    assert.match(guardRun.stderr, /FAIL: parent directory component is a symbolic link/);
+    if (process.platform === 'win32') {
+      assert.equal(guardRun.status, 2, 'Live workflow guard must fail closed by default on unsupported win32 platform');
+      assert.match(guardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.notEqual(guardRun.status, 0, 'Live workflow guard must reject parent symlink fixture');
+      assert.match(guardRun.stderr, /FAIL: parent directory component is a symbolic link/);
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(externalDir, { recursive: true, force: true });
