@@ -1364,3 +1364,47 @@ Only genuine P1/P2 findings should trigger another remediation cycle. P3/P4 obse
 - Compared final Gemini branch against PR #9 baseline and compared the OSV-tested code commit against final handoff commit.
 - Confirmed the local-PC evidence and clarified the CodeQL/hosted-CI limitations.
 - No conflicting source code changes made.
+
+---
+
+## 12. ChatGPT A2-03 Checksum Root Path Hardening
+
+**Owner-issued implementation branch:** `chatgpt/checksum-root-symlink-hardening`  
+**Base commit:** `fdd094a25bcb98bd582a2a198a42f297777119ce`  
+**Latest implementation commit:** `627e48f84053894221508e828dba4b30ef6bb2b7`  
+**Scope:** ChatGPT-owned A2-03 checksum tooling and regression tests.  
+**Provenance:** Commits were created through the owner's authenticated GitHub account and are explicitly owner-issued changes, not Gemini or bot-authored commits.
+
+### 12.1 Defect identified
+
+The checksum verifier's Git/filesystem snapshot root was resolved with `path.resolve`, then checked using `fs.statSync(ROOT)`. `stat` follows a symlink at the selected root and any symlinked ancestor. The filesystem-mode walker rejected symlinks below the selected root, but did not reject a symlink used as the selected root itself or an ancestor of it.
+
+This allowed an explicit `--filesystem --root` selection to traverse outside the caller's intended snapshot root through a directory symlink/junction, contrary to the documented rule that filesystem snapshots reject symbolic links.
+
+### 12.2 ChatGPT implementation
+
+Changed only:
+- `tools/checksums.mjs`
+- `tests/checksums.test.mjs`
+
+Added `assertNoSymlinkRootComponents(target)`, which walks every component of the absolute selected root using `fs.lstatSync`, rejecting symbolic links and non-directory components. It is invoked inside the guarded operation before filesystem metadata inspection or file enumeration.
+
+Added an adversarial regression test covering:
+1. A symlink used directly as the selected filesystem root.
+2. A symlinked ancestor leading to an otherwise normal nested snapshot directory.
+3. Expected controlled failure with the diagnostic `Checksum root path traverses a symbolic link`.
+
+### 12.3 Verification status
+
+- GitHub source inspection confirms the implementation and regression test are present on the isolated ChatGPT branch.
+- The change is **IMPLEMENTED NOT VERIFIED**: this session has not executed Node.js tests locally or on the VPS. No test pass is claimed.
+- Gemini is requested to review the owner-issued patch and execute the focused checksum tests plus full repository validation on its authorized local PC, without editing ChatGPT-owned files.
+- ChatGPT must independently inspect Gemini's review and test evidence before marking this A2-03 correction verified.
+
+### 12.4 Boundaries
+
+- No Gemini workflow/scanner files were changed.
+- No Claude evidence-validator files were changed.
+- No main, PR #9, release tag, signature or ruleset was changed.
+- This branch is isolated and has not been merged into the Gemini F5 branch or PR #9.
+
