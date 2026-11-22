@@ -1154,3 +1154,76 @@ F5 remains OPEN until:
 
 This is an owner-issued supervisory handoff update through the authenticated owner connection. It does not approve a merge, release, signing ceremony, or repository policy change.
 
+---
+
+## 12. ChatGPT Supervisory Review of Gemini F5-R1 Completion and Cross-Agent Work Split
+
+**Review date:** 2026-11-22  
+**Gemini branch:** `gemini/d01-d02-f5-f6-remediation`  
+**Reviewed final commit:** `494555e38b57169f2485c0380997503f4f89c7c6`  
+**Prior implementation handoff:** `ca7c7d7170af2da992964c14f0f5e12a2ad28bbf`  
+**Comparison:** 3 commits ahead, 0 behind.
+
+### 12.1 F5-R1 implementation review
+
+ChatGPT independently inspected:
+- `tools/uss-tracked-binary-scanner.py`
+- `.github/workflows/security-scans.yml`
+- `templates/ci/consumer-security-scans.yml`
+- `tools/validate-consumer-workflow.mjs`
+- `tests/workflow-security.test.mjs`
+
+The POSIX path now uses a repository-root directory descriptor and opens each parent component relative to the preceding descriptor with `O_DIRECTORY | O_NOFOLLOW`. It opens the leaf relative to the verified parent and streams all bytes in 1 MiB chunks. This addresses the reproduced parent-directory symlink redirection attack on the Ubuntu workflow runner.
+
+The validator checks that the embedded consumer guard equals the canonical generated guard. The consumer template and first-party workflow contain the new traversal implementation.
+
+**Disposition:** F5-R1 is **IMPLEMENTED AND SOURCE-VERIFIED FOR POSIX WORKFLOW RUNNERS**. The original Linux parent-directory symlink bypass is addressed in source.
+
+### 12.2 Remaining platform limitation
+
+The scanner retains a Windows/non-POSIX fallback that checks parent components with `lstat` and then opens by path. This detects a symlink already present but cannot provide the same race-resistant guarantee against concurrent parent-directory substitution. The strict `--require-dir-fd` / `USS_SCANNER_REQUIRE_DIR_FD=1` option is opt-in, not the default.
+
+The security workflows and consumer validator pin scanner jobs to `ubuntu-latest`, so this fallback is not used by the approved production workflow path. However, a local Windows invocation can still print PASS after using the weaker fallback.
+
+**Required disposition:** Either (a) make unsupported platforms fail closed by default and reserve the weaker fallback for an explicitly named diagnostic-only mode, or (b) implement and test a genuinely race-resistant Windows handle-relative traversal. Do not describe the Windows fallback as equivalent to POSIX descriptor traversal. This is an open cross-platform assurance limitation, not a reproduced bypass against the current Ubuntu workflow runner.
+
+### 12.3 Verification evidence and limitations
+
+Gemini's report states:
+- Windows focused workflow tests: 100 passed, 0 failed, 1 skipped.
+- Linux VPS focused workflow tests: 101 passed, 0 failed, 0 skipped.
+- Windows full suite: 228 passed, 0 failed, 1 skipped.
+- Linux VPS full suite: 229 passed, 0 failed, 0 skipped.
+- Repository and evidence validation passed.
+- Generator drift checks reported zero drift.
+- Semgrep 1.186.0: zero findings across 28 files.
+- Gitleaks 8.21.2: zero leaks across 505 commits.
+- OSV-Scanner 1.9.2: no vulnerabilities.
+
+These are implementation-reported local-PC/VPS results. ChatGPT inspected the source and commit metadata but did not re-execute the full suite or scanner commands in this session.
+
+GitHub Actions workflow runs and combined status checks returned no entries for commit `494555e`. Hosted CI is therefore **NOT VERIFIED**. PR #9 remains open and its head remains unchanged at `80754305a9c9ee5d9848b1da17274f9e0cfc39ee`; no merge or release is approved.
+
+### 12.4 ChatGPT A2-03 engineering contribution
+
+ChatGPT has separately implemented an A2-03 checksum-root hardening patch on branch `chatgpt/checksum-root-symlink-hardening`, based on its own checksum branch head `fdd094a25bcb98bd582a2a198a42f297777119ce`.
+
+Owner-issued implementation commits:
+- `ef9035e3211fc754f95242d32601177693c62da5`: add root and ancestor symlink component validation in `tools/checksums.mjs`.
+- `627e48f84053894221508e828dba4b30ef6bb2b7`: add adversarial tests for direct symlink root and symlinked ancestor.
+- `789dbd1a30bc27ba8a37df2cd8786f3de30463db`: fixture string cleanup.
+
+The handoff update on that isolated branch is owner-issued commit `ceea35c50ba874a7c44d374efb6157836c9f546d`.
+
+This A2-03 patch is **IMPLEMENTED NOT VERIFIED**. ChatGPT has inspected the remote source but has not executed the Node.js tests. Gemini is requested to review the patch and run the focused checksum tests and full validation on its authorized local PC. Gemini must not edit ChatGPT-owned checksum files; return review findings and exact command output to ChatGPT.
+
+### 12.5 Next actions and ownership split
+
+1. **Gemini A2-02/A2-07:** Decide and implement the Windows unsupported-platform fail-closed default or provide a tested Windows handle-relative equivalent. Update workflow/template/validator/tests only within Gemini's ownership. Continue to report exact test and scanner evidence.
+2. **Gemini review request:** Independently review ChatGPT's A2-03 root-symlink patch on `chatgpt/checksum-root-symlink-hardening`. Do not modify its files. Run `node --test tests/checksums.test.mjs`, `npm test`, repository/evidence validation and report exact outputs.
+3. **ChatGPT A2-03:** Inspect Gemini's review, reproduce any defects, and make any necessary corrections itself.
+4. **ChatGPT supervisory:** Reconcile branch heads and handoffs after each workstream. Do not combine branches by assumption; compare exact commits and changed files first.
+5. No agent may merge PR #9, modify `main`, sign a release, change rulesets or deploy without explicit owner authorization.
+
+This section records a supervisory source review and work allocation. It does not certify hosted CI, complete cross-platform scanner assurance, approve a merge, or authorize a release.
+
