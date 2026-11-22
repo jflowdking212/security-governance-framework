@@ -158,7 +158,7 @@ jobs:
                           try:
                               leaf_stat = os.stat(leaf, dir_fd=cur_fd, follow_symlinks=False)
                           except OSError as exc:
-                              print(f"FAIL CLOSED: cannot stat tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)
+                              print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)
                               sys.exit(2)
 
                           if stat.S_ISLNK(leaf_stat.st_mode):
@@ -442,7 +442,7 @@ jobs:
                           try:
                               leaf_stat = os.stat(leaf, dir_fd=cur_fd, follow_symlinks=False)
                           except OSError as exc:
-                              print(f"FAIL CLOSED: cannot stat tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)
+                              print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)
                               sys.exit(2)
 
                           if stat.S_ISLNK(leaf_stat.st_mode):

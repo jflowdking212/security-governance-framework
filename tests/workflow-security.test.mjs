@@ -167,7 +167,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '                try:',
     '                    leaf_stat = os.stat(leaf, dir_fd=cur_fd, follow_symlinks=False)',
     '                except OSError as exc:',
-    '                    print(f"FAIL CLOSED: cannot stat tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '                    print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
     '                    sys.exit(2)',
     '',
     '                if stat.S_ISLNK(leaf_stat.st_mode):',
@@ -1446,7 +1446,7 @@ test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-s
   runGit(['add', '-f', 'tools/guard.js']);
   runGit(['commit', '-m', 'scanner guard fixture']);
 
-  const ignored = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  const ignored = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
   assert.notEqual(ignored.status, 0, 'Guard must reject a tracked scanner target hidden by .gitignore');
   assert.match(ignored.stderr, /excluded by \.gitignore/);
 
@@ -1454,13 +1454,16 @@ test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-s
   runGit(['add', '.gitignore']);
   runGit(['commit', '-m', 'remove ignored target pattern']);
   fs.writeFileSync(path.join(cwd, 'tools', '.semgrepignore'), 'sensitive-source/\n');
-  const nested = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  const nested = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
   assert.notEqual(nested.status, 0, 'Guard must reject nested .semgrepignore files');
   assert.match(nested.stderr, /Nested \.semgrepignore is not permitted/);
 
   fs.rmSync(path.join(cwd, 'tools', '.semgrepignore'));
+  const cleanRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.equal(cleanRun.status, 0, 'Guard must pass on clean repository: ' + cleanRun.stderr);
+
   fs.writeFileSync(path.join(cwd, 'osv-scanner.toml'), '[[IgnoredVulns]]\nid = "GO-2023-1234"\n');
-  const osvOverride = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  const osvOverride = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
   assert.notEqual(osvOverride.status, 0, 'Guard must reject osv-scanner.toml');
   assert.match(osvOverride.stderr, /Unreviewed scanner override is not permitted: osv-scanner\.toml/);
 
@@ -1468,22 +1471,23 @@ test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-s
   fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "secret"; // ' + ['gitleaks', 'allow'].join(':') + '\n');
   runGit(['add', 'tools/secret.js']);
   runGit(['commit', '-m', 'add secret with suppression']);
-  const gitleaksSuppressed = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  const gitleaksSuppressed = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
   assert.notEqual(gitleaksSuppressed.status, 0, 'Guard must reject inline suppression');
   assert.match(gitleaksSuppressed.stderr, /Prohibited Gitleaks inline suppression directive/);
 
   fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "secret"; // ' + ['GITLEAKS', ' ALLOW'].join(' : ') + '\n');
   runGit(['add', 'tools/secret.js']);
   runGit(['commit', '-m', 'add whitespace suppression']);
-  const whitespaceSuppressed = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
+  const whitespaceSuppressed = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
   assert.notEqual(whitespaceSuppressed.status, 0, 'Guard must reject whitespace/case variant suppression');
   assert.match(whitespaceSuppressed.stderr, /Prohibited Gitleaks inline suppression directive/);
 
   fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "safe";\n');
   runGit(['add', 'tools/secret.js']);
   runGit(['commit', '-m', 'clean code']);
-  const cleanRun = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd, encoding: 'utf8' });
-  assert.equal(cleanRun.status, 0, 'Guard must pass on clean repository: ' + cleanRun.stderr);
+  const historicalRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.notEqual(historicalRun.status, 0, 'Guard must reject repository with historical suppression');
+  assert.match(historicalRun.stderr, /Prohibited Gitleaks inline suppression directive found in Git history/);
 });
 
 test('negative: rejects Semgrep scan omitting --disable-nosem', () => {
