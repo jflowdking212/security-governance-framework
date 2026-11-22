@@ -1227,3 +1227,53 @@ This A2-03 patch is **IMPLEMENTED NOT VERIFIED**. ChatGPT has inspected the remo
 
 This section records a supervisory source review and work allocation. It does not certify hosted CI, complete cross-platform scanner assurance, approve a merge, or authorize a release.
 
+---
+
+## 14. ChatGPT Supervisory Acceptance of Gemini Windows Fail-Closed and Cross-Branch Checksum Verification
+
+**Date:** 2026-11-22  
+**Gemini implementation commit:** `12d252a0054e6e8c7b6a2e71a00d27cf9fcb24e3`  
+**ChatGPT checksum correction commit tested:** `9b54ccc20321ea1f9cab31f639c3e9d6721578bf`
+
+### 14.1 Gemini Windows scanner correction
+
+ChatGPT reconciled the exact Gemini commit with the live branch. The commit is two commits ahead of prior F5-R1 commit `494555e38b57169f2485c0380997503f4f89c7c6`, zero behind, and changes exactly:
+- `.github/workflows/security-scans.yml`
+- `templates/ci/consumer-security-scans.yml`
+- `tests/workflow-security.test.mjs`
+- `tools/uss-tracked-binary-scanner.py`
+- `tools/validate-consumer-workflow.mjs`
+- `coordination/agent-handoff.md`
+
+Source inspection confirms the standalone scanner now exits 2 before scanning when secure directory-descriptor support is unavailable. The previous path-based `lstat` fallback is absent from the standalone scanner and consumer template. The consumer template contains the same fail-closed gate. The reported tests exercise Windows default fail-closed behavior.
+
+**Disposition:** IMPLEMENTED AND SOURCE-VERIFIED. Local Windows/Linux test evidence is accepted as implementation-reported and cross-reviewed. Hosted GitHub Actions has not been demonstrated; no hosted CI pass is claimed.
+
+### 14.2 Gemini's cross-review of ChatGPT checksum patch
+
+Gemini reports executing the exact ChatGPT branch commit `9b54ccc20321ea1f9cab31f639c3e9d6721578bf` in isolated Windows and Linux worktrees without modifying ChatGPT-owned files.
+
+Reported Windows results:
+- `node --test tests/checksums.test.mjs`: 24 passed, 0 failed, 2 skipped, exit 0.
+- `npm test`: 178 passed, 0 failed, 3 skipped, exit 0.
+- `node tools/validate.mjs`: pass, exit 0.
+- `node --test tests/evidence.test.mjs`: 30 passed, exit 0.
+- Module/index/bundle build commands: exit 0, clean working tree, zero drift.
+
+Reported Linux VPS results:
+- `node --test tests/checksums.test.mjs`: 26 passed, 0 failed, 0 skipped, exit 0.
+- `npm test`: 181 passed, 0 failed, 0 skipped, exit 0.
+- `node tools/validate.mjs`: pass, exit 0.
+- `node --test tests/evidence.test.mjs`: 30 passed, exit 0.
+- Working tree clean, zero drift reported.
+
+**Disposition:** The two regression-test corrections are ACCEPTED AND VERIFIED BY GEMINI'S CROSS-ENVIRONMENT EXECUTION REPORT. ChatGPT did not personally execute these commands in this session. Counts are specific to the ChatGPT checksum branch and must not be conflated with the larger Gemini branch suite counts.
+
+### 14.3 Remaining A2-03 assurance issue
+
+The checksum helper `assertNoSymlinkRootComponents()` still performs sequential path-based `lstatSync` calls. It rejects static symlink components but does not pin directory handles and therefore does not establish race-resistant protection against concurrent replacement of an already-checked ancestor. This is OPEN for independent adversarial assessment and remediation or explicit risk bounding.
+
+### 14.4 Next step
+
+Claude is to perform a read-only independent adversarial audit of the exact Gemini and ChatGPT branch commits separately, with special attention to checksum root TOCTOU, scanner guard parity, validator enforcement, and whether the two branches can be integrated without overwriting ownership boundaries. No merge, release, signing, ruleset change or deployment is authorized.
+
