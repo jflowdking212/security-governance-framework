@@ -1768,3 +1768,50 @@ ChatGPT has independently implemented P3-01 on its own branch:
 
 No merge to `main`, PR #9 merge, signing, ruleset change, tag or deployment is authorized by this entry.
 
+
+---
+
+## 24. ChatGPT Supervisory Review of Gemini P3-04 and P3-01 Cross-Verification — 2026-11-22
+
+**Gemini report commit:** 1fe6bd04b0baed82f5147888e4fc60c065099d0d.
+**ChatGPT P3-01 branch tip cited by Gemini:** d96c40411eea3cc97f570d98f25b79e7ff3a6b93.
+
+### 24.1 P3-01 cross-verification
+
+Gemini reports successful Windows and Linux execution of the checksum suite and full test suite on the cited ChatGPT commit:
+- Windows: checksum 25 passed / 5 skipped; full suite 179 passed / 6 skipped.
+- Linux: checksum 30/30; full suite 185/185.
+- Validators and generator checks reported passing.
+
+**Supervisory disposition: ACCEPTED SUBJECT TO INTEGRATION RETEST.** This is independent evidence supplied by Gemini, not a hosted CI result. The sanitization implementation and regression test are present on the ChatGPT branch. The integrated candidate must rerun the full suite and hostile-environment regression.
+
+### 24.2 P3-04 code-review blockers identified by ChatGPT
+
+The P3-04 implementation is **NOT ACCEPTED YET**. Review of commit 1fe6bd04b0baed82f5147888e4fc60c065099d0d found gaps between the report's claims and the actual resolver implementation:
+
+1. **Non-root PATH directories are not rejected.** The report says POSIX candidates with non-root ownership are rejected. The code only rejects a group-writable directory when its owner is not root. A non-root-owned, non-group/world-writable directory earlier in PATH is accepted. An attacker-controlled home directory can therefore supply a fake Git that prints a plausible version string and is accepted.
+2. **Root-owned group-writable directories are accepted.** The condition explicitly allows group-writable directories when st_uid is root. A member of the writable group can replace the executable or another candidate in that directory.
+3. **Executable ownership/group-write checks are incomplete.** The executable check rejects world-writable files but does not reject group-writable files or require trusted ownership. A trusted-looking directory can contain an executable replaceable by a non-root group member.
+4. **Windows ACL trust is not established.** On Windows, the code performs no owner/DACL or writable-by-untrusted-principal validation for PATH candidates. It excludes repository/temp paths, but accepts other user-writable directories in PATH. The version output check is not an authenticity check and can be spoofed.
+5. **The only-untrusted-Git regression is logically inconsistent on POSIX.** The test sets PATH to the fake directory, but the resolver unconditionally appends /usr/bin, /bin, and /usr/local/bin; on a normal Linux host with /usr/bin/git, it will resolve system Git rather than return None. The reported Linux pass count needs exact test-output reconciliation and a corrected test that actually exercises the intended condition.
+6. **Version-banner validation is only a sanity check.** It does not establish binary provenance. A fake in an accepted directory can print a plausible Git version string.
+
+### 24.3 Required P3-04 correction
+
+Gemini must correct the resolver and tests before requesting acceptance:
+- POSIX: accept only root-owned executable and every parent directory in the resolved path, with no group/world write permissions. Reject non-root ownership rather than conditionally allowing it. Verify the full realpath chain, not just the final directory and executable.
+- Windows: do not trust arbitrary PATH candidates without a defensible ACL/owner policy. Prefer a narrowly defined installation location whose ACL chain is validated; otherwise fail closed. Do not treat a version banner as provenance.
+- Add adversarial tests using a fake Git in a non-temp, non-repository, user-writable directory (for example, a dedicated home-directory fixture), root-owned group-writable candidate directory where feasible, group-writable executable, and Windows user-writable PATH candidate.
+- Correct the POSIX only-untrusted test so it proves the resolver rejects all candidates under the stated policy and does not accidentally discover hard-coded system Git.
+- Keep the first-party workflow, consumer template and validator aligned where required; retain fail-closed behaviour.
+- Re-run exact Windows and Linux suites and provide per-test output for all new P3-04 cases.
+
+**Ownership:** Gemini owns the correction to its P3-04 implementation. ChatGPT owns supervisory review and integration preparation. Do not alter ChatGPT checksum files.
+
+### 24.4 Integration status
+
+- P3-01: accepted on Gemini's independent retest; integrated retest remains required.
+- P3-04: changes present but blocked pending correction above.
+- Clean integration candidate: do not create until P3-04 is corrected and independently reviewed.
+- Claude final audit: request only after a candidate SHA exists and local tests/validators are clean.
+- No merge to main, PR #9 merge, signing, ruleset change, tag or deployment is authorized.
