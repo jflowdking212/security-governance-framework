@@ -67,6 +67,15 @@ A repository cannot authenticate its own trust instructions merely by storing th
 
 The bootstrap instruction itself must be supplied by the consuming project's trusted configuration or the operator, not inferred solely from this repository's own files.
 
+
+## Checksum filesystem race boundary
+
+The checksum tool uses handle-relative filesystem access on Linux. It opens the selected root and each directory component with directory descriptors and no-follow semantics, then reads and writes entries relative to those held descriptors. Regular files are opened with no-follow semantics, checked through the opened descriptor, read through that descriptor, and checked again against the directory entry before the digest is accepted. This prevents a concurrent replacement of the selected root's ancestor path or a leaf symlink swap from redirecting the operation outside the directory that was opened.
+
+This is not a filesystem snapshot. The selected root and its contents must not be writable by untrusted principals while checksum creation or verification is running. An actor able to modify regular files inside the already-open directory can still race content changes; the tool detects ordinary metadata changes during a read, but callers must provide a quiescent, trusted release tree.
+
+On non-Linux platforms, Node.js does not expose the same portable handle-relative traversal used by this implementation. The tool retains path-based symlink checks there, which are not race-resistant against concurrent ancestor or leaf replacement. On those platforms, checksum operations are supported only when the selected root, every ancestor directory, and the release contents are controlled by trusted principals and cannot be renamed, replaced, or modified by untrusted principals for the duration of the operation. Do not use a shared or attacker-writable directory as the checksum root on non-Linux systems. Do not describe non-Linux path checks as race-resistant.
+
 ## Checksum manifest
 
 `SHA256SUMS` is a deterministic SHA-256 manifest for all Git-tracked release files except `SHA256SUMS` itself and its detached signature `SHA256SUMS.sig`. Generate it from the exact release candidate commit, then sign it on the owner's trusted workstation:
