@@ -78,7 +78,17 @@ function openParentAtRoot(rel) {
   let owned=false;
   try {
     for(const part of parts.slice(0,-1)) {
-      const next=openDirectoryChild(fd,part);
+      let next;
+      try {
+        next=openDirectoryChild(fd,part);
+      } catch(error) {
+        // Keep the descriptor-relative traversal fail-closed, but report
+        // symlink/non-directory parents consistently on every platform.
+        if(error.code==='ELOOP'||error.code==='ENOTDIR') {
+          throw new Error('Path traverses a non-directory or symbolic-link parent: '+rel);
+        }
+        throw error;
+      }
       if(owned)fs.closeSync(fd);
       fd=next;
       owned=true;
