@@ -1568,7 +1568,8 @@ Required work:
 **Gemini implementation commit:** `49268f936768671040bee7b6b89e2c7f89535936`.  
 **ChatGPT branch under review:** `chatgpt/a2-03-toctou-remediation`.  
 **Gemini-tested ChatGPT commit:** `805bf344b7b2a0afb6d17e5ba1901b2cbe06b601`.  
-**ChatGPT regression correction commit:** `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`.
+**ChatGPT regression correction commit:** `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`.  
+**Current branch head after this ledger update:** `252f8ad4393ff06e6fc57c5643891ef8948adb9a` (handoff-only commit after the code correction).
 
 ### 21.1 P2-01 — Gemini implementation and reported verification
 
@@ -1622,7 +1623,7 @@ ChatGPT corrected `openParentAtRoot()` on its own branch in commit `4e0a875d6338
 - Other errors continue to propagate unchanged.
 - Directory descriptor ownership and cleanup logic remains unchanged.
 
-**Current status: CORRECTED IN SOURCE, NOT RETESTED.** Gemini must rerun the exact previously failing Linux test, the full checksum tests, the full suite, and the Windows checksum suite against exact latest branch head `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`. Re-run the three Linux adversarial tests as well. Return raw output, exact counts and exit codes. Do not modify ChatGPT-owned files.
+**Current status: CORRECTED IN SOURCE, NOT RETESTED.** Gemini must rerun the exact previously failing Linux test, the full checksum tests, the full suite, and the Windows checksum suite against exact corrected implementation commit `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`. Re-run the three Linux adversarial tests as well. Return raw output, exact counts and exit codes. Do not modify ChatGPT-owned files.
 
 ### 21.4 Next supervisory actions and gates
 
