@@ -42,6 +42,25 @@ function assertFilesystemRootHasNoGitMetadata() {
   const gitEntry=fs.readdirSync(ROOT).find(name=>name.toLowerCase()==='.git');
   if(gitEntry)throw new Error('Root .git metadata is not allowed in filesystem mode: '+gitEntry);
 }
+
+// Reject symlinks in every component of the selected checksum root. Checking
+// only files beneath ROOT is insufficient because --root itself may resolve
+// through a symlink (including a symlinked ancestor) into an external tree.
+function assertNoSymlinkRootComponents(target) {
+  const parsed=path.parse(target);
+  let current=parsed.root;
+  const components=target.slice(parsed.root.length).split(path.sep).filter(Boolean);
+  for(const component of components) {
+    current=path.join(current,component);
+    const componentStat=fs.lstatSync(current);
+    if(componentStat.isSymbolicLink()) {
+      throw new Error('Checksum root path traverses a symbolic link: '+current);
+    }
+    if(!componentStat.isDirectory()) {
+      throw new Error('Checksum root path component is not a directory: '+current);
+    }
+  }
+}
 // Filesystem mode deliberately avoids invoking Git at all. In particular, do
 // not let an untrusted snapshot's Git configuration influence verification.
 const gitRootResult=FILESYSTEM?null:gitAt(START,['rev-parse','--show-toplevel']);
@@ -290,6 +309,7 @@ function verifyManifest() {
 try {
   // Keep this inside the guarded operation so hostile .git metadata produces
   // a controlled diagnostic rather than an uncaught exception and stack trace.
+  assertNoSymlinkRootComponents(ROOT);
   assertFilesystemRootHasNoGitMetadata();
   if(command==='create')createManifest();
   else if(command==='verify')verifyManifest();
