@@ -126,8 +126,8 @@ test('adversarial: filesystem checksum mode rejects a symlinked root and symlink
   t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   t.after(()=>fs.rmSync(external,{recursive:true,force:true}));
   fs.mkdirSync(path.join(external,'subdir'),{recursive:true});
-  fs.writeFileSync(path.join(external,'README.md'),'external snapshot root\\n');
-  fs.writeFileSync(path.join(external,'subdir','README.md'),'external nested snapshot root\\n');
+  fs.writeFileSync(path.join(external,'README.md'),'external snapshot root\n');
+  fs.writeFileSync(path.join(external,'subdir','README.md'),'external nested snapshot root\n');
 
   const linkType=process.platform==='win32'?'junction':'dir';
   try {
