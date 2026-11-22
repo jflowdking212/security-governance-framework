@@ -30,6 +30,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          while IFS= read -r var_line; do
+            case "$var_line" in
+              GIT_*) unset "${var_line%%=*}" ;;
+            esac
+          done < <(env)
           git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
           for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do
             if [ -e "$file" ]; then
@@ -99,6 +104,8 @@ jobs:
               )
               sys.exit(2)
 
+          clean_git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
           try:
               result = subprocess.run(
                   ["git", "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],
@@ -106,6 +113,7 @@ jobs:
                   stdout=subprocess.PIPE,
                   stderr=subprocess.PIPE,
                   check=True,
+                  **{"env": clean_git_env},
               )
           except (OSError, subprocess.CalledProcessError) as exc:
               detail = getattr(exc, "stderr", b"")
@@ -255,6 +263,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          while IFS= read -r var_line; do
+            case "$var_line" in
+              GIT_*) unset "${var_line%%=*}" ;;
+            esac
+          done < <(env)
           git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
           for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do
             if [ -e "$file" ]; then
@@ -324,6 +337,8 @@ jobs:
               )
               sys.exit(2)
 
+          clean_git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
           try:
               result = subprocess.run(
                   ["git", "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],
@@ -331,6 +346,7 @@ jobs:
                   stdout=subprocess.PIPE,
                   stderr=subprocess.PIPE,
                   check=True,
+                  **{"env": clean_git_env},
               )
           except (OSError, subprocess.CalledProcessError) as exc:
               detail = getattr(exc, "stderr", b"")

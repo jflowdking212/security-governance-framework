@@ -39,6 +39,11 @@ const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(
 function buildScannerConfigGuard(targetSpec, emptyMessage) {
   return [
     'set -euo pipefail',
+    'while IFS= read -r var_line; do',
+    '  case "$var_line" in',
+    '    GIT_*) unset "${var_line%%=*}" ;;',
+    '  esac',
+    'done < <(env)',
     'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
     'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do',
     '  if [ -e "$file" ]; then',
@@ -108,6 +113,8 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '    )',
     '    sys.exit(2)',
     '',
+    'clean_git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}',
+    '',
     'try:',
     '    result = subprocess.run(',
     '        ["git", "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],',
@@ -115,6 +122,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '        stdout=subprocess.PIPE,',
     '        stderr=subprocess.PIPE,',
     '        check=True,',
+    '        **{"env": clean_git_env},',
     '    )',
     'except (OSError, subprocess.CalledProcessError) as exc:',
     '    detail = getattr(exc, "stderr", b"")',
@@ -355,6 +363,12 @@ const FORBIDDEN_ENV_NAMES = new Set([
   'PATH',
   'NPM_CONFIG_IGNORE_SCRIPTS',
   'NODE_TLS_REJECT_UNAUTHORIZED',
+  'GIT_DIR',
+  'GIT_INDEX_FILE',
+  'GIT_WORK_TREE',
+  'GIT_EXEC_PATH',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_SSH_COMMAND',
   'GIT_CONFIG_COUNT',
   'NODE_OPTIONS',
   'NODE_PATH',
@@ -377,7 +391,7 @@ function assertSafeEnv(env, context, allowedKeys = null) {
   assert.ok(typeof env === 'object' && !Array.isArray(env), context + ' env must be an object');
   for (const [name, value] of Object.entries(env)) {
     const upper = name.toUpperCase();
-    if (FORBIDDEN_ENV_NAMES.has(upper) || upper.startsWith('NPM_CONFIG_') || upper.startsWith('GIT_CONFIG_')) {
+    if (FORBIDDEN_ENV_NAMES.has(upper) || upper.startsWith('NPM_CONFIG_') || upper.startsWith('GIT_')) {
       assert.fail(context + " must not define forbidden runtime environment variable '" + name + "'");
     }
     assert.equal(typeof value, 'string', context + ' env ' + name + ' must be a string');
@@ -680,7 +694,7 @@ function validateWorkflowSecurity(parsed, label) {
         if (/\bNODE_OPTIONS\s*=/i.test(step.run)) {
           assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not set NODE_OPTIONS: ' + step.run);
         }
-        if (/(?:^|\s|;)(?:BASH_ENV|PATH|NPM_CONFIG_[A-Z_]+|NODE_PATH|NODE_TLS_REJECT_UNAUTHORIZED|GIT_CONFIG_[A-Z0-9_]+|LD_PRELOAD|LD_LIBRARY_PATH|PYTHONPATH|NODE_EXTRA_CA_CERTS|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|PERL5LIB|RUBYOPT|SHELLOPTS|BASHOPTS|ENV)\s*=|(?<!while\s+)(?:^|\s|;)IFS\s*=(?!\s*read\b)/i.test(step.run)) {
+        if (/(?:^|\s|;)(?:BASH_ENV|PATH|NPM_CONFIG_[A-Z_]+|NODE_PATH|NODE_TLS_REJECT_UNAUTHORIZED|GIT_[A-Z0-9_]+|LD_PRELOAD|LD_LIBRARY_PATH|PYTHONPATH|NODE_EXTRA_CA_CERTS|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|PERL5LIB|RUBYOPT|SHELLOPTS|BASHOPTS|ENV)\s*=|(?<!while\s+)(?:^|\s|;)IFS\s*=(?!\s*read\b)/i.test(step.run)) {
           assert.fail(label + ' job ' + jobId + ' step ' + i + ' assigns to dangerous environment variable: ' + step.run);
         }
         for (const pattern of FORBIDDEN_ERROR_SUPPRESSIONS) {
@@ -1996,6 +2010,13 @@ test('finding F3: rejects pipeline failure masking in uss-validation and consume
 // Supervisory Finding F4: Comprehensive Sensitive Execution Environment Protection
 test('finding F4: rejects all execution-sensitive environment variables across workflows', () => {
   const sensitiveVars = [
+    'GIT_DIR',
+    'GIT_INDEX_FILE',
+    'GIT_WORK_TREE',
+    'GIT_EXEC_PATH',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_SSH_COMMAND',
+    'GIT_CONFIG_COUNT',
     'LD_PRELOAD',
     'LD_LIBRARY_PATH',
     'NODE_EXTRA_CA_CERTS',
@@ -2441,6 +2462,137 @@ test('finding F5-R1: live workflow guard rejects parent-directory symlink malici
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(externalDir, { recursive: true, force: true });
+  }
+});
+
+// Supervisory Finding P2-01: GIT Environment Poisoning Prevention
+test('finding P2-01: scanner rejects GIT environment poisoning and detects tracked NUL byte regardless of injected variables', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p201-target-'));
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p201-empty-'));
+
+  try {
+    // 1. Target repository has tracked binary file with NUL byte
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'P2-01 Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'p201@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(tempDir, 'malicious.bin'), Buffer.from([0x48, 0x65, 0x00, 0x6c, 0x6f])); // "He\0lo"
+    spawnSync('git', ['add', 'malicious.bin'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'tracked malicious binary'], { cwd: tempDir });
+
+    // 2. Empty external repository with clean text file
+    spawnSync('git', ['init', '-q'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'user.name', 'Clean User'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'user.email', 'clean@example.com'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: emptyDir });
+    fs.writeFileSync(path.join(emptyDir, 'clean.txt'), 'clean content\n');
+    spawnSync('git', ['add', 'clean.txt'], { cwd: emptyDir });
+    spawnSync('git', ['commit', '-m', 'clean tree'], { cwd: emptyDir });
+
+    // Variables identified by Claude
+    const attackVectors = [
+      { name: 'GIT_DIR pointing to empty repository', env: { GIT_DIR: path.join(emptyDir, '.git') } },
+      { name: 'GIT_INDEX_FILE pointing to external index', env: { GIT_INDEX_FILE: path.join(emptyDir, '.git', 'index') } },
+      { name: 'GIT_WORK_TREE pointing to external directory', env: { GIT_WORK_TREE: emptyDir } },
+      { name: 'GIT_EXEC_PATH pointing to invalid path', env: { GIT_EXEC_PATH: path.join(emptyDir, 'fake-bin') } },
+      { name: 'GIT_OBJECT_DIRECTORY pointing to external objects', env: { GIT_OBJECT_DIRECTORY: path.join(emptyDir, '.git', 'objects') } },
+      { name: 'GIT_SSH_COMMAND pointing to failing command', env: { GIT_SSH_COMMAND: 'exit 1' } },
+      {
+        name: 'Combined GIT_* variables injected simultaneously',
+        env: {
+          GIT_DIR: path.join(emptyDir, '.git'),
+          GIT_INDEX_FILE: path.join(emptyDir, '.git', 'index'),
+          GIT_WORK_TREE: emptyDir,
+          GIT_EXEC_PATH: path.join(emptyDir, 'fake-bin'),
+          GIT_OBJECT_DIRECTORY: path.join(emptyDir, '.git', 'objects'),
+          GIT_SSH_COMMAND: 'exit 1',
+          GIT_CONFIG_COUNT: '1'
+        }
+      }
+    ];
+
+    for (const { name, env: injectedEnv } of attackVectors) {
+      const runEnv = { ...process.env, ...injectedEnv };
+      const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, env: runEnv, encoding: 'utf8' });
+
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, `Scanner must fail closed on win32 under ${name}`);
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.equal(res.status, 1, `Scanner must reject binary file despite injected ${name}`);
+        assert.match(res.stderr, /FAIL: tracked binary file contains NUL byte: malicious\.bin/, `Diagnostic must identify binary file under ${name}`);
+        assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/, `Scanner must not report PASS under ${name}`);
+      }
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(emptyDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P2-01: live workflow guard unsets inherited GIT_* variables and rejects malicious binary fixture', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p201-guard-'));
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p201-guard-empty-'));
+
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Guard P201 User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'guard-p201@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+      fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(tempDir, 'tools/clean.txt'), 'clean content\n');
+    fs.writeFileSync(path.join(tempDir, 'tests/check.mjs'), 'const ok = true;\n');
+    fs.writeFileSync(path.join(tempDir, '.github/workflows/test.yml'), 'name: test\n');
+    fs.writeFileSync(path.join(tempDir, 'templates/test.yml'), 'name: test\n');
+
+    // Introduce malicious binary file
+    fs.writeFileSync(path.join(tempDir, 'tools/malicious.bin'), Buffer.from('exploit\0content'));
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean tree plus malicious binary'], { cwd: tempDir });
+
+    // Empty repo to attempt redirection
+    spawnSync('git', ['init', '-q'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'user.name', 'Clean User'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'user.email', 'clean@example.com'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: emptyDir });
+    fs.writeFileSync(path.join(emptyDir, 'clean.txt'), 'clean\n');
+    spawnSync('git', ['add', '.'], { cwd: emptyDir });
+    spawnSync('git', ['commit', '-m', 'clean'], { cwd: emptyDir });
+
+    const bashEnv = {
+      ...process.env,
+      GIT_DIR: path.join(emptyDir, '.git'),
+      GIT_WORK_TREE: emptyDir,
+      GIT_INDEX_FILE: path.join(emptyDir, '.git', 'index'),
+      GIT_OBJECT_DIRECTORY: path.join(emptyDir, '.git', 'objects'),
+      ...(process.platform === 'win32'
+        ? { PATH: 'C:\\Program Files\\Git\\usr\\bin;C:\\Users\\HP\\AppData\\Roaming\\Python\\Python314\\Scripts;' + (process.env.PATH || '') }
+        : {})
+    };
+
+    const guardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], {
+      cwd: tempDir,
+      encoding: 'utf8',
+      env: bashEnv,
+      input: SCANNER_CONFIG_GUARD_RUN
+    });
+
+    if (process.platform === 'win32') {
+      assert.equal(guardRun.status, 2, 'Live workflow guard must fail closed by default on unsupported win32 platform');
+      assert.match(guardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.notEqual(guardRun.status, 0, 'Live workflow guard must reject malicious fixture despite poisoned GIT_* env');
+      assert.match(guardRun.stderr, /FAIL: tracked binary file contains NUL byte: tools\/malicious\.bin/);
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(emptyDir, { recursive: true, force: true });
   }
 });
 

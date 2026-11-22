@@ -28,6 +28,8 @@ if not SECURE_DIR_FD:
     )
     sys.exit(2)
 
+clean_git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
 try:
     result = subprocess.run(
         ["git", "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],
@@ -35,6 +37,7 @@ try:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=True,
+        **{"env": clean_git_env},
     )
 except (OSError, subprocess.CalledProcessError) as exc:
     detail = getattr(exc, "stderr", b"")
