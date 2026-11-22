@@ -1671,17 +1671,17 @@ Gemini's independent retest report states:
 **Mode:** Read-only audit of candidate implementation; scratch worktrees may be used for test execution and merge rehearsal.  
 **No authorization:** Do not merge to `main`, modify PR #9, deploy, sign releases, change rulesets, or edit either implementation branch.
 
-Once ChatGPT supplies the exact staged integration-candidate branch and SHA, Claude must:
+Before ChatGPT creates the staged candidate, Claude must perform an isolated scratch merge rehearsal using the exact branch tips below. The branches diverged from common base `80754305a9c9ee5d9848b1da17274f9e0cfc39ee`; compare reports 41 commits on ChatGPT's side and 16 on Gemini's side. Shared changed files include `CONSUMING.md` and `coordination/agent-handoff.md`; implementation-owned code/test files are otherwise distinct. Resolve conflicts only in the disposable scratch worktree and report a proposed resolution. Do not push or create a candidate branch. After the rehearsal, Claude must:
 
-1. Inspect the exact integrated diff and verify both Gemini P2-01 and ChatGPT A2-03 implementations survived integration without accidental omission or regression.
+1. Inspect the scratch integrated diff and verify both Gemini P2-01 and ChatGPT A2-03 implementations survive integration without accidental omission or regression.
 2. Re-run or independently reproduce P2-01 attacks: `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_EXEC_PATH`, `GIT_OBJECT_DIRECTORY`, `GIT_SSH_COMMAND`, combined injection, tracked NUL-byte detection, first-party workflow and consumer-template guard mutations.
 3. Re-run or independently reproduce A2-03 attacks: root path atomic redirection during creation, ancestor swap during verification, leaf replacement after opening, symlink-parent rejection and stable error normalization.
 4. Inspect workflow parity, consumer validator enforcement, environment scrubbing and the scanner's working-tree-versus-index scope boundary. Do not silently change the agreed scope.
-5. Run `npm test`, checksum and workflow-focused suites, `node tools/validate.mjs`, `node tools/validate-consumer-workflow.mjs`, evidence validation, and all module/index/bundle generators on the exact candidate SHA.
+5. Run `npm test`, checksum and workflow-focused suites, `node tools/validate.mjs`, `node tools/validate-consumer-workflow.mjs`, evidence validation, and all module/index/bundle generators on the scratch merge commit. Report its exact temporary SHA or tree hash.
 6. Report exact SHA, commands, environment/runtime versions, test counts, skipped tests, exit codes, raw failures, generator drift and any unverified hosted checks.
 7. Give an explicit verdict: ACCEPT, ACCEPT WITH CONDITIONS, or CHANGES REQUIRED. A clean branch-level test report is not a substitute for testing the integrated SHA.
 
-**ChatGPT staging responsibility:** create a fresh candidate branch only, keep both source branches intact, preserve handoff content by union with unique section numbering, and report the exact candidate SHA. No production or mainline merge is implied.
+**ChatGPT staging responsibility after Claude's rehearsal:** create a fresh candidate branch only if the scratch merge and audit are clean, keep both source branches intact, preserve handoff content by union with unique section numbering, and report the exact candidate SHA. No production or mainline merge is implied.
 
 **Release gates remain open:** hosted GitHub Actions, CodeQL, Gitleaks, OSV, native hosted Windows, A2-05 live ruleset and U-01 release signing require their own evidence and/or owner action.
 
