@@ -122,7 +122,7 @@ function writeRegularFileAtRoot(rel,content) {
   const parent=openParentAtRoot(rel);
   let fd=null;
   try {
-    fd=fs.openSync(fdPath(parent.fd,parent.leaf),fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW|(fs.constants.O_CLOEXEC||0),0o644);
+    fd=fs.openSync(fdPath(parent.fd,parent.leaf),fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW|(fs.constants.O_CLOEXEC||0)|(fs.constants.O_NONBLOCK||0),0o644);
     if(!fs.fstatSync(fd).isFile())throw new Error('Checksum manifest destination is not a regular file.');
     fs.writeFileSync(fd,content,{encoding:'utf8'});
     fs.fsyncSync(fd);
