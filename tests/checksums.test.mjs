@@ -120,6 +120,36 @@ test('filesystem mode creates and verifies a separate manifest for generated rel
   assert.match(rejected.stderr,/SHA-256 mismatch: payments\.md/);
 });
 
+test('adversarial: filesystem checksum mode rejects a symlinked root and symlinked root ancestors',t=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-symlink-cwd-'));
+  const external=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-symlink-external-'));
+  t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  t.after(()=>fs.rmSync(external,{recursive:true,force:true}));
+  fs.mkdirSync(path.join(external,'subdir'),{recursive:true});
+  fs.writeFileSync(path.join(external,'README.md'),'external snapshot root\\n');
+  fs.writeFileSync(path.join(external,'subdir','README.md'),'external nested snapshot root\\n');
+
+  const linkType=process.platform==='win32'?'junction':'dir';
+  try {
+    fs.symlinkSync(external,path.join(cwd,'root-link'),linkType);
+    fs.symlinkSync(external,path.join(cwd,'parent-link'),linkType);
+  } catch(error) {
+    if(error.code==='EPERM'||error.code==='EACCES') {
+      t.skip('Platform does not permit creating directory symlinks or junctions');
+      return;
+    }
+    throw error;
+  }
+
+  const direct=run(cwd,'create','--root','root-link','--filesystem');
+  assert.notEqual(direct.status,0,'Filesystem mode must reject a symlink used as the selected root');
+  assert.match(direct.stderr,/Checksum root path traverses a symbolic link/);
+
+  const ancestor=run(cwd,'create','--root','parent-link/subdir','--filesystem');
+  assert.notEqual(ancestor.status,0,'Filesystem mode must reject a symlink in a parent component of the selected root');
+  assert.match(ancestor.stderr,/Checksum root path traverses a symbolic link/);
+});
+
 test('Git-mode verification is stable across Windows CRLF worktree conversion',t=>{
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   git(cwd,'config','core.autocrlf','true');
