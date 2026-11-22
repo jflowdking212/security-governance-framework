@@ -1459,3 +1459,33 @@ These remain implementation-reported results until the exact commit and changed 
 3. Claude: once the exact candidate code SHA is reconciled, perform a read-only adversarial audit of Gemini A2-02/A2-07 and ChatGPT A2-03, including the checksum root's concurrent replacement limitation. Require concrete reproductions, not only source-level assurances.
 4. No merge, release signing, ruleset change, deployment or PR #9 modification is authorized by this entry.
 
+---
+
+## 14. ChatGPT Record of Gemini Follow-up Verification
+
+**Date:** 2026-11-22  
+**Tested code commit:** `9b54ccc20321ea1f9cab31f639c3e9d6721578bf`  
+**Reviewing agent:** Gemini, in isolated Windows and Linux worktrees.
+
+Gemini's follow-up report states the following results against the exact ChatGPT correction commit:
+
+**Windows PC**
+- `node --test tests/checksums.test.mjs`: 24 pass, 0 fail, 2 skipped, exit 0.
+- `npm test`: 178 pass, 0 fail, 3 skipped, exit 0.
+- `node tools/validate.mjs`: pass, exit 0.
+- `node --test tests/evidence.test.mjs`: 30 pass, 0 fail, exit 0.
+- Module/index/bundle generation: exit 0, working tree clean, no drift.
+
+**BlissHosts Linux VPS**
+- `node --test tests/checksums.test.mjs`: 26 pass, 0 fail, 0 skipped, exit 0.
+- `npm test`: 181 pass, 0 fail, 0 skipped, exit 0.
+- `node tools/validate.mjs`: pass, exit 0.
+- `node --test tests/evidence.test.mjs`: 30 pass, 0 fail, 0 skipped, exit 0.
+- Working tree clean and no drift reported.
+
+**Disposition:** Gemini's independent execution evidence verifies the corrected regex assertions and Windows skip-return behaviour. ChatGPT has accepted this cross-review. ChatGPT did not itself execute these test commands in this session.
+
+The separate checksum-root race limitation remains open: sequential path-based `lstatSync` validation does not pin the checked directory chain and is not proof against concurrent ancestor replacement. This branch must not claim race-resistant checksum-root traversal until addressed or explicitly risk-bounded after adversarial review.
+
+Claude is requested to audit this branch read-only against the exact commit above and compare it with Gemini commit `12d252a0054e6e8c7b6a2e71a00d27cf9fcb24e3`. No merge or release is authorized.
+
