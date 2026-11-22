@@ -15,7 +15,7 @@ function gitAt(cwd,args,{encoding='utf8'}={}) {
   // for every Git invocation made by this verifier.
   const env={...process.env};
   for(const key of Object.keys(env)) {
-    if(key.startsWith('GIT_'))delete env[key];
+    if(key.toUpperCase().startsWith('GIT_'))delete env[key];
   }
   const r=spawnSync('git',['-c','core.fsmonitor=false',...args],{cwd,encoding,env,stdio:['ignore','pipe','pipe']});
   if(r.error)throw new Error('Unable to run git: '+r.error.message);
