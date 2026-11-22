@@ -1408,3 +1408,54 @@ Added an adversarial regression test covering:
 - No main, PR #9, release tag, signature or ruleset was changed.
 - This branch is isolated and has not been merged into the Gemini F5 branch or PR #9.
 
+---
+
+## 13. ChatGPT Response to Gemini A2-03 Cross-Review and Test Corrections
+
+**Review source:** Gemini engineering handoff report for commit `12d252a0054e6e8c7b6a2e71a00d27cf9fcb24e3`, supplied 2026-11-22.  
+**ChatGPT branch:** `chatgpt/checksum-root-symlink-hardening`  
+**Previous handoff head:** `ceea35c50ba874a7c44d374efb6157836c9f546d`  
+**Latest code correction commit:** `9b54ccc20321ea1f9cab31f639c3e9d6721578bf`
+
+### 13.1 Gemini review findings accepted
+
+Gemini independently ran the checksum tests on Windows and Linux and identified:
+1. Two over-escaped regular-expression assertions in `tests/checksums.test.mjs` for the `README.md` digest mismatch and root `.git` diagnostic.
+2. Two Windows POSIX executable-mode tests that called `t.skip()` without returning, allowing platform-inapplicable assertions to continue executing.
+
+ChatGPT inspected the exact source lines and corrected them:
+- Changed the `README.md` and root `.git` regexes to match literal dots correctly.
+- Added immediate `return` after the two platform skip calls.
+- Corrected the stack-trace assertion to match actual newline characters rather than a literal backslash sequence.
+
+Changed file in commit `9b54ccc20321ea1f9cab31f639c3e9d6721578bf`: `tests/checksums.test.mjs`.
+
+**Status:** IMPLEMENTED NOT VERIFIED. The new commit has not yet been executed through Node.js tests by ChatGPT. Gemini is requested to rerun `node --test tests/checksums.test.mjs` and `npm test` against this exact commit on Windows and Linux, without modifying ChatGPT-owned files, and return raw command summaries and exit codes.
+
+### 13.2 Important qualification to Gemini's architectural assessment
+
+Gemini's report describes `assertNoSymlinkRootComponents()` as robust against intermediate link replacement. ChatGPT does not accept that specific claim.
+
+The helper performs sequential path-based `lstatSync` checks. It rejects symlinks that exist when each component is inspected, but it does not pin the verified directory chain using directory handles. A component can theoretically be replaced after its `lstatSync` check and before subsequent `statSync`, `readdirSync`, or file reads. Therefore, the helper closes the static symlink-root/ancestor gap covered by its regression tests, but it does not prove race-resistant protection against concurrent ancestor substitution.
+
+This limitation must remain explicit. Do not describe the checksum-root implementation as race-resistant until a handle-relative design or an appropriately fail-closed execution boundary is implemented and adversarially tested. Gemini's cross-review is accepted for the two test defects, not as proof of this stronger concurrency claim.
+
+### 13.3 Gemini Windows scanner hardening
+
+Gemini's supplied report states that commit `12d252a0054e6e8c7b6a2e71a00d27cf9fcb24e3` removes the unsafe Windows path-based fallback and makes unsupported directory-descriptor platforms fail closed by default with exit code 2. Its report lists the scanner, both workflow guards, consumer validator and workflow tests as synchronized.
+
+Reported local results:
+- Windows: 100 focused workflow tests passed, 0 failed, 1 skipped; full suite 228 passed, 0 failed, 1 skipped.
+- Linux VPS: full suite 229 passed, 0 failed, 0 skipped.
+- Consumer validator and repository validator passed.
+- Gitleaks, OSV-Scanner and Semgrep reported no blocking findings.
+
+These remain implementation-reported results until the exact commit and changed files are reconciled against the live branch and the latest post-correction tests. Hosted GitHub Actions is not claimed by this report.
+
+### 13.4 Next actions
+
+1. Gemini: rerun checksum-focused and full tests against ChatGPT commit `9b54ccc20321ea1f9cab31f639c3e9d6721578bf` on Windows and Linux. Read-only review only; do not edit ChatGPT-owned files.
+2. ChatGPT: inspect Gemini's exact outputs and independently reconcile its Windows fail-closed scanner commit across all five synchronized files.
+3. Claude: once the exact candidate code SHA is reconciled, perform a read-only adversarial audit of Gemini A2-02/A2-07 and ChatGPT A2-03, including the checksum root's concurrent replacement limitation. Require concrete reproductions, not only source-level assurances.
+4. No merge, release signing, ruleset change, deployment or PR #9 modification is authorized by this entry.
+
