@@ -389,7 +389,7 @@ test('adversarial: rejects .git metadata at the selected vendored root in Git mo
 
 
 test('adversarial: Git-mode checksum verification detects executable-bit changes',t=>{
-  if(process.platform==='win32')t.skip('Windows worktrees do not reliably expose Git executable mode through stat');
+  if(process.platform==='win32'){t.skip('Windows worktrees do not reliably expose Git executable mode through stat');return;}
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   assert.equal(run(cwd,'create').status,0);
   git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add manifest');
@@ -400,7 +400,7 @@ test('adversarial: Git-mode checksum verification detects executable-bit changes
 });
 
 test('adversarial: filesystem checksum binds executable mode to the digest',t=>{
-  if(process.platform==='win32')t.skip('Windows does not reliably expose POSIX executable mode');
+  if(process.platform==='win32'){t.skip('Windows does not reliably expose POSIX executable mode');return;}
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-mode-fs-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'mode-bound content\\n',{mode:0o644});
@@ -408,7 +408,7 @@ test('adversarial: filesystem checksum binds executable mode to the digest',t=>{
   fs.chmodSync(path.join(dir,'README.md'),0o755);
   const result=run(dir,'verify','--filesystem');
   assert.notEqual(result.status,0,'Filesystem verification must reject executable-bit drift');
-  assert.match(result.stderr,/SHA-256 mismatch: README\\.md/);
+  assert.match(result.stderr,/SHA-256 mismatch: README\.md/);
 });
 
 test('adversarial: root .git metadata failure is controlled and has no uncaught stack trace',t=>{
@@ -419,6 +419,6 @@ test('adversarial: root .git metadata failure is controlled and has no uncaught 
   fs.writeFileSync(path.join(dir,'.git','config'),'[core]\\n');
   const result=run(dir,'verify','--filesystem');
   assert.notEqual(result.status,0);
-  assert.match(result.stderr,/^Checksum operation failed: Root \\.git metadata is not allowed in filesystem mode/);
-  assert.doesNotMatch(result.stderr,/\\n\\s+at /);
+  assert.match(result.stderr,/^Checksum operation failed: Root \.git metadata is not allowed in filesystem mode/);
+  assert.doesNotMatch(result.stderr,/\n\s+at /);
 });
