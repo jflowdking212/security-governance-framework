@@ -156,27 +156,157 @@ jobs:
                           return True
                   return False
 
-              trusted_roots = []
-              if sys.platform == "win32":
-                  for var_name in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "SystemRoot", "windir"):
-                      base = os.environ.get(var_name)
-                      if base:
-                          try:
-                              trusted_roots.append(os.path.realpath(base))
-                          except Exception:
-                              pass
+              def get_windows_authoritative_roots():
+                  roots = []
                   try:
                       import winreg
                       with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion") as k:
-                          for reg_val in ("ProgramFilesDir", "ProgramFilesDir (x86)", "ProgramFilesDir (Arm)"):
+                          for val in ("ProgramFilesDir", "ProgramFilesDir (x86)", "ProgramFilesDir (Arm)", "ProgramW6432Dir"):
                               try:
-                                  rv, _ = winreg.QueryValueEx(k, reg_val)
-                                  if rv:
-                                      trusted_roots.append(os.path.realpath(rv))
-                              except Exception:
+                                  rv, _ = winreg.QueryValueEx(k, val)
+                                  if rv and os.path.isdir(rv):
+                                      roots.append(os.path.realpath(rv))
+                              except OSError:
                                   pass
                   except Exception:
                       pass
+                  try:
+                      import winreg
+                      with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion") as k:
+                          rv, _ = winreg.QueryValueEx(k, "SystemRoot")
+                          if rv and os.path.isdir(rv):
+                              roots.append(os.path.realpath(rv))
+                  except Exception:
+                      pass
+                  return list(dict.fromkeys(roots))
+
+              def verify_posix_ancestors(target_path):
+                  rp = os.path.realpath(target_path)
+                  curr = rp
+                  while True:
+                      try:
+                          st = os.stat(curr)
+                      except OSError:
+                          return False
+                      if st.st_uid != 0:
+                          return False
+                      if (st.st_mode & 0o022) != 0:
+                          return False
+                      parent = os.path.dirname(curr)
+                      if parent == curr:
+                          break
+                      curr = parent
+                  return True
+
+              def verify_windows_dacl(target_path, trusted_roots):
+                  rp = os.path.realpath(target_path)
+                  in_trusted_root = False
+                  for troot in trusted_roots:
+                      try:
+                          if rp == troot or os.path.commonpath([rp, troot]) == troot:
+                              in_trusted_root = True
+                              break
+                      except ValueError:
+                          pass
+                  if not in_trusted_root:
+                      return False
+
+                  try:
+                      import ctypes
+                      from ctypes import wintypes
+                      advapi32 = ctypes.windll.advapi32
+                      kernel32 = ctypes.windll.kernel32
+
+                      SE_FILE_OBJECT = 1
+                      OWNER_SECURITY_INFORMATION = 1
+                      DACL_SECURITY_INFORMATION = 4
+                      AclSizeInformation = 2
+                      INHERIT_ONLY_ACE = 0x08
+
+                      class ACE_HEADER(ctypes.Structure):
+                          _fields_ = [('AceType', wintypes.BYTE), ('AceFlags', wintypes.BYTE), ('AceSize', wintypes.WORD)]
+                      class ACCESS_ALLOWED_ACE(ctypes.Structure):
+                          _fields_ = [('Header', ACE_HEADER), ('Mask', wintypes.DWORD), ('SidStart', wintypes.DWORD)]
+                      class ACL_SIZE_INFORMATION(ctypes.Structure):
+                          _fields_ = [('AceCount', wintypes.DWORD), ('AclBytesInUse', wintypes.DWORD), ('AclBytesFree', wintypes.DWORD)]
+
+                      TRUSTED_SIDS = {
+                          'S-1-5-32-544',
+                          'S-1-5-18',
+                          'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',
+                      }
+                      WRITE_MASK = 0x0002 | 0x0004 | 0x00010000 | 0x00040000 | 0x00080000 | 0x40000000 | 0x10000000
+
+                      curr = rp
+                      while True:
+                          p_sec_desc = wintypes.LPVOID()
+                          p_owner = wintypes.LPVOID()
+                          p_dacl = wintypes.LPVOID()
+                          res = advapi32.GetNamedSecurityInfoW(
+                              curr,
+                              SE_FILE_OBJECT,
+                              OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                              ctypes.byref(p_owner),
+                              None,
+                              ctypes.byref(p_dacl),
+                              None,
+                              ctypes.byref(p_sec_desc)
+                          )
+                          if res != 0:
+                              return False
+                          try:
+                              p_str_sid = wintypes.LPWSTR()
+                              if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):
+                                  return False
+                              owner_sid = p_str_sid.value
+                              kernel32.LocalFree(p_str_sid)
+                              if owner_sid not in TRUSTED_SIDS:
+                                  return False
+
+                              if not p_dacl:
+                                  return False
+
+                              acl_info = ACL_SIZE_INFORMATION()
+                              if not advapi32.GetAclInformation(p_dacl, ctypes.byref(acl_info), ctypes.sizeof(acl_info), AclSizeInformation):
+                                  return False
+
+                              for i in range(acl_info.AceCount):
+                                  p_ace = wintypes.LPVOID()
+                                  if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)):
+                                      return False
+                                  ace_header = ACE_HEADER.from_address(p_ace.value)
+                                  if ace_header.AceType == 0:
+                                      allowed_ace = ACCESS_ALLOWED_ACE.from_address(p_ace.value)
+                                      p_sid = ctypes.c_void_p(p_ace.value + 8)
+                                      p_ace_str_sid = wintypes.LPWSTR()
+                                      if advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):
+                                          ace_sid = p_ace_str_sid.value
+                                          kernel32.LocalFree(p_ace_str_sid)
+                                          if (allowed_ace.Mask & WRITE_MASK) != 0:
+                                              if ace_sid in TRUSTED_SIDS:
+                                                  continue
+                                              if ace_sid == 'S-1-3-0' and (ace_header.AceFlags & INHERIT_ONLY_ACE):
+                                                  continue
+                                              return False
+                          finally:
+                              kernel32.LocalFree(p_sec_desc)
+
+                          parent = os.path.dirname(curr)
+                          if parent == curr:
+                              break
+                          if any(curr == troot for troot in trusted_roots):
+                              break
+                          curr = parent
+
+                      return True
+                  except Exception:
+                      return False
+
+              trusted_roots = []
+              if sys.platform == "win32":
+                  trusted_roots = get_windows_authoritative_roots()
+                  if not trusted_roots:
+                      return None
                   exe_names = ["git.exe", "git.cmd"]
               else:
                   exe_names = ["git"]
@@ -187,7 +317,7 @@ jobs:
                   path_dirs = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
                   system_dirs = []
                   if sys.platform == "win32":
-                      for r in list(trusted_roots):
+                      for r in trusted_roots:
                           system_dirs.extend([
                               os.path.join(r, "Git", "cmd"),
                               os.path.join(r, "Git", "bin"),
@@ -214,24 +344,10 @@ jobs:
                       continue
 
                   if sys.platform == "win32":
-                      in_trusted_root = False
-                      for troot in trusted_roots:
-                          try:
-                              if real_d == troot or os.path.commonpath([real_d, troot]) == troot:
-                                  in_trusted_root = True
-                                  break
-                          except ValueError:
-                              pass
-                      if not in_trusted_root:
+                      if not verify_windows_dacl(real_d, trusted_roots):
                           continue
                   else:
-                      try:
-                          st_d = os.stat(real_d)
-                          if st_d.st_uid != 0:
-                              continue
-                          if (st_d.st_mode & 0o022) != 0:
-                              continue
-                      except OSError:
+                      if not verify_posix_ancestors(real_d):
                           continue
 
                   for name in exe_names:
@@ -249,24 +365,10 @@ jobs:
                           continue
 
                       if sys.platform == "win32":
-                          in_trusted_root = False
-                          for troot in trusted_roots:
-                              try:
-                                  if real_exe == troot or os.path.commonpath([real_exe, troot]) == troot:
-                                      in_trusted_root = True
-                                      break
-                              except ValueError:
-                                  pass
-                          if not in_trusted_root:
+                          if not verify_windows_dacl(real_exe, trusted_roots):
                               continue
                       else:
-                          try:
-                              st_exe = os.stat(real_exe)
-                              if st_exe.st_uid != 0:
-                                  continue
-                              if (st_exe.st_mode & 0o022) != 0:
-                                  continue
-                          except OSError:
+                          if not verify_posix_ancestors(real_exe):
                               continue
 
                       try:
@@ -575,27 +677,157 @@ jobs:
                           return True
                   return False
 
-              trusted_roots = []
-              if sys.platform == "win32":
-                  for var_name in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "SystemRoot", "windir"):
-                      base = os.environ.get(var_name)
-                      if base:
-                          try:
-                              trusted_roots.append(os.path.realpath(base))
-                          except Exception:
-                              pass
+              def get_windows_authoritative_roots():
+                  roots = []
                   try:
                       import winreg
                       with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion") as k:
-                          for reg_val in ("ProgramFilesDir", "ProgramFilesDir (x86)", "ProgramFilesDir (Arm)"):
+                          for val in ("ProgramFilesDir", "ProgramFilesDir (x86)", "ProgramFilesDir (Arm)", "ProgramW6432Dir"):
                               try:
-                                  rv, _ = winreg.QueryValueEx(k, reg_val)
-                                  if rv:
-                                      trusted_roots.append(os.path.realpath(rv))
-                              except Exception:
+                                  rv, _ = winreg.QueryValueEx(k, val)
+                                  if rv and os.path.isdir(rv):
+                                      roots.append(os.path.realpath(rv))
+                              except OSError:
                                   pass
                   except Exception:
                       pass
+                  try:
+                      import winreg
+                      with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion") as k:
+                          rv, _ = winreg.QueryValueEx(k, "SystemRoot")
+                          if rv and os.path.isdir(rv):
+                              roots.append(os.path.realpath(rv))
+                  except Exception:
+                      pass
+                  return list(dict.fromkeys(roots))
+
+              def verify_posix_ancestors(target_path):
+                  rp = os.path.realpath(target_path)
+                  curr = rp
+                  while True:
+                      try:
+                          st = os.stat(curr)
+                      except OSError:
+                          return False
+                      if st.st_uid != 0:
+                          return False
+                      if (st.st_mode & 0o022) != 0:
+                          return False
+                      parent = os.path.dirname(curr)
+                      if parent == curr:
+                          break
+                      curr = parent
+                  return True
+
+              def verify_windows_dacl(target_path, trusted_roots):
+                  rp = os.path.realpath(target_path)
+                  in_trusted_root = False
+                  for troot in trusted_roots:
+                      try:
+                          if rp == troot or os.path.commonpath([rp, troot]) == troot:
+                              in_trusted_root = True
+                              break
+                      except ValueError:
+                          pass
+                  if not in_trusted_root:
+                      return False
+
+                  try:
+                      import ctypes
+                      from ctypes import wintypes
+                      advapi32 = ctypes.windll.advapi32
+                      kernel32 = ctypes.windll.kernel32
+
+                      SE_FILE_OBJECT = 1
+                      OWNER_SECURITY_INFORMATION = 1
+                      DACL_SECURITY_INFORMATION = 4
+                      AclSizeInformation = 2
+                      INHERIT_ONLY_ACE = 0x08
+
+                      class ACE_HEADER(ctypes.Structure):
+                          _fields_ = [('AceType', wintypes.BYTE), ('AceFlags', wintypes.BYTE), ('AceSize', wintypes.WORD)]
+                      class ACCESS_ALLOWED_ACE(ctypes.Structure):
+                          _fields_ = [('Header', ACE_HEADER), ('Mask', wintypes.DWORD), ('SidStart', wintypes.DWORD)]
+                      class ACL_SIZE_INFORMATION(ctypes.Structure):
+                          _fields_ = [('AceCount', wintypes.DWORD), ('AclBytesInUse', wintypes.DWORD), ('AclBytesFree', wintypes.DWORD)]
+
+                      TRUSTED_SIDS = {
+                          'S-1-5-32-544',
+                          'S-1-5-18',
+                          'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',
+                      }
+                      WRITE_MASK = 0x0002 | 0x0004 | 0x00010000 | 0x00040000 | 0x00080000 | 0x40000000 | 0x10000000
+
+                      curr = rp
+                      while True:
+                          p_sec_desc = wintypes.LPVOID()
+                          p_owner = wintypes.LPVOID()
+                          p_dacl = wintypes.LPVOID()
+                          res = advapi32.GetNamedSecurityInfoW(
+                              curr,
+                              SE_FILE_OBJECT,
+                              OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                              ctypes.byref(p_owner),
+                              None,
+                              ctypes.byref(p_dacl),
+                              None,
+                              ctypes.byref(p_sec_desc)
+                          )
+                          if res != 0:
+                              return False
+                          try:
+                              p_str_sid = wintypes.LPWSTR()
+                              if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):
+                                  return False
+                              owner_sid = p_str_sid.value
+                              kernel32.LocalFree(p_str_sid)
+                              if owner_sid not in TRUSTED_SIDS:
+                                  return False
+
+                              if not p_dacl:
+                                  return False
+
+                              acl_info = ACL_SIZE_INFORMATION()
+                              if not advapi32.GetAclInformation(p_dacl, ctypes.byref(acl_info), ctypes.sizeof(acl_info), AclSizeInformation):
+                                  return False
+
+                              for i in range(acl_info.AceCount):
+                                  p_ace = wintypes.LPVOID()
+                                  if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)):
+                                      return False
+                                  ace_header = ACE_HEADER.from_address(p_ace.value)
+                                  if ace_header.AceType == 0:
+                                      allowed_ace = ACCESS_ALLOWED_ACE.from_address(p_ace.value)
+                                      p_sid = ctypes.c_void_p(p_ace.value + 8)
+                                      p_ace_str_sid = wintypes.LPWSTR()
+                                      if advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):
+                                          ace_sid = p_ace_str_sid.value
+                                          kernel32.LocalFree(p_ace_str_sid)
+                                          if (allowed_ace.Mask & WRITE_MASK) != 0:
+                                              if ace_sid in TRUSTED_SIDS:
+                                                  continue
+                                              if ace_sid == 'S-1-3-0' and (ace_header.AceFlags & INHERIT_ONLY_ACE):
+                                                  continue
+                                              return False
+                          finally:
+                              kernel32.LocalFree(p_sec_desc)
+
+                          parent = os.path.dirname(curr)
+                          if parent == curr:
+                              break
+                          if any(curr == troot for troot in trusted_roots):
+                              break
+                          curr = parent
+
+                      return True
+                  except Exception:
+                      return False
+
+              trusted_roots = []
+              if sys.platform == "win32":
+                  trusted_roots = get_windows_authoritative_roots()
+                  if not trusted_roots:
+                      return None
                   exe_names = ["git.exe", "git.cmd"]
               else:
                   exe_names = ["git"]
@@ -606,7 +838,7 @@ jobs:
                   path_dirs = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
                   system_dirs = []
                   if sys.platform == "win32":
-                      for r in list(trusted_roots):
+                      for r in trusted_roots:
                           system_dirs.extend([
                               os.path.join(r, "Git", "cmd"),
                               os.path.join(r, "Git", "bin"),
@@ -633,24 +865,10 @@ jobs:
                       continue
 
                   if sys.platform == "win32":
-                      in_trusted_root = False
-                      for troot in trusted_roots:
-                          try:
-                              if real_d == troot or os.path.commonpath([real_d, troot]) == troot:
-                                  in_trusted_root = True
-                                  break
-                          except ValueError:
-                              pass
-                      if not in_trusted_root:
+                      if not verify_windows_dacl(real_d, trusted_roots):
                           continue
                   else:
-                      try:
-                          st_d = os.stat(real_d)
-                          if st_d.st_uid != 0:
-                              continue
-                          if (st_d.st_mode & 0o022) != 0:
-                              continue
-                      except OSError:
+                      if not verify_posix_ancestors(real_d):
                           continue
 
                   for name in exe_names:
@@ -668,24 +886,10 @@ jobs:
                           continue
 
                       if sys.platform == "win32":
-                          in_trusted_root = False
-                          for troot in trusted_roots:
-                              try:
-                                  if real_exe == troot or os.path.commonpath([real_exe, troot]) == troot:
-                                      in_trusted_root = True
-                                      break
-                              except ValueError:
-                                  pass
-                          if not in_trusted_root:
+                          if not verify_windows_dacl(real_exe, trusted_roots):
                               continue
                       else:
-                          try:
-                              st_exe = os.stat(real_exe)
-                              if st_exe.st_uid != 0:
-                                  continue
-                              if (st_exe.st_mode & 0o022) != 0:
-                                  continue
-                          except OSError:
+                          if not verify_posix_ancestors(real_exe):
                               continue
 
                       try:

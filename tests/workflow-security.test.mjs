@@ -47,17 +47,17 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
     'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do',
     '  if [ -e "$file" ]; then',
-    "    printf 'Unreviewed scanner override is not permitted: %s\\n' \"$file\" >&2",
+    '    printf \'Unreviewed scanner override is not permitted: %s\\n\' "$file" >&2',
     '    exit 1',
     '  fi',
     'done',
-    "nested_osv_config=\"$(find . -path './.git' -prune -o -path './node_modules' -prune -o \\( -name 'osv-scanner.toml' -o -name '.osv-scanner.toml' \\) -print)\"",
+    'nested_osv_config="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o \\( -name \'osv-scanner.toml\' -o -name \'.osv-scanner.toml\' \\) -print)"',
     'if [ -n "$nested_osv_config" ]; then',
-    "  printf 'Unreviewed OSV configuration is not permitted: %s\\n' \"$nested_osv_config\" >&2",
+    '  printf \'Unreviewed OSV configuration is not permitted: %s\\n\' "$nested_osv_config" >&2',
     '  exit 1',
     'fi',
     'if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E \'[g]itleaks[[:space:]]*:[[:space:]]*allow\' -- . >&2; then',
-    "  printf '%s\\n' 'Prohibited Gitleaks inline suppression directive is not permitted' >&2",
+    '  printf \'%s\\n\' \'Prohibited Gitleaks inline suppression directive is not permitted\' >&2',
     '  exit 1',
     'else',
     '  status=$?',
@@ -66,31 +66,31 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '  fi',
     'fi',
     'if ! historical_suppression="$(git -c safe.directory="$PWD" -c core.fsmonitor=false log -n 1 -i -E -G\'[g]itleaks[[:space:]]*:[[:space:]]*allow\' --format=\'%H %s\')"; then',
-    "  printf '%s\\n' 'Failed to inspect Git history for prohibited Gitleaks directives' >&2",
+    '  printf \'%s\\n\' \'Failed to inspect Git history for prohibited Gitleaks directives\' >&2',
     '  exit 1',
     'fi',
     'if [ -n "$historical_suppression" ]; then',
-    "  printf 'Prohibited Gitleaks inline suppression directive found in Git history: %s\\n' \"$historical_suppression\" >&2",
+    '  printf \'Prohibited Gitleaks inline suppression directive found in Git history: %s\\n\' "$historical_suppression" >&2',
     '  exit 1',
     'fi',
     'while IFS= read -r attr_file; do',
     '  [ -z "$attr_file" ] && continue',
     '  if [ -L "$attr_file" ]; then',
-    "    printf 'Symlinked .gitattributes is not permitted: %s\\n' \"$attr_file\" >&2",
+    '    printf \'Symlinked .gitattributes is not permitted: %s\\n\' "$attr_file" >&2',
     '    exit 1',
     '  fi',
-    "  if grep -v '^[[:space:]]*#' \"$attr_file\" | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then",
-    "    printf 'Prohibited .gitattributes configuration is not permitted: %s\\n' \"$attr_file\" >&2",
+    '  if grep -v \'^[[:space:]]*#\' "$attr_file" | grep -n -E \'(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)\' >&2; then',
+    '    printf \'Prohibited .gitattributes configuration is not permitted: %s\\n\' "$attr_file" >&2',
     '    exit 1',
     '  fi',
-    "done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)",
+    'done < <(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.gitattributes\' -print)',
     'if [ -e .git/info/attributes ]; then',
-    "  if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then",
-    "    printf '%s\\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2",
+    '  if grep -v \'^[[:space:]]*#\' .git/info/attributes | grep -n -E \'(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)\' >&2; then',
+    '    printf \'%s\\n\' \'Prohibited .git/info/attributes configuration is not permitted\' >&2',
     '    exit 1',
     '  fi',
     'fi',
-    "python3 - <<'EOF'",
+    'python3 - <<\'EOF\'',
     'import os',
     'import stat',
     'import subprocess',
@@ -165,27 +165,157 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '                return True',
     '        return False',
     '',
-    '    trusted_roots = []',
-    '    if sys.platform == "win32":',
-    '        for var_name in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "SystemRoot", "windir"):',
-    '            base = os.environ.get(var_name)',
-    '            if base:',
-    '                try:',
-    '                    trusted_roots.append(os.path.realpath(base))',
-    '                except Exception:',
-    '                    pass',
+    '    def get_windows_authoritative_roots():',
+    '        roots = []',
     '        try:',
     '            import winreg',
     '            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion") as k:',
-    '                for reg_val in ("ProgramFilesDir", "ProgramFilesDir (x86)", "ProgramFilesDir (Arm)"):',
+    '                for val in ("ProgramFilesDir", "ProgramFilesDir (x86)", "ProgramFilesDir (Arm)", "ProgramW6432Dir"):',
     '                    try:',
-    '                        rv, _ = winreg.QueryValueEx(k, reg_val)',
-    '                        if rv:',
-    '                            trusted_roots.append(os.path.realpath(rv))',
-    '                    except Exception:',
+    '                        rv, _ = winreg.QueryValueEx(k, val)',
+    '                        if rv and os.path.isdir(rv):',
+    '                            roots.append(os.path.realpath(rv))',
+    '                    except OSError:',
     '                        pass',
     '        except Exception:',
     '            pass',
+    '        try:',
+    '            import winreg',
+    '            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion") as k:',
+    '                rv, _ = winreg.QueryValueEx(k, "SystemRoot")',
+    '                if rv and os.path.isdir(rv):',
+    '                    roots.append(os.path.realpath(rv))',
+    '        except Exception:',
+    '            pass',
+    '        return list(dict.fromkeys(roots))',
+    '',
+    '    def verify_posix_ancestors(target_path):',
+    '        rp = os.path.realpath(target_path)',
+    '        curr = rp',
+    '        while True:',
+    '            try:',
+    '                st = os.stat(curr)',
+    '            except OSError:',
+    '                return False',
+    '            if st.st_uid != 0:',
+    '                return False',
+    '            if (st.st_mode & 0o022) != 0:',
+    '                return False',
+    '            parent = os.path.dirname(curr)',
+    '            if parent == curr:',
+    '                break',
+    '            curr = parent',
+    '        return True',
+    '',
+    '    def verify_windows_dacl(target_path, trusted_roots):',
+    '        rp = os.path.realpath(target_path)',
+    '        in_trusted_root = False',
+    '        for troot in trusted_roots:',
+    '            try:',
+    '                if rp == troot or os.path.commonpath([rp, troot]) == troot:',
+    '                    in_trusted_root = True',
+    '                    break',
+    '            except ValueError:',
+    '                pass',
+    '        if not in_trusted_root:',
+    '            return False',
+    '',
+    '        try:',
+    '            import ctypes',
+    '            from ctypes import wintypes',
+    '            advapi32 = ctypes.windll.advapi32',
+    '            kernel32 = ctypes.windll.kernel32',
+    '',
+    '            SE_FILE_OBJECT = 1',
+    '            OWNER_SECURITY_INFORMATION = 1',
+    '            DACL_SECURITY_INFORMATION = 4',
+    '            AclSizeInformation = 2',
+    '            INHERIT_ONLY_ACE = 0x08',
+    '',
+    '            class ACE_HEADER(ctypes.Structure):',
+    '                _fields_ = [(\'AceType\', wintypes.BYTE), (\'AceFlags\', wintypes.BYTE), (\'AceSize\', wintypes.WORD)]',
+    '            class ACCESS_ALLOWED_ACE(ctypes.Structure):',
+    '                _fields_ = [(\'Header\', ACE_HEADER), (\'Mask\', wintypes.DWORD), (\'SidStart\', wintypes.DWORD)]',
+    '            class ACL_SIZE_INFORMATION(ctypes.Structure):',
+    '                _fields_ = [(\'AceCount\', wintypes.DWORD), (\'AclBytesInUse\', wintypes.DWORD), (\'AclBytesFree\', wintypes.DWORD)]',
+    '',
+    '            TRUSTED_SIDS = {',
+    '                \'S-1-5-32-544\',',
+    '                \'S-1-5-18\',',
+    '                \'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464\',',
+    '            }',
+    '            WRITE_MASK = 0x0002 | 0x0004 | 0x00010000 | 0x00040000 | 0x00080000 | 0x40000000 | 0x10000000',
+    '',
+    '            curr = rp',
+    '            while True:',
+    '                p_sec_desc = wintypes.LPVOID()',
+    '                p_owner = wintypes.LPVOID()',
+    '                p_dacl = wintypes.LPVOID()',
+    '                res = advapi32.GetNamedSecurityInfoW(',
+    '                    curr,',
+    '                    SE_FILE_OBJECT,',
+    '                    OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,',
+    '                    ctypes.byref(p_owner),',
+    '                    None,',
+    '                    ctypes.byref(p_dacl),',
+    '                    None,',
+    '                    ctypes.byref(p_sec_desc)',
+    '                )',
+    '                if res != 0:',
+    '                    return False',
+    '                try:',
+    '                    p_str_sid = wintypes.LPWSTR()',
+    '                    if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):',
+    '                        return False',
+    '                    owner_sid = p_str_sid.value',
+    '                    kernel32.LocalFree(p_str_sid)',
+    '                    if owner_sid not in TRUSTED_SIDS:',
+    '                        return False',
+    '',
+    '                    if not p_dacl:',
+    '                        return False',
+    '',
+    '                    acl_info = ACL_SIZE_INFORMATION()',
+    '                    if not advapi32.GetAclInformation(p_dacl, ctypes.byref(acl_info), ctypes.sizeof(acl_info), AclSizeInformation):',
+    '                        return False',
+    '',
+    '                    for i in range(acl_info.AceCount):',
+    '                        p_ace = wintypes.LPVOID()',
+    '                        if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)):',
+    '                            return False',
+    '                        ace_header = ACE_HEADER.from_address(p_ace.value)',
+    '                        if ace_header.AceType == 0:',
+    '                            allowed_ace = ACCESS_ALLOWED_ACE.from_address(p_ace.value)',
+    '                            p_sid = ctypes.c_void_p(p_ace.value + 8)',
+    '                            p_ace_str_sid = wintypes.LPWSTR()',
+    '                            if advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):',
+    '                                ace_sid = p_ace_str_sid.value',
+    '                                kernel32.LocalFree(p_ace_str_sid)',
+    '                                if (allowed_ace.Mask & WRITE_MASK) != 0:',
+    '                                    if ace_sid in TRUSTED_SIDS:',
+    '                                        continue',
+    '                                    if ace_sid == \'S-1-3-0\' and (ace_header.AceFlags & INHERIT_ONLY_ACE):',
+    '                                        continue',
+    '                                    return False',
+    '                finally:',
+    '                    kernel32.LocalFree(p_sec_desc)',
+    '',
+    '                parent = os.path.dirname(curr)',
+    '                if parent == curr:',
+    '                    break',
+    '                if any(curr == troot for troot in trusted_roots):',
+    '                    break',
+    '                curr = parent',
+    '',
+    '            return True',
+    '        except Exception:',
+    '            return False',
+    '',
+    '    trusted_roots = []',
+    '    if sys.platform == "win32":',
+    '        trusted_roots = get_windows_authoritative_roots()',
+    '        if not trusted_roots:',
+    '            return None',
     '        exe_names = ["git.exe", "git.cmd"]',
     '    else:',
     '        exe_names = ["git"]',
@@ -196,7 +326,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '        path_dirs = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]',
     '        system_dirs = []',
     '        if sys.platform == "win32":',
-    '            for r in list(trusted_roots):',
+    '            for r in trusted_roots:',
     '                system_dirs.extend([',
     '                    os.path.join(r, "Git", "cmd"),',
     '                    os.path.join(r, "Git", "bin"),',
@@ -223,24 +353,10 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '            continue',
     '',
     '        if sys.platform == "win32":',
-    '            in_trusted_root = False',
-    '            for troot in trusted_roots:',
-    '                try:',
-    '                    if real_d == troot or os.path.commonpath([real_d, troot]) == troot:',
-    '                        in_trusted_root = True',
-    '                        break',
-    '                except ValueError:',
-    '                    pass',
-    '            if not in_trusted_root:',
+    '            if not verify_windows_dacl(real_d, trusted_roots):',
     '                continue',
     '        else:',
-    '            try:',
-    '                st_d = os.stat(real_d)',
-    '                if st_d.st_uid != 0:',
-    '                    continue',
-    '                if (st_d.st_mode & 0o022) != 0:',
-    '                    continue',
-    '            except OSError:',
+    '            if not verify_posix_ancestors(real_d):',
     '                continue',
     '',
     '        for name in exe_names:',
@@ -258,24 +374,10 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '                continue',
     '',
     '            if sys.platform == "win32":',
-    '                in_trusted_root = False',
-    '                for troot in trusted_roots:',
-    '                    try:',
-    '                        if real_exe == troot or os.path.commonpath([real_exe, troot]) == troot:',
-    '                            in_trusted_root = True',
-    '                            break',
-    '                    except ValueError:',
-    '                        pass',
-    '                if not in_trusted_root:',
+    '                if not verify_windows_dacl(real_exe, trusted_roots):',
     '                    continue',
     '            else:',
-    '                try:',
-    '                    st_exe = os.stat(real_exe)',
-    '                    if st_exe.st_uid != 0:',
-    '                        continue',
-    '                    if (st_exe.st_mode & 0o022) != 0:',
-    '                        continue',
-    '                except OSError:',
+    '                if not verify_posix_ancestors(real_exe):',
     '                    continue',
     '',
     '            try:',
@@ -402,28 +504,28 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '',
     'print("PASS: complete content scan found no NUL bytes in tracked regular files")',
     'EOF',
-    "nested_semgrepignore=\"$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.semgrepignore' -not -path './.semgrepignore' -print)\"",
+    'nested_semgrepignore="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.semgrepignore\' -not -path \'./.semgrepignore\' -print)"',
     'if [ -n "$nested_semgrepignore" ]; then',
-    "  printf 'Nested .semgrepignore is not permitted: %s\\n' \"$nested_semgrepignore\" >&2",
+    '  printf \'Nested .semgrepignore is not permitted: %s\\n\' "$nested_semgrepignore" >&2',
     '  exit 1',
     'fi',
     'if [ -L .semgrepignore ]; then',
-    "  printf '%s\\n' 'A symlinked .semgrepignore is not permitted' >&2",
+    '  printf \'%s\\n\' \'A symlinked .semgrepignore is not permitted\' >&2',
     '  exit 1',
     'fi',
     'if [ -f .semgrepignore ]; then',
-    "  actual=\"$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)\"",
-    "  expected=\"$(printf '.git/\\nnode_modules/\\n' | sort)\"",
+    '  actual="$(awk \'NF && $1 !~ /^#/ { print $1 }\' .semgrepignore | sort)"',
+    '  expected="$(printf \'.git/\\nnode_modules/\\n\' | sort)"',
     '  if [ "$actual" != "$expected" ]; then',
-    "    printf '%s\\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2",
+    '    printf \'%s\\n\' \'.semgrepignore may exclude only .git/ and node_modules/\' >&2',
     '    exit 1',
     '  fi',
     'fi',
     'target_count=0',
-    "while IFS= read -r -d '' file; do",
+    'while IFS= read -r -d \'\' file; do',
     '  target_count=$((target_count+1))',
     '  if git -c safe.directory="$PWD" -c core.fsmonitor=false check-ignore --no-index -q -- "$file"; then',
-    "    printf 'Tracked Semgrep target is excluded by .gitignore: %s\\n' \"$file\" >&2",
+    '    printf \'Tracked Semgrep target is excluded by .gitignore: %s\\n\' "$file" >&2',
     '    exit 1',
     '  else',
     '    status=$?',
@@ -2894,31 +2996,61 @@ test('finding P3-04: scanner rejects non-root-owned Git installation directories
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-nonroot-'));
 
   try {
-    const fakeDir = path.join(tempDir, 'fake_system_bin');
-    fs.mkdirSync(fakeDir, { recursive: true });
-    const fakeGit = path.join(fakeDir, process.platform === 'win32' ? 'git.exe' : 'git');
-    if (process.platform === 'win32') {
-      fs.writeFileSync(fakeGit, '@echo off\r\necho git version 2.99.0\r\n');
-    } else {
-      fs.writeFileSync(fakeGit, '#!/bin/sh\necho "git version 2.99.0"\nexit 0\n');
-      fs.chmodSync(fakeGit, 0o755);
-    }
-
     const scannerCode = fs.readFileSync(scannerPath, 'utf8');
     const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
 
     const testPy = [
       'import os, sys, tempfile, subprocess',
+      'sys_orig = sys.platform',
+      'sys.platform = "linux"',
+      'candidate_dir = os.path.realpath("/opt/mock_trusted_git/bin")',
+      'candidate_exe = os.path.join(candidate_dir, "git")',
+      'class MockStat:',
+      '    def __init__(self, mode, uid):',
+      '        self.st_mode = mode',
+      '        self.st_uid = uid',
+      'curr_uid = [1000]',
+      'def mock_stat(p, *args, **kwargs):',
+      '    rp = os.path.realpath(p)',
+      '    if rp == candidate_dir:',
+      '        return MockStat(0o040755, curr_uid[0])',
+      '    if rp == candidate_exe:',
+      '        return MockStat(0o100755, 0)',
+      '    return MockStat(0o040755, 0)',
+      'orig_isdir = os.path.isdir',
+      'orig_isfile = os.path.isfile',
+      'def mock_isdir(p):',
+      '    if os.path.realpath(p) == candidate_dir: return True',
+      '    return orig_isdir(p)',
+      'def mock_isfile(p):',
+      '    if os.path.realpath(p) == candidate_exe: return True',
+      '    return orig_isfile(p)',
+      'orig_run = subprocess.run',
+      'def mock_run(cmd, *args, **kwargs):',
+      '    class Res:',
+      '        stdout = b"git version 2.45.0\\n"',
+      '    return Res()',
+      'os.stat = mock_stat',
+      'os.path.isdir = mock_isdir',
+      'os.path.isfile = mock_isfile',
+      'os.access = lambda p, m: True',
+      'subprocess.run = mock_run',
       `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
       `exec(${JSON.stringify(funcCode)}, scope)`,
-      `found = scope["resolve_trusted_git"]({}, candidate_dirs=[${JSON.stringify(fakeDir)}])`,
-      'assert found is None, f"Expected non-root directory to be rejected, got: {found}"',
-      'print("NON_ROOT_DIR_REJECTED")'
+      '# When curr_uid is 1000 (non-root):',
+      'curr_uid[0] = 1000',
+      'res_non_root = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_non_root is None, f"Expected non-root directory to be rejected, got: {res_non_root}"',
+      '# When curr_uid is 0 (root):',
+      'curr_uid[0] = 0',
+      'res_root = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_root == candidate_exe, f"Expected candidate_exe when owned by root, got: {res_root}"',
+      'print("NON_ROOT_DIR_REJECTED_DIFFERENTIALLY")'
     ].join('\n');
 
     const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(pyRun.status, 0, pyRun.stderr);
-    assert.match(pyRun.stdout, /NON_ROOT_DIR_REJECTED/);
+    assert.match(pyRun.stdout, /NON_ROOT_DIR_REJECTED_DIFFERENTIALLY/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -2931,41 +3063,61 @@ test('finding P3-04: scanner rejects group-writable Git installation directories
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-groupwrite-'));
 
   try {
-    const fakeDir = path.join(tempDir, 'gw_bin');
-    fs.mkdirSync(fakeDir, { recursive: true });
-    const fakeGit = path.join(fakeDir, process.platform === 'win32' ? 'git.exe' : 'git');
-    if (process.platform === 'win32') {
-      fs.writeFileSync(fakeGit, '@echo off\r\necho git version 2.99.0\r\n');
-    } else {
-      fs.writeFileSync(fakeGit, '#!/bin/sh\necho "git version 2.99.0"\nexit 0\n');
-      fs.chmodSync(fakeGit, 0o755);
-    }
-
     const scannerCode = fs.readFileSync(scannerPath, 'utf8');
     const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
 
     const testPy = [
       'import os, sys, tempfile, subprocess',
-      'orig_stat = os.stat',
+      'sys_orig = sys.platform',
+      'sys.platform = "linux"',
+      'candidate_dir = os.path.realpath("/opt/mock_trusted_git/bin")',
+      'candidate_exe = os.path.join(candidate_dir, "git")',
       'class MockStat:',
-      '    def __init__(self, orig):',
-      '        self.st_mode = orig.st_mode | 0o020',
-      '        self.st_uid = 0',
-      'def mock_stat(path, *args, **kwargs):',
-      `    if ${JSON.stringify(fakeDir)} in str(path):`,
-      '        return MockStat(orig_stat(path, *args, **kwargs))',
-      '    return orig_stat(path, *args, **kwargs)',
+      '    def __init__(self, mode, uid):',
+      '        self.st_mode = mode',
+      '        self.st_uid = uid',
+      'curr_mode = [0o040775]',
+      'def mock_stat(p, *args, **kwargs):',
+      '    rp = os.path.realpath(p)',
+      '    if rp == candidate_dir:',
+      '        return MockStat(curr_mode[0], 0)',
+      '    if rp == candidate_exe:',
+      '        return MockStat(0o100755, 0)',
+      '    return MockStat(0o040755, 0)',
+      'orig_isdir = os.path.isdir',
+      'orig_isfile = os.path.isfile',
+      'def mock_isdir(p):',
+      '    if os.path.realpath(p) == candidate_dir: return True',
+      '    return orig_isdir(p)',
+      'def mock_isfile(p):',
+      '    if os.path.realpath(p) == candidate_exe: return True',
+      '    return orig_isfile(p)',
+      'orig_run = subprocess.run',
+      'def mock_run(cmd, *args, **kwargs):',
+      '    class Res:',
+      '        stdout = b"git version 2.45.0\\n"',
+      '    return Res()',
       'os.stat = mock_stat',
+      'os.path.isdir = mock_isdir',
+      'os.path.isfile = mock_isfile',
+      'os.access = lambda p, m: True',
+      'subprocess.run = mock_run',
       `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
       `exec(${JSON.stringify(funcCode)}, scope)`,
-      `found = scope["resolve_trusted_git"]({}, candidate_dirs=[${JSON.stringify(fakeDir)}])`,
-      'assert found is None, f"Expected group-writable dir to be rejected, got: {found}"',
-      'print("GROUP_WRITABLE_DIR_REJECTED")'
+      '# When group-writable (0o020):',
+      'curr_mode[0] = 0o040775',
+      'res_gw = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_gw is None, f"Expected group-writable dir to be rejected, got: {res_gw}"',
+      '# When safe (0o040755):',
+      'curr_mode[0] = 0o040755',
+      'res_safe = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_safe == candidate_exe, f"Expected candidate_exe when safe, got: {res_safe}"',
+      'print("GROUP_WRITABLE_DIR_REJECTED_DIFFERENTIALLY")'
     ].join('\n');
 
     const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(pyRun.status, 0, pyRun.stderr);
-    assert.match(pyRun.stdout, /GROUP_WRITABLE_DIR_REJECTED/);
+    assert.match(pyRun.stdout, /GROUP_WRITABLE_DIR_REJECTED_DIFFERENTIALLY/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -2978,43 +3130,228 @@ test('finding P3-04: scanner rejects group-writable and world-writable Git execu
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-exeperms-'));
 
   try {
-    const fakeDir = path.join(tempDir, 'perm_bin');
-    fs.mkdirSync(fakeDir, { recursive: true });
-    const fakeGit = path.join(fakeDir, process.platform === 'win32' ? 'git.exe' : 'git');
-    if (process.platform === 'win32') {
-      fs.writeFileSync(fakeGit, '@echo off\r\necho git version 2.99.0\r\n');
-    } else {
-      fs.writeFileSync(fakeGit, '#!/bin/sh\necho "git version 2.99.0"\nexit 0\n');
-      fs.chmodSync(fakeGit, 0o777);
-    }
-
     const scannerCode = fs.readFileSync(scannerPath, 'utf8');
     const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
 
     const testPy = [
       'import os, sys, tempfile, subprocess',
-      'orig_stat = os.stat',
+      'sys_orig = sys.platform',
+      'sys.platform = "linux"',
+      'candidate_dir = os.path.realpath("/opt/mock_trusted_git/bin")',
+      'candidate_exe = os.path.join(candidate_dir, "git")',
       'class MockStat:',
       '    def __init__(self, mode, uid):',
       '        self.st_mode = mode',
       '        self.st_uid = uid',
-      'def mock_stat(path, *args, **kwargs):',
-      `    if str(path).endswith("git") or str(path).endswith("git.exe"):`,
-      '        return MockStat(0o100777, 0)',
-      `    if ${JSON.stringify(fakeDir)} in str(path):`,
+      'exe_mode = [0o100777]',
+      'def mock_stat(p, *args, **kwargs):',
+      '    rp = os.path.realpath(p)',
+      '    if rp == candidate_dir:',
       '        return MockStat(0o040755, 0)',
-      '    return orig_stat(path, *args, **kwargs)',
+      '    if rp == candidate_exe:',
+      '        return MockStat(exe_mode[0], 0)',
+      '    return MockStat(0o040755, 0)',
+      'orig_isdir = os.path.isdir',
+      'orig_isfile = os.path.isfile',
+      'def mock_isdir(p):',
+      '    if os.path.realpath(p) == candidate_dir: return True',
+      '    return orig_isdir(p)',
+      'def mock_isfile(p):',
+      '    if os.path.realpath(p) == candidate_exe: return True',
+      '    return orig_isfile(p)',
+      'orig_run = subprocess.run',
+      'def mock_run(cmd, *args, **kwargs):',
+      '    class Res:',
+      '        stdout = b"git version 2.45.0\\n"',
+      '    return Res()',
       'os.stat = mock_stat',
+      'os.path.isdir = mock_isdir',
+      'os.path.isfile = mock_isfile',
+      'os.access = lambda p, m: True',
+      'subprocess.run = mock_run',
       `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
       `exec(${JSON.stringify(funcCode)}, scope)`,
-      `found = scope["resolve_trusted_git"]({}, candidate_dirs=[${JSON.stringify(fakeDir)}])`,
-      'assert found is None, f"Expected world/group-writable git binary to be rejected, got: {found}"',
-      'print("WRITABLE_EXE_REJECTED")'
+      '# When exe is world/group-writable (0o100777):',
+      'exe_mode[0] = 0o100777',
+      'res_gw = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_gw is None, f"Expected writable exe to be rejected, got: {res_gw}"',
+      '# When exe is safe (0o100755):',
+      'exe_mode[0] = 0o100755',
+      'res_safe = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_safe == candidate_exe, f"Expected candidate_exe when safe, got: {res_safe}"',
+      'print("WRITABLE_EXE_REJECTED_DIFFERENTIALLY")'
     ].join('\n');
 
     const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(pyRun.status, 0, pyRun.stderr);
-    assert.match(pyRun.stdout, /WRITABLE_EXE_REJECTED/);
+    assert.match(pyRun.stdout, /WRITABLE_EXE_REJECTED_DIFFERENTIALLY/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects writable parent directory in POSIX ancestor chain', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-ancestor-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'sys_orig = sys.platform',
+      'sys.platform = "linux"',
+      'candidate_dir = os.path.realpath("/opt/mock_trusted_git/bin")',
+      'parent_dir = os.path.realpath("/opt/mock_trusted_git")',
+      'candidate_exe = os.path.join(candidate_dir, "git")',
+      'class MockStat:',
+      '    def __init__(self, mode, uid):',
+      '        self.st_mode = mode',
+      '        self.st_uid = uid',
+      'parent_mode = [0o040775]',
+      'def mock_stat(p, *args, **kwargs):',
+      '    rp = os.path.realpath(p)',
+      '    if rp == candidate_dir:',
+      '        return MockStat(0o040755, 0)',
+      '    if rp == candidate_exe:',
+      '        return MockStat(0o100755, 0)',
+      '    if rp == parent_dir:',
+      '        return MockStat(parent_mode[0], 0)',
+      '    return MockStat(0o040755, 0)',
+      'orig_isdir = os.path.isdir',
+      'orig_isfile = os.path.isfile',
+      'def mock_isdir(p):',
+      '    if os.path.realpath(p) in (candidate_dir, parent_dir): return True',
+      '    return orig_isdir(p)',
+      'def mock_isfile(p):',
+      '    if os.path.realpath(p) == candidate_exe: return True',
+      '    return orig_isfile(p)',
+      'orig_run = subprocess.run',
+      'def mock_run(cmd, *args, **kwargs):',
+      '    class Res:',
+      '        stdout = b"git version 2.45.0\\n"',
+      '    return Res()',
+      'os.stat = mock_stat',
+      'os.path.isdir = mock_isdir',
+      'os.path.isfile = mock_isfile',
+      'os.access = lambda p, m: True',
+      'subprocess.run = mock_run',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      '# When parent directory is group-writable (0o040775):',
+      'parent_mode[0] = 0o040775',
+      'res_gw = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_gw is None, f"Expected writable parent ancestor to cause rejection, got: {res_gw}"',
+      '# When parent directory is safe (0o040755):',
+      'parent_mode[0] = 0o040755',
+      'res_safe = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_safe == candidate_exe, f"Expected candidate_exe when parent is safe, got: {res_safe}"',
+      'print("WRITABLE_PARENT_ANCESTOR_REJECTED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /WRITABLE_PARENT_ANCESTOR_REJECTED/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects poisoned ProgramFiles and SystemRoot environment variables', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-poisonenv-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'poisoned_root = os.path.realpath("/custom_attacker_tools")',
+      'os.environ["ProgramFiles"] = poisoned_root',
+      'os.environ["SystemRoot"] = poisoned_root',
+      'os.environ["ProgramFiles(x86)"] = poisoned_root',
+      'os.environ["windir"] = poisoned_root',
+      'candidate_dir = os.path.join(poisoned_root, "Git", "cmd")',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      'found = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert found is None, f"Expected candidate in poisoned environment root to be rejected, got: {found}"',
+      'print("POISONED_ENV_ROOT_REJECTED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /POISONED_ENV_ROOT_REJECTED/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects candidate in trusted root with permissive Windows DACL or non-admin owner', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-dacl-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      'if sys.platform == "win32":',
+      '    import ctypes',
+      '    real_git_dir = r"C:\\Program Files\\Git\\cmd"',
+      '    # Test A: Mock untrusted owner SID (standard user)',
+      '    class MockAdvApiOwner:',
+      '        def __getattr__(self, name):',
+      '            if name == "ConvertSidToStringSidW":',
+      '                def mock_convert(sid, p_str):',
+      '                    p_str._obj.value = "S-1-5-21-999999-999999-999999-1001"',
+      '                    return 1',
+      '                return mock_convert',
+      '            return getattr(ctypes.windll.advapi32, name)',
+      '    orig_advapi = ctypes.windll.advapi32',
+      '    ctypes.windll.advapi32 = MockAdvApiOwner()',
+      '    try:',
+      '        res_untrusted_owner = scope["resolve_trusted_git"]({}, candidate_dirs=[real_git_dir])',
+      '        assert res_untrusted_owner is None, f"Expected non-admin owner to be rejected, got: {res_untrusted_owner}"',
+      '    finally:',
+      '        ctypes.windll.advapi32 = orig_advapi',
+      '    # Test B: Mock permissive DACL (untrusted Users group ACE with WRITE_MASK)',
+      '    call_count = [0]',
+      '    class MockAdvApiAce:',
+      '        def __getattr__(self, name):',
+      '            if name == "ConvertSidToStringSidW":',
+      '                def mock_convert(sid, p_str):',
+      '                    call_count[0] += 1',
+      '                    if call_count[0] == 1:',
+      '                        p_str._obj.value = "S-1-5-32-544"',
+      '                    else:',
+      '                        p_str._obj.value = "S-1-5-32-545"',
+      '                    return 1',
+      '                return mock_convert',
+      '            return getattr(ctypes.windll.advapi32, name)',
+      '    ctypes.windll.advapi32 = MockAdvApiAce()',
+      '    try:',
+      '        res_permissive_ace = scope["resolve_trusted_git"]({}, candidate_dirs=[real_git_dir])',
+      '        assert res_permissive_ace is None, f"Expected permissive write ACE to be rejected, got: {res_permissive_ace}"',
+      '    finally:',
+      '        ctypes.windll.advapi32 = orig_advapi',
+      'print("PERMISSIVE_DACL_REJECTED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /PERMISSIVE_DACL_REJECTED/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -3027,25 +3364,15 @@ test('finding P3-04: scanner rejects Git executables outside Windows trusted adm
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-wintrust-'));
 
   try {
-    const unapprovedDir = path.join(tempDir, 'custom_tools', 'bin');
-    fs.mkdirSync(unapprovedDir, { recursive: true });
-    const fakeGit = path.join(unapprovedDir, process.platform === 'win32' ? 'git.exe' : 'git');
-    if (process.platform === 'win32') {
-      fs.writeFileSync(fakeGit, '@echo off\r\necho git version 2.99.0\r\n');
-    } else {
-      fs.writeFileSync(fakeGit, '#!/bin/sh\necho "git version 2.99.0"\n');
-      fs.chmodSync(fakeGit, 0o755);
-    }
-
     const scannerCode = fs.readFileSync(scannerPath, 'utf8');
     const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
 
     const testPy = [
       'import os, sys, tempfile, subprocess',
-      'sys_orig = sys.platform',
+      'unapprovedDir = os.path.realpath("/custom_tools/bin")',
       `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
       `exec(${JSON.stringify(funcCode)}, scope)`,
-      `found = scope["resolve_trusted_git"]({}, candidate_dirs=[${JSON.stringify(unapprovedDir)}])`,
+      `found = scope["resolve_trusted_git"]({}, candidate_dirs=[unapprovedDir])`,
       'assert found is None, f"Expected non-administrative directory to be rejected, got: {found}"',
       'print("NON_ADMIN_WIN_DIR_REJECTED")'
     ].join('\n');
