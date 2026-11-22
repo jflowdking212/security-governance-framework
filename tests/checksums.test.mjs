@@ -27,6 +27,9 @@ function fixture() {
 function run(cwd,command,...args) {
   return spawnSync(process.execPath,[TOOL,command,...args],{cwd,encoding:'utf8'});
 }
+function runWithEnv(cwd,command,env,...args) {
+  return spawnSync(process.execPath,[TOOL,command,...args],{cwd,encoding:'utf8',env:{...process.env,...env}});
+}
 function runWithPreload(cwd,hook,command,env,...args) {
   return spawnSync(process.execPath,['--require',hook,TOOL,command,...args],{cwd,encoding:'utf8',env:{...process.env,...env}});
 }
@@ -527,5 +530,29 @@ fs.openSync=function(target,...args){
   },'--root',root,'--filesystem');
   assert.notEqual(result.status,0,'A leaf replacement during hashing must not be accepted');
   assert.match(result.stderr,/ELOOP|symbolic link|File path changed/);
+});
+
+test('adversarial: checksum Git calls ignore inherited GIT environment overrides',t=>{
+  const cwd=fixture();
+  const decoy=fs.mkdtempSync(path.join(os.tmpdir(),'uss-checksums-decoy-'));
+  t.after(()=>{fs.rmSync(cwd,{recursive:true,force:true});fs.rmSync(decoy,{recursive:true,force:true});});
+  git(decoy,'init','-q');
+  const env={
+    GIT_DIR:path.join(decoy,'.git'),
+    GIT_WORK_TREE:decoy,
+    GIT_INDEX_FILE:path.join(decoy,'empty.index'),
+    GIT_OBJECT_DIRECTORY:path.join(decoy,'.git','objects'),
+    GIT_ALTERNATE_OBJECT_DIRECTORIES:path.join(decoy,'.git','objects'),
+    GIT_COMMON_DIR:path.join(decoy,'.git'),
+    GIT_CEILING_DIRECTORIES:decoy,
+    GIT_NAMESPACE:'attacker',
+    GIT_EXEC_PATH:path.join(decoy,'no-git-execs'),
+    GIT_SSH_COMMAND:'exit 99'
+  };
+  const created=runWithEnv(cwd,'create',env);
+  assert.equal(created.status,0,created.stderr);
+  assert.equal(fs.existsSync(path.join(cwd,'SHA256SUMS')),true);
+  const verified=runWithEnv(cwd,'verify',env);
+  assert.equal(verified.status,0,verified.stderr);
 });
 
