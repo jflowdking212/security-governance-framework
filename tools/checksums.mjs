@@ -166,9 +166,12 @@ function assertNoNestedGitAtFd(dirFd,relative='') {
     if(entry.name.toLowerCase()==='.git') {
       if(relative!==''||!GIT_ROOT||ROOT_PREFIX!=='')throw new Error('Unexpected nested .git directory or gitfile detected in release content: '+(relative?relative+'/.git':'.git'));
     } else if(entry.isDirectory()) {
-      const childFd=openDirectoryChild(dirFd,entry.name);
-      try { assertNoNestedGitAtFd(childFd,relative?relative+'/'+entry.name:entry.name); }
-      finally { fs.closeSync(childFd); }
+      const rel=relative?relative+'/'+entry.name:entry.name;
+      if(rel!=='node_modules'&&!rel.startsWith('node_modules/')) {
+        const childFd=openDirectoryChild(dirFd,entry.name);
+        try { assertNoNestedGitAtFd(childFd,rel); }
+        finally { fs.closeSync(childFd); }
+      }
     }
   }
 }
