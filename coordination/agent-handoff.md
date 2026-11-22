@@ -1623,16 +1623,65 @@ ChatGPT corrected `openParentAtRoot()` on its own branch in commit `4e0a875d6338
 - Other errors continue to propagate unchanged.
 - Directory descriptor ownership and cleanup logic remains unchanged.
 
-**Current status: CORRECTED IN SOURCE, NOT RETESTED.** Gemini must rerun the exact previously failing Linux test, the full checksum tests, the full suite, and the Windows checksum suite against exact corrected implementation commit `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`. Re-run the three Linux adversarial tests as well. Return raw output, exact counts and exit codes. Do not modify ChatGPT-owned files.
+**Current status: INDEPENDENTLY VERIFIED.** Gemini's follow-up retest report confirms exact corrected implementation commit `4e0a875d6338d718bd9ac7ef724f4954a0e9d641` passes the full Linux checksum suite (29/29), full Linux suite (184/184), all three Linux TOCTOU adversarial tests, Windows checksum suite (24 passed, 5 expected skips), and Windows full suite (178 passed, 6 expected skips). Repository and evidence validators passed on both platforms, and both worktrees were clean with zero generator drift. No failures were reported. This evidence was supplied by Gemini and has not been independently re-executed by ChatGPT in this session.
 
 ### 21.4 Next supervisory actions and gates
 
-1. Gemini: read-only retest ChatGPT branch at exact commit `4e0a875d6338d718bd9ac7ef724f4954a0e9d641` on Linux and Windows.
-2. ChatGPT: continue source-level review of Gemini P2-01 branch and reconcile the exact files/commit with the reported test results.
-3. If ChatGPT's correction passes, update the status from corrected-not-retested to independently verified.
-4. Create a fresh integration candidate only after both workstreams pass. Preserve both implementations and union the handoff sections with unique numbering.
-5. Run the entire suite, consumer validator, evidence validator, all generators and adversarial tests against the exact integrated SHA.
+1. ChatGPT: stage a fresh, isolated integration candidate containing Gemini P2-01 and ChatGPT A2-03 without merging to `main` or changing PR #9. Preserve both implementations and union handoff sections with unique numbering.
+2. Claude: independently audit the exact staged integration candidate read-only. Re-run or independently reproduce the scanner environment-poisoning attacks, checksum root/ancestor/leaf TOCTOU attacks, symlink-parent regression, and relevant workflow/consumer-validator mutation tests. Inspect the integrated diff for unintended changes and verify that both remediation sets remain present.
+3. Claude: run the complete test suite, consumer validator, evidence validator, repository validator and generators against the exact candidate SHA on Linux; report exact commands, raw failures, counts and exit codes. Do not treat the previously reported branch-level results as integrated-head evidence.
+4. Gemini: remain available to resolve any P2-01 scanner/workflow finding, but do not edit ChatGPT-owned checksum files or the shared handoff.
+5. Only after Claude's candidate audit and integrated tests are clean should a separate supervisor review decide whether the candidate is ready for hosted CI.
 6. Hosted GitHub Actions, CodeQL, Gitleaks, OSV, native Windows hosted CI, A2-05 ruleset and U-01 signing remain separate gates until evidence is supplied.
 
 No merge to `main`, PR #9 merge, release signing, ruleset change, tag or deployment is authorized by this entry.
+
+
+
+---
+
+## 22. Gemini Independent Retest Acceptance and Claude Integration-Candidate Audit Assignment — 2026-11-22
+
+**Gemini retest target:** `chatgpt/a2-03-toctou-remediation` implementation commit `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`.  
+**Gemini P2-01 implementation:** `gemini/d01-d02-f5-f6-remediation` commit `49268f936768671040bee7b6b89e2c7f89535936`.
+
+### 22.1 A2-03 retest accepted
+
+Gemini's independent retest report states:
+
+**Linux VPS**
+- Checksum suite: 29/29 passed, 0 failed, 0 skipped.
+- Full suite: 184/184 passed, 0 failed, 0 skipped.
+- The formerly failing symbolic-link-parent test passed.
+- All three Linux TOCTOU adversarial tests passed.
+- Repository validator and evidence validator passed.
+- Generator drift: zero; clean worktree.
+
+**Windows PC**
+- Checksum suite: 24 passed, 0 failed, 5 expected Linux-only skips.
+- Full suite: 178 passed, 0 failed, 6 expected skips.
+- Repository validator and evidence validator passed.
+- Generator drift: zero; clean worktree.
+
+**Disposition:** The error-normalization regression in `openParentAtRoot()` is independently verified as corrected. Combined with Gemini's reported clean P2-01 branch tests, both implementation workstreams are accepted as branch-level integration candidates. These are branch-level results only; they do not prove the combined integration candidate passes.
+
+### 22.2 Claude assignment — final isolated integration-candidate audit
+
+**Owner:** Claude (independent adversarial reviewer).  
+**Mode:** Read-only audit of candidate implementation; scratch worktrees may be used for test execution and merge rehearsal.  
+**No authorization:** Do not merge to `main`, modify PR #9, deploy, sign releases, change rulesets, or edit either implementation branch.
+
+Once ChatGPT supplies the exact staged integration-candidate branch and SHA, Claude must:
+
+1. Inspect the exact integrated diff and verify both Gemini P2-01 and ChatGPT A2-03 implementations survived integration without accidental omission or regression.
+2. Re-run or independently reproduce P2-01 attacks: `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_EXEC_PATH`, `GIT_OBJECT_DIRECTORY`, `GIT_SSH_COMMAND`, combined injection, tracked NUL-byte detection, first-party workflow and consumer-template guard mutations.
+3. Re-run or independently reproduce A2-03 attacks: root path atomic redirection during creation, ancestor swap during verification, leaf replacement after opening, symlink-parent rejection and stable error normalization.
+4. Inspect workflow parity, consumer validator enforcement, environment scrubbing and the scanner's working-tree-versus-index scope boundary. Do not silently change the agreed scope.
+5. Run `npm test`, checksum and workflow-focused suites, `node tools/validate.mjs`, `node tools/validate-consumer-workflow.mjs`, evidence validation, and all module/index/bundle generators on the exact candidate SHA.
+6. Report exact SHA, commands, environment/runtime versions, test counts, skipped tests, exit codes, raw failures, generator drift and any unverified hosted checks.
+7. Give an explicit verdict: ACCEPT, ACCEPT WITH CONDITIONS, or CHANGES REQUIRED. A clean branch-level test report is not a substitute for testing the integrated SHA.
+
+**ChatGPT staging responsibility:** create a fresh candidate branch only, keep both source branches intact, preserve handoff content by union with unique section numbering, and report the exact candidate SHA. No production or mainline merge is implied.
+
+**Release gates remain open:** hosted GitHub Actions, CodeQL, Gitleaks, OSV, native hosted Windows, A2-05 live ruleset and U-01 release signing require their own evidence and/or owner action.
 
