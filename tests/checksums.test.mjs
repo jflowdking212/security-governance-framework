@@ -27,6 +27,9 @@ function fixture() {
 function run(cwd,command,...args) {
   return spawnSync(process.execPath,[TOOL,command,...args],{cwd,encoding:'utf8'});
 }
+function runWithPreload(cwd,hook,command,env,...args) {
+  return spawnSync(process.execPath,['--require',hook,TOOL,command,...args],{cwd,encoding:'utf8',env:{...process.env,...env}});
+}
 
 test('checksum tool creates a deterministic manifest and verifies it',t=>{
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
@@ -422,3 +425,106 @@ test('adversarial: root .git metadata failure is controlled and has no uncaught 
   assert.match(result.stderr,/^Checksum operation failed: Root \.git metadata is not allowed in filesystem mode/);
   assert.doesNotMatch(result.stderr,/\n\s+at /);
 });
+
+test('adversarial: Linux filesystem mode stays bound to the opened root after its path is atomically redirected',t=>{
+  if(process.platform!=='linux'){t.skip('Linux /proc/self/fd descriptor traversal is required');return;}
+  const parent=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-race-'));
+  const moved=parent+'.moved';
+  const evilParent=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-evil-'));
+  t.after(()=>{fs.rmSync(parent,{recursive:true,force:true});fs.rmSync(moved,{recursive:true,force:true});fs.rmSync(evilParent,{recursive:true,force:true});});
+  const root=path.join(parent,'root');
+  const evilRoot=path.join(evilParent,'root');
+  fs.mkdirSync(root,{recursive:true});
+  fs.mkdirSync(evilRoot,{recursive:true});
+  fs.writeFileSync(path.join(root,'README.md'),'trusted root bytes\\n');
+  fs.writeFileSync(path.join(evilRoot,'README.md'),'attacker root bytes\\n');
+  const hook=path.join(os.tmpdir(),'uss-root-swap-'+process.pid+'.cjs');
+  t.after(()=>fs.rmSync(hook,{force:true}));
+  fs.writeFileSync(hook,`
+const fs=require('node:fs');
+let swapped=false;
+const original=fs.readdirSync;
+fs.readdirSync=function(target,...args){
+  if(!swapped&&typeof target==='string'&&target.startsWith('/proc/self/fd/')){
+    swapped=true;
+    fs.renameSync(process.env.USS_TEST_PARENT,process.env.USS_TEST_MOVED);
+    fs.symlinkSync(process.env.USS_TEST_EVIL_PARENT,process.env.USS_TEST_PARENT,'dir');
+  }
+  return original.call(this,target,...args);
+};
+`);
+  const result=runWithPreload(process.cwd(),hook,'create',{
+    USS_TEST_PARENT:parent,USS_TEST_MOVED:moved,USS_TEST_EVIL_PARENT:evilParent
+  },'--root',root,'--filesystem');
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(fs.existsSync(path.join(moved,'root','SHA256SUMS')),true,'Manifest must be written into the directory pinned before the path swap');
+  assert.equal(fs.existsSync(path.join(evilRoot,'SHA256SUMS')),false,'Manifest must never be written into the attacker-controlled replacement tree');
+});
+
+test('adversarial: Linux filesystem verification reads the pinned root after an ancestor swap',t=>{
+  if(process.platform!=='linux'){t.skip('Linux /proc/self/fd descriptor traversal is required');return;}
+  const parent=fs.mkdtempSync(path.join(os.tmpdir(),'uss-verify-root-race-'));
+  const moved=parent+'.moved';
+  const evilParent=fs.mkdtempSync(path.join(os.tmpdir(),'uss-verify-evil-'));
+  t.after(()=>{fs.rmSync(parent,{recursive:true,force:true});fs.rmSync(moved,{recursive:true,force:true});fs.rmSync(evilParent,{recursive:true,force:true});});
+  const root=path.join(parent,'root');
+  const evilRoot=path.join(evilParent,'root');
+  fs.mkdirSync(root,{recursive:true});
+  fs.mkdirSync(evilRoot,{recursive:true});
+  fs.writeFileSync(path.join(root,'README.md'),'trusted verify bytes\\n');
+  assert.equal(run(process.cwd(),'create','--root',root,'--filesystem').status,0);
+  fs.writeFileSync(path.join(evilRoot,'README.md'),'attacker bytes\\n');
+  fs.writeFileSync(path.join(evilRoot,'SHA256SUMS'),'not a valid manifest\\n');
+  const hook=path.join(os.tmpdir(),'uss-verify-root-swap-'+process.pid+'.cjs');
+  t.after(()=>fs.rmSync(hook,{force:true}));
+  fs.writeFileSync(hook,`
+const fs=require('node:fs');
+let swapped=false;
+const original=fs.readdirSync;
+fs.readdirSync=function(target,...args){
+  if(!swapped&&typeof target==='string'&&target.startsWith('/proc/self/fd/')){
+    swapped=true;
+    fs.renameSync(process.env.USS_TEST_PARENT,process.env.USS_TEST_MOVED);
+    fs.symlinkSync(process.env.USS_TEST_EVIL_PARENT,process.env.USS_TEST_PARENT,'dir');
+  }
+  return original.call(this,target,...args);
+};
+`);
+  const result=runWithPreload(process.cwd(),hook,'verify',{
+    USS_TEST_PARENT:parent,USS_TEST_MOVED:moved,USS_TEST_EVIL_PARENT:evilParent
+  },'--root',root,'--filesystem');
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(fs.readFileSync(path.join(moved,'root','SHA256SUMS'),'utf8').includes('README.md'),true);
+});
+
+test('adversarial: Linux filesystem mode fails closed when a leaf is replaced after opening',t=>{
+  if(process.platform!=='linux'){t.skip('Linux /proc/self/fd descriptor traversal is required');return;}
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'uss-leaf-race-'));
+  const evil=fs.mkdtempSync(path.join(os.tmpdir(),'uss-leaf-evil-'));
+  t.after(()=>{fs.rmSync(root,{recursive:true,force:true});fs.rmSync(evil,{recursive:true,force:true});});
+  fs.writeFileSync(path.join(root,'README.md'),'trusted leaf bytes\\n');
+  fs.writeFileSync(path.join(evil,'README.md'),'attacker leaf bytes\\n');
+  const hook=path.join(os.tmpdir(),'uss-leaf-swap-'+process.pid+'.cjs');
+  t.after(()=>fs.rmSync(hook,{force:true}));
+  fs.writeFileSync(hook,`
+const fs=require('node:fs');
+let swapped=false;
+const original=fs.openSync;
+fs.openSync=function(target,...args){
+  const fd=original.call(this,target,...args);
+  if(!swapped&&typeof target==='string'&&target.endsWith('/README.md')){
+    swapped=true;
+    fs.renameSync(process.env.USS_TEST_FILE,process.env.USS_TEST_BACKUP);
+    fs.symlinkSync(process.env.USS_TEST_EVIL_FILE,process.env.USS_TEST_FILE);
+  }
+  return fd;
+};
+`);
+  const file=path.join(root,'README.md');
+  const result=runWithPreload(process.cwd(),hook,'create',{
+    USS_TEST_FILE:file,USS_TEST_BACKUP:file+'.original',USS_TEST_EVIL_FILE:path.join(evil,'README.md')
+  },'--root',root,'--filesystem');
+  assert.notEqual(result.status,0,'A leaf replacement during hashing must not be accepted');
+  assert.match(result.stderr,/ELOOP|symbolic link|File path changed/);
+});
+
