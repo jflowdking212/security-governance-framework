@@ -1038,7 +1038,7 @@ The Gemini prompt file also records an independent-review assignment and scanner
 
 **D-01 — inline suppression bypass: OPEN / NOT VERIFIED.**
 - The inspected first-party workflow does not invoke Semgrep with `--disable-nosem`.
-- The workflow and consumer template do not visibly reject inline `nosemgrep` directives or Gitleaks `gitleaks:allow` directives.
+- The workflow and consumer template do not visibly reject inline `nosemgrep` directives or Gitleaks `Gitleaks inline allow marker` directives.
 - The inspected workflow-security tests do not contain regression cases for either inline suppression mechanism.
 - Existing scanner-config guards do not, by themselves, prove that inline source suppressions are blocked.
 
@@ -1203,7 +1203,7 @@ Gemini is instructed to execute the following against a clean checkout of the ex
 3. `node tools/validate.mjs` and `node tools/validate-evidence.mjs`.
 4. All repository generator/build drift checks.
 5. Semgrep **1.186.0**, the exact pinned workflow version, with `--disable-nosem`. Record version, full command, scanned file count, rules count and findings.
-6. Gitleaks using the exact pinned action/tool version. Demonstrate that the pre-scan guard fails on a temporary tracked adversarial fixture containing a case/whitespace variant of `gitleaks:allow`, and passes on a clean fixture/tree. Restore the worktree afterwards.
+6. Gitleaks using the exact pinned action/tool version. Demonstrate that the pre-scan guard fails on a temporary tracked adversarial fixture containing a case/whitespace variant of `Gitleaks inline allow marker`, and passes on a clean fixture/tree. Restore the worktree afterwards.
 7. CodeQL and OSV where available. If unavailable, report the exact reason and do not claim a pass.
 8. Confirm the consumer template receives equivalent structural validation, including the shell-template allowlist and the D-01 suppression controls.
 9. Update Gemini branch handoff Section 17.4 with the exact tested SHA, commands, exit codes, test totals, scanner versions/results, artifact/run IDs and all blockers.
