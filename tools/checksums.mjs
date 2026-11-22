@@ -9,9 +9,15 @@ const SIGNATURE='SHA256SUMS.sig';
 const EXCLUDED=new Set([MANIFEST,SIGNATURE]);
 
 function gitAt(cwd,args,{encoding='utf8'}={}) {
-  // Repository-local core.fsmonitor is executable configuration. Disable it for
-  // every Git invocation made by this verifier, including index enumeration.
-  const r=spawnSync('git',['-c','core.fsmonitor=false',...args],{cwd,encoding,stdio:['ignore','pipe','pipe']});
+  // Git environment variables can redirect repository, index, object storage,
+  // executable lookup and transport. Never inherit caller-controlled GIT_*.
+  // Repository-local core.fsmonitor is executable configuration, so disable it
+  // for every Git invocation made by this verifier.
+  const env={...process.env};
+  for(const key of Object.keys(env)) {
+    if(key.startsWith('GIT_'))delete env[key];
+  }
+  const r=spawnSync('git',['-c','core.fsmonitor=false',...args],{cwd,encoding,env,stdio:['ignore','pipe','pipe']});
   if(r.error)throw new Error('Unable to run git: '+r.error.message);
   return r;
 }
