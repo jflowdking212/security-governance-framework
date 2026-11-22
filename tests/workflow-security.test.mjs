@@ -94,6 +94,21 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     'CHUNK_SIZE = 1024 * 1024',
     'ROOT = os.getcwd()',
     '',
+    'SECURE_DIR_FD = (',
+    '    os.open in getattr(os, "supports_dir_fd", set()) and',
+    '    os.stat in getattr(os, "supports_dir_fd", set()) and',
+    '    hasattr(os, "O_DIRECTORY") and',
+    '    hasattr(os, "O_NOFOLLOW")',
+    ')',
+    '',
+    'require_dir_fd = os.environ.get("USS_SCANNER_REQUIRE_DIR_FD") == "1" or "--require-dir-fd" in sys.argv',
+    'if require_dir_fd and not SECURE_DIR_FD:',
+    '    print(',
+    '        f"FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: {sys.platform}",',
+    '        file=sys.stderr,',
+    '    )',
+    '    sys.exit(2)',
+    '',
     'try:',
     '    result = subprocess.run(',
     '        ["git", "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],',
@@ -107,35 +122,148 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '    print(f"FAIL CLOSED: cannot enumerate tracked files: {detail.decode(\'utf-8\', \'replace\')}", file=sys.stderr)',
     '    sys.exit(2)',
     '',
-    'for rel in result.stdout.split(b"\\0"):',
-    '    if not rel:',
-    '        continue',
-    '    target_path = os.path.join(os.fsencode(ROOT), rel)',
+    'if SECURE_DIR_FD:',
+    '    root_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)',
     '    try:',
-    '        before = os.lstat(target_path)',
-    '        if stat.S_ISLNK(before.st_mode):',
-    '            # Git stores symlink targets as text blobs; do not follow the link.',
-    '            continue',
-    '        if not stat.S_ISREG(before.st_mode):',
-    '            raise OSError("tracked path is not a regular file or symlink")',
-    '        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)',
-    '        fd = os.open(target_path, flags)',
-    '        try:',
-    '            opened = os.fstat(fd)',
-    '            if not stat.S_ISREG(opened.st_mode):',
-    '                raise OSError("opened tracked path is not a regular file")',
-    '            while True:',
-    '                chunk = os.read(fd, CHUNK_SIZE)',
-    '                if not chunk:',
-    '                    break',
-    '                if b"\\0" in chunk:',
-    '                    print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)',
-    '                    sys.exit(1)',
-    '        finally:',
-    '            os.close(fd)',
+    '        root_fd = os.open(os.fsencode(ROOT), root_flags)',
     '    except OSError as exc:',
-    '        print("FAIL CLOSED: cannot inspect tracked path " + os.fsdecode(rel) + ": " + str(exc), file=sys.stderr)',
+    '        print(f"FAIL CLOSED: cannot open repository root: {exc}", file=sys.stderr)',
     '        sys.exit(2)',
+    '',
+    '    try:',
+    '        root_stat = os.fstat(root_fd)',
+    '        if not stat.S_ISDIR(root_stat.st_mode):',
+    '            print("FAIL CLOSED: repository root is not a directory", file=sys.stderr)',
+    '            sys.exit(2)',
+    '',
+    '        for rel in result.stdout.split(b"\\0"):',
+    '            if not rel:',
+    '                continue',
+    '',
+    '            parts = rel.split(b"/")',
+    '            for comp in parts:',
+    '                if comp in (b".", b"..") or not comp:',
+    '                    print(f"FAIL CLOSED: invalid path component in tracked path: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                    sys.exit(2)',
+    '',
+    '            cur_fd = root_fd',
+    '            close_fds = []',
+    '            try:',
+    '                for comp in parts[:-1]:',
+    '                    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
+    '                    try:',
+    '                        next_fd = os.open(comp, dir_flags, dir_fd=cur_fd)',
+    '                    except OSError as exc:',
+    '                        print(f"FAIL: parent directory component is a symbolic link or cannot be securely traversed: {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '                        sys.exit(1)',
+    '                    close_fds.append(next_fd)',
+    '                    next_stat = os.fstat(next_fd)',
+    '                    if not stat.S_ISDIR(next_stat.st_mode):',
+    '                        print(f"FAIL: parent component is not a directory: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                        sys.exit(1)',
+    '                    cur_fd = next_fd',
+    '',
+    '                leaf = parts[-1]',
+    '                try:',
+    '                    leaf_stat = os.stat(leaf, dir_fd=cur_fd, follow_symlinks=False)',
+    '                except OSError as exc:',
+    '                    print(f"FAIL CLOSED: cannot stat tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '                    sys.exit(2)',
+    '',
+    '                if stat.S_ISLNK(leaf_stat.st_mode):',
+    '                    continue',
+    '',
+    '                if not stat.S_ISREG(leaf_stat.st_mode):',
+    '                    print(f"FAIL: tracked path is not a regular file or symlink: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                    sys.exit(1)',
+    '',
+    '                file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
+    '                try:',
+    '                    file_fd = os.open(leaf, file_flags, dir_fd=cur_fd)',
+    '                except OSError as exc:',
+    '                    print(f"FAIL: cannot open tracked regular file {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '                    sys.exit(1)',
+    '',
+    '                try:',
+    '                    opened_stat = os.fstat(file_fd)',
+    '                    if not stat.S_ISREG(opened_stat.st_mode):',
+    '                        print(f"FAIL: opened tracked path is not a regular file: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                        sys.exit(1)',
+    '',
+    '                    while True:',
+    '                        chunk = os.read(file_fd, CHUNK_SIZE)',
+    '                        if not chunk:',
+    '                            break',
+    '                        if b"\\0" in chunk:',
+    '                            print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)',
+    '                            sys.exit(1)',
+    '                finally:',
+    '                    os.close(file_fd)',
+    '            finally:',
+    '                for fd in close_fds:',
+    '                    try:',
+    '                        os.close(fd)',
+    '                    except OSError:',
+    '                        pass',
+    '    finally:',
+    '        os.close(root_fd)',
+    'else:',
+    '    root_bytes = os.fsencode(ROOT)',
+    '    for rel in result.stdout.split(b"\\0"):',
+    '        if not rel:',
+    '            continue',
+    '',
+    '        parts = rel.split(b"/")',
+    '        for comp in parts:',
+    '            if comp in (b".", b"..") or not comp:',
+    '                print(f"FAIL CLOSED: invalid path component in tracked path: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                sys.exit(2)',
+    '',
+    '        accum_path = root_bytes',
+    '        for comp in parts[:-1]:',
+    '            accum_path = os.path.join(accum_path, comp)',
+    '            try:',
+    '                comp_stat = os.lstat(accum_path)',
+    '                is_reparse = bool(getattr(comp_stat, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))',
+    '                if stat.S_ISLNK(comp_stat.st_mode) or is_reparse or os.path.islink(accum_path):',
+    '                    print(f"FAIL: parent directory component is a symbolic link: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                    sys.exit(1)',
+    '                if not stat.S_ISDIR(comp_stat.st_mode):',
+    '                    print(f"FAIL: parent component is not a directory: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                    sys.exit(1)',
+    '            except OSError as exc:',
+    '                print(f"FAIL CLOSED: cannot inspect parent directory component: {exc}", file=sys.stderr)',
+    '                sys.exit(2)',
+    '',
+    '        target_path = os.path.join(root_bytes, rel)',
+    '        try:',
+    '            leaf_stat = os.lstat(target_path)',
+    '            is_leaf_reparse = bool(getattr(leaf_stat, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))',
+    '            if stat.S_ISLNK(leaf_stat.st_mode) or is_leaf_reparse or os.path.islink(target_path):',
+    '                continue',
+    '            if not stat.S_ISREG(leaf_stat.st_mode):',
+    '                print(f"FAIL: tracked path is not a regular file or symlink: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                sys.exit(1)',
+    '',
+    '            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)',
+    '            fd = os.open(target_path, flags)',
+    '            try:',
+    '                opened_stat = os.fstat(fd)',
+    '                if not stat.S_ISREG(opened_stat.st_mode):',
+    '                    print(f"FAIL: opened tracked path is not a regular file: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                    sys.exit(1)',
+    '                while True:',
+    '                    chunk = os.read(fd, CHUNK_SIZE)',
+    '                    if not chunk:',
+    '                        break',
+    '                    if b"\\0" in chunk:',
+    '                        print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)',
+    '                        sys.exit(1)',
+    '            finally:',
+    '                os.close(fd)',
+    '        except OSError as exc:',
+    '            print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '            sys.exit(2)',
     '',
     'print("PASS: complete content scan found no NUL bytes in tracked regular files")',
     'EOF',
@@ -2140,7 +2268,7 @@ test('finding F5: actual workflow guard script executes and rejects malicious bi
       : { ...process.env };
 
     // Clean run of actual SCANNER_CONFIG_GUARD_RUN
-    const cleanGuardRun = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd: tempDir, encoding: 'utf8', env: bashEnv });
+    const cleanGuardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd: tempDir, encoding: 'utf8', env: bashEnv, input: SCANNER_CONFIG_GUARD_RUN });
     assert.equal(cleanGuardRun.status, 0, 'Actual workflow guard must succeed on clean tree: ' + cleanGuardRun.stderr);
     assert.match(cleanGuardRun.stdout, /PASS: complete content scan found no NUL bytes/);
 
@@ -2150,11 +2278,163 @@ test('finding F5: actual workflow guard script executes and rejects malicious bi
     fs.writeFileSync(path.join(tempDir, 'tools/malicious.bin'), evilBuf);
     spawnSync('git', ['add', 'tools/malicious.bin'], { cwd: tempDir });
 
-    const evilGuardRun = spawnSync('bash', ['-c', SCANNER_CONFIG_GUARD_RUN], { cwd: tempDir, encoding: 'utf8', env: bashEnv });
+    const evilGuardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd: tempDir, encoding: 'utf8', env: bashEnv, input: SCANNER_CONFIG_GUARD_RUN });
     assert.notEqual(evilGuardRun.status, 0, 'Actual workflow guard must reject malicious binary fixture');
     assert.match(evilGuardRun.stderr, /FAIL: tracked binary file contains NUL byte: tools\/malicious\.bin/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5-R1: rejects parent-directory symlink traversal even when destination contains clean file', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-symlink-'));
+  const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-ext-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Symlink Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'symlink-test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    // Track a file containing a NUL byte in sub/child/payload.bin
+    fs.mkdirSync(path.join(tempDir, 'sub', 'child'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'sub', 'child', 'payload.bin'), Buffer.from('adversarial\0content'));
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'tracked malicious blob'], { cwd: tempDir });
+
+    // Prepare external clean directory with clean file of same name
+    fs.writeFileSync(path.join(externalDir, 'payload.bin'), 'clean external content\n');
+
+    // Replace parent directory 'sub' with a symlink / junction to external clean directory
+    fs.rmSync(path.join(tempDir, 'sub'), { recursive: true, force: true });
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    fs.symlinkSync(externalDir, path.join(tempDir, 'sub'), linkType);
+
+    // The scanner must reject parent symlink redirection and fail with exit code 1
+    const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(res.status, 1, 'Scanner must exit 1 when parent directory is a symbolic link');
+    assert.match(res.stderr, /FAIL: parent directory component is a symbolic link/);
+    assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(externalDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5-R1: multi-level nested tracked files pass cleanly', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-nested-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Nested Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'nested-test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.mkdirSync(path.join(tempDir, 'a', 'b', 'c', 'd'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'a', 'b', 'c', 'd', 'nested.txt'), 'clean multi-level content\n');
+    fs.writeFileSync(path.join(tempDir, 'root_file.txt'), 'root clean\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean nested files'], { cwd: tempDir });
+
+    const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(res.status, 0, 'Clean multi-level nested files must pass with exit 0: ' + res.stderr);
+    assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5-R1: symlinked leaf file is safely handled without traversing outside repository', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-leafsymlink-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Symlink Leaf User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'symlink-leaf@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(tempDir, 'clean_target.txt'), 'clean regular file content\n');
+    try {
+      fs.symlinkSync('clean_target.txt', path.join(tempDir, 'clean_link.txt'));
+      spawnSync('git', ['add', 'clean_target.txt', 'clean_link.txt'], { cwd: tempDir });
+      spawnSync('git', ['commit', '-m', 'add target and symlink'], { cwd: tempDir });
+
+      const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+      assert.equal(res.status, 0, 'Clean symlink leaf must pass scanner with exit 0: ' + res.stderr);
+      assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+    } catch (symlinkErr) {
+      if (symlinkErr.code !== 'EPERM') throw symlinkErr;
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5-R1: fails closed on unsupported platforms when directory-descriptor traversal is required', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+
+  if (process.platform === 'win32') {
+    const cliRes = spawnSync(pythonBin, [scannerPath, '--require-dir-fd'], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(cliRes.status, 2, 'Scanner with --require-dir-fd must fail closed on win32');
+    assert.match(cliRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+
+    const envRes = spawnSync(pythonBin, [scannerPath], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, USS_SCANNER_REQUIRE_DIR_FD: '1' }
+    });
+    assert.equal(envRes.status, 2, 'Scanner with USS_SCANNER_REQUIRE_DIR_FD=1 must fail closed on win32');
+    assert.match(envRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+  }
+});
+
+test('finding F5-R1: live workflow guard rejects parent-directory symlink malicious fixture', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-guard-'));
+  const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-guard-ext-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Guard Symlink User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'guard-symlink@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+      fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(tempDir, 'tools/clean.txt'), 'clean content\n');
+    fs.writeFileSync(path.join(tempDir, 'tests/check.mjs'), 'const ok = true;\n');
+    fs.writeFileSync(path.join(tempDir, '.github/workflows/test.yml'), 'name: test\n');
+    fs.writeFileSync(path.join(tempDir, 'templates/test.yml'), 'name: test\n');
+
+    fs.mkdirSync(path.join(tempDir, 'sub', 'child'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'sub', 'child', 'blob.bin'), Buffer.from('adversarial\0blob'));
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean tree plus tracked malicious blob'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(externalDir, 'blob.bin'), 'clean external content\n');
+    fs.rmSync(path.join(tempDir, 'sub'), { recursive: true, force: true });
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    fs.symlinkSync(externalDir, path.join(tempDir, 'sub'), linkType);
+
+    const bashEnv = process.platform === 'win32'
+      ? { ...process.env, PATH: 'C:\\Program Files\\Git\\usr\\bin;C:\\Users\\HP\\AppData\\Roaming\\Python\\Python314\\Scripts;' + (process.env.PATH || '') }
+      : { ...process.env };
+
+    const guardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], {
+      cwd: tempDir,
+      encoding: 'utf8',
+      env: bashEnv,
+      input: SCANNER_CONFIG_GUARD_RUN
+    });
+
+    assert.notEqual(guardRun.status, 0, 'Live workflow guard must reject parent symlink fixture');
+    assert.match(guardRun.stderr, /FAIL: parent directory component is a symbolic link/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(externalDir, { recursive: true, force: true });
   }
 });
 
