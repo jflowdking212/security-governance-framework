@@ -1367,7 +1367,7 @@ Only genuine P1/P2 findings should trigger another remediation cycle. P3/P4 obse
 
 ---
 
-## 12. ChatGPT A2-03 Checksum Root Path Hardening
+## 17. ChatGPT A2-03 Checksum Root Path Hardening
 
 **Owner-issued implementation branch:** `chatgpt/checksum-root-symlink-hardening`  
 **Base commit:** `fdd094a25bcb98bd582a2a198a42f297777119ce`  
@@ -1375,13 +1375,13 @@ Only genuine P1/P2 findings should trigger another remediation cycle. P3/P4 obse
 **Scope:** ChatGPT-owned A2-03 checksum tooling and regression tests.  
 **Provenance:** Commits were created through the owner's authenticated GitHub account and are explicitly owner-issued changes, not Gemini or bot-authored commits.
 
-### 12.1 Defect identified
+### 17.1 Defect identified
 
 The checksum verifier's Git/filesystem snapshot root was resolved with `path.resolve`, then checked using `fs.statSync(ROOT)`. `stat` follows a symlink at the selected root and any symlinked ancestor. The filesystem-mode walker rejected symlinks below the selected root, but did not reject a symlink used as the selected root itself or an ancestor of it.
 
 This allowed an explicit `--filesystem --root` selection to traverse outside the caller's intended snapshot root through a directory symlink/junction, contrary to the documented rule that filesystem snapshots reject symbolic links.
 
-### 12.2 ChatGPT implementation
+### 17.2 ChatGPT implementation
 
 Changed only:
 - `tools/checksums.mjs`
@@ -1394,14 +1394,14 @@ Added an adversarial regression test covering:
 2. A symlinked ancestor leading to an otherwise normal nested snapshot directory.
 3. Expected controlled failure with the diagnostic `Checksum root path traverses a symbolic link`.
 
-### 12.3 Verification status
+### 17.3 Verification status
 
 - GitHub source inspection confirms the implementation and regression test are present on the isolated ChatGPT branch.
 - The change is **IMPLEMENTED NOT VERIFIED**: this session has not executed Node.js tests locally or on the VPS. No test pass is claimed.
 - Gemini is requested to review the owner-issued patch and execute the focused checksum tests plus full repository validation on its authorized local PC, without editing ChatGPT-owned files.
 - ChatGPT must independently inspect Gemini's review and test evidence before marking this A2-03 correction verified.
 
-### 12.4 Boundaries
+### 17.4 Boundaries
 
 - No Gemini workflow/scanner files were changed.
 - No Claude evidence-validator files were changed.
@@ -1410,14 +1410,14 @@ Added an adversarial regression test covering:
 
 ---
 
-## 13. ChatGPT Response to Gemini A2-03 Cross-Review and Test Corrections
+## 18. ChatGPT Response to Gemini A2-03 Cross-Review and Test Corrections
 
 **Review source:** Gemini engineering handoff report for commit `12d252a0054e6e8c7b6a2e71a00d27cf9fcb24e3`, supplied 2026-11-22.  
 **ChatGPT branch:** `chatgpt/checksum-root-symlink-hardening`  
 **Previous handoff head:** `ceea35c50ba874a7c44d374efb6157836c9f546d`  
 **Latest code correction commit:** `9b54ccc20321ea1f9cab31f639c3e9d6721578bf`
 
-### 13.1 Gemini review findings accepted
+### 18.1 Gemini review findings accepted
 
 Gemini independently ran the checksum tests on Windows and Linux and identified:
 1. Two over-escaped regular-expression assertions in `tests/checksums.test.mjs` for the `README.md` digest mismatch and root `.git` diagnostic.
@@ -1432,7 +1432,7 @@ Changed file in commit `9b54ccc20321ea1f9cab31f639c3e9d6721578bf`: `tests/checks
 
 **Status:** IMPLEMENTED NOT VERIFIED. The new commit has not yet been executed through Node.js tests by ChatGPT. Gemini is requested to rerun `node --test tests/checksums.test.mjs` and `npm test` against this exact commit on Windows and Linux, without modifying ChatGPT-owned files, and return raw command summaries and exit codes.
 
-### 13.2 Important qualification to Gemini's architectural assessment
+### 18.2 Important qualification to Gemini's architectural assessment
 
 Gemini's report describes `assertNoSymlinkRootComponents()` as robust against intermediate link replacement. ChatGPT does not accept that specific claim.
 
@@ -1440,7 +1440,7 @@ The helper performs sequential path-based `lstatSync` checks. It rejects symlink
 
 This limitation must remain explicit. Do not describe the checksum-root implementation as race-resistant until a handle-relative design or an appropriately fail-closed execution boundary is implemented and adversarially tested. Gemini's cross-review is accepted for the two test defects, not as proof of this stronger concurrency claim.
 
-### 13.3 Gemini Windows scanner hardening
+### 18.3 Gemini Windows scanner hardening
 
 Gemini's supplied report states that commit `12d252a0054e6e8c7b6a2e71a00d27cf9fcb24e3` removes the unsafe Windows path-based fallback and makes unsupported directory-descriptor platforms fail closed by default with exit code 2. Its report lists the scanner, both workflow guards, consumer validator and workflow tests as synchronized.
 
@@ -1452,7 +1452,7 @@ Reported local results:
 
 These remain implementation-reported results until the exact commit and changed files are reconciled against the live branch and the latest post-correction tests. Hosted GitHub Actions is not claimed by this report.
 
-### 13.4 Next actions
+### 18.4 Next actions
 
 1. Gemini: rerun checksum-focused and full tests against ChatGPT commit `9b54ccc20321ea1f9cab31f639c3e9d6721578bf` on Windows and Linux. Read-only review only; do not edit ChatGPT-owned files.
 2. ChatGPT: inspect Gemini's exact outputs and independently reconcile its Windows fail-closed scanner commit across all five synchronized files.
@@ -1461,7 +1461,7 @@ These remain implementation-reported results until the exact commit and changed 
 
 ---
 
-## 14. ChatGPT Record of Gemini Follow-up Verification
+## 19. ChatGPT Record of Gemini Follow-up Verification
 
 **Date:** 2026-11-22  
 **Tested code commit:** `9b54ccc20321ea1f9cab31f639c3e9d6721578bf`  
@@ -1488,4 +1488,72 @@ Gemini's follow-up report states the following results against the exact ChatGPT
 The separate checksum-root race limitation remains open: sequential path-based `lstatSync` validation does not pin the checked directory chain and is not proof against concurrent ancestor replacement. This branch must not claim race-resistant checksum-root traversal until addressed or explicitly risk-bounded after adversarial review.
 
 Claude is requested to audit this branch read-only against the exact commit above and compare it with Gemini commit `12d252a0054e6e8c7b6a2e71a00d27cf9fcb24e3`. No merge or release is authorized.
+
+
+
+---
+
+## 20. ChatGPT A2-03 TOCTOU Remediation and Gemini P2-01 Assignment — 2026-11-22
+
+**ChatGPT implementation branch:** `chatgpt/a2-03-toctou-remediation`  
+**Base:** `637f4e29449f2afeff338040764ad81dec399b4b`  
+**Latest implementation commit before this ledger update:** `78abe19169b4087c1eee70c3da32ce7d2c079135`  
+**Scope:** A2-03 checksum tooling, A2-09 checksum documentation.  
+**Claude audit:** `assurance/audit-evidence/final-adversarial/REPORT.md` (Claude's report and reproduction evidence were supplied to ChatGPT; Claude's patch has not been merged).
+
+### 20.1 ChatGPT-owned remediation implemented, pending execution verification
+
+ChatGPT has independently taken ownership of Claude findings P1-01 and P1-02 rather than returning them to Gemini.
+
+Implementation changes on the separate ChatGPT branch:
+- `tools/checksums.mjs`: Linux root path components are opened sequentially as directory descriptors with `O_DIRECTORY|O_NOFOLLOW`; later file and manifest operations are resolved through `/proc/self/fd/<root-fd>` rather than re-resolving the selected root path.
+- Linux regular-file reads use `O_NOFOLLOW`, require a regular file, compare descriptor metadata before and after reading, and reopen the name relative to the held parent descriptor to detect leaf replacement.
+- Linux manifest creation writes an exclusive temporary regular file under the held root descriptor, fsyncs it, then renames it within that same descriptor-rooted directory.
+- Directory traversal and nested-Git checks use held directory descriptors on Linux.
+- `tests/checksums.test.mjs`: three new Linux adversarial tests cover an ancestor swap during manifest creation, an ancestor swap during verification, and a leaf symlink swap after the file is opened.
+- `SECURITY-ROOT.md`, `CONSUMING.md`, and `README.md`: describe the filesystem race boundary. Linux descriptor traversal protects against root/ancestor redirection and leaf symlink replacement. It is not a snapshot; the release tree must remain quiescent and not writable by untrusted principals during the operation. Non-Linux path-based checks are explicitly not race-resistant and require a trusted, non-writable root and contents.
+
+Relevant owner-issued commits:
+- `bfbfb027f170127cc0d4162b26c987d0f25336aa` — initial Linux descriptor traversal.
+- `dadaacb68f050608c55ad3ccefbba577586fa507` — nonblocking/exclusive-safe manifest destination handling.
+- `0ebc7c78c5f1057697af05139db429afe563dc2e` — three adversarial race tests.
+- `015fecdb3df49dbc3e400878f45b49b5f388fc4e` — temporary manifest plus descriptor-relative rename.
+- `6ab81eb5a8dd7b1106dfbc2d985295fddfb7e207` — verification race fixture strengthened to omit attacker-tree manifest.
+- `12ec7e028421bdd55407c3346fb19d108a6bd8a3` — preserve the existing `node_modules` exclusion in nested-Git traversal.
+- `52b58486c239e9054da99dfd6ea199ccff30468e` — SECURITY-ROOT threat-boundary documentation.
+- `7a292440b18f311cfe4e0c6a5015eced284963fd` — consumer documentation.
+- `78abe19169b4087c1eee70c3da32ce7d2c079135` — README boundary notice.
+
+**Status: IMPLEMENTED, NOT YET VERIFIED.** ChatGPT has not executed the checksum tests or full suite against this branch. A GitHub clone attempt from the current execution environment failed because github.com DNS/network access was unavailable. Gemini is assigned a read-only cross-platform execution review of this exact branch. Do not represent these changes as fixed-and-verified until the commands and results are returned.
+
+### 20.2 Integration hygiene completed on the ChatGPT branch
+
+- Replaced the literal Gitleaks inline allow marker in the ChatGPT handoff prose with neutral descriptive wording, avoiding the exact token that Gemini's tracked-file guard rejects.
+- Renumbered the appended ChatGPT handoff sections from conflicting 12–14 to 17–19. This leaves the next new entry as Section 20.
+- No candidate branches were merged; no PR #9, main, release tag, signing key, ruleset or deployment was changed.
+
+### 20.3 Gemini assignment — P2-01 scanner environment poisoning
+
+**Owner:** Gemini (A2-02 / A2-07).  
+**Target branch:** `gemini/d01-d02-f5-f6-remediation`.  
+**Base to fetch and verify before work:** latest live tip, expected prior tip `ceb1a2e87c22794b6957db7616a5e64a6bde8904`.  
+**Finding:** Claude reproduced that `GIT_DIR` and related inherited Git environment variables can redirect Git commands used by the tracked-binary scanner. The first-party workflow permits job-level variables that the consumer validator catches.
+
+Required work:
+1. In `tools/uss-tracked-binary-scanner.py`, ensure every Git subprocess receives a sanitized environment that removes all inherited keys beginning with `GIT_`. If required, set only explicit safe Git configuration values after sanitization (for example disabling system/global config and fsmonitor); do not preserve caller-supplied `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_EXEC_PATH`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_SSH_COMMAND` or related variables.
+2. Extend first-party workflow structural validation and adversarial tests to reject `GIT_*` environment keys at workflow, job and step scope. Keep parity with `templates/ci/consumer-security-scans.yml` and `tools/validate-consumer-workflow.mjs`.
+3. Add the S18 regression: create a repository containing a tracked NUL-byte file, point `GIT_DIR` at a separate empty repository, invoke the scanner, and prove it still examines the intended repository and exits nonzero for the NUL file.
+4. Add mutation coverage for the other Git environment variables named in Claude's report, including both first-party workflow and consumer-template paths.
+5. Run the focused workflow tests, consumer validator, full suite, repository/evidence validation, and scanner checks. Return exact command lines, exit codes, test counts, and raw failure summaries.
+6. Update Gemini's own engineering handoff/report with the implementation commit and evidence. Do not edit `coordination/agent-handoff.md`; only ChatGPT updates the shared ledger during parallel work.
+
+**Ownership boundary:** Gemini must not edit `tools/checksums.mjs`, `tests/checksums.test.mjs`, `SECURITY-ROOT.md`, `CONSUMING.md`, `README.md`, or the shared handoff. ChatGPT will independently review Gemini's patch and can take over any missed correction.
+
+### 20.4 Remaining decisions and release gates
+
+- Claude's P2-02 working-tree-versus-index observation remains a documented scope decision. The scanner currently examines working-tree contents for paths reported as tracked by Git; whether it must additionally inspect index blobs requires explicit scope confirmation or a separate implementation proposal.
+- Claude's integrated trial merge had 13 failures before the handoff wording was neutralized and 233/233 passes after that wording change. This is Claude's scratch-merge evidence, not verification of this new branch.
+- After Gemini's scanner fix and ChatGPT's checksum fix are independently verified, create a fresh integration candidate, resolve the handoff by union with unique section numbering, and rerun all tests/validators on the exact integrated SHA.
+- Hosted GitHub Actions, CodeQL, Gitleaks, OSV, native Windows, live A2-05 ruleset and U-01 release signing remain NOT VERIFIED / OWNER REQUIRED as applicable.
+- No merge to `main`, PR #9 merge, release signing, ruleset change, tag or deployment is authorised by this entry.
 
