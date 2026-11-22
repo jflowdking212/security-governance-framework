@@ -109,7 +109,7 @@ function readRegularFileAtRoot(rel) {
     const currentFd=fs.openSync(fdPath(parent.fd,parent.leaf),FILE_OPEN_FLAGS);
     try {
       const current=fs.fstatSync(currentFd,{bigint:true});
-      if(current.dev!==after.dev||current.ino!==after.ino)throw new Error('File path changed while being checksummed: '+rel);
+      if(!sameFileVersion(after,current))throw new Error('File path or contents changed while being checksummed: '+rel);
     } finally { fs.closeSync(currentFd); }
     return {bytes,mode:(Number(after.mode)&0o111)!==0?'100755':'100644'};
   } finally {
