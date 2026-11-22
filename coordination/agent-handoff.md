@@ -1685,3 +1685,84 @@ Before ChatGPT creates the staged candidate, Claude must perform an isolated scr
 
 **Release gates remain open:** hosted GitHub Actions, CodeQL, Gitleaks, OSV, native hosted Windows, A2-05 live ruleset and U-01 release signing require their own evidence and/or owner action.
 
+
+
+---
+
+## 23. Claude Integration Rehearsal Accepted with Conditions; P3 Hardening Allocation — 2026-11-22
+
+**Claude report:** `USS Final Integration Rehearsal — Independent Adversarial Audit`.  
+**Gemini branch tip:** `49268f936768671040bee7b6b89e2c7f89535936`.  
+**ChatGPT branch tip at audit input:** `c9d6665b543c2c1f9f7bdbba01700d1b79d377eb`.  
+**Common base:** `80754305a9c9ee5d9848b1da17274f9e0cfc39ee`.  
+**Claude scratch squash commit/tree:** `411c479c9f07248f9e6bd790f6b79096cf596ed0` / `cadb66202f2459373e9ce4d087f8ea8de731d3f1`.  
+**Claude scratch merge commit/tree:** `e6a83e96b26d59c0c45e311e1a8ed8d9e83244af` / same tree `cadb66202f2459373e9ce4d087f8ea8de731d3f1`.
+
+### 23.1 Integration verdict and critical history finding
+
+Claude's verdict is **ACCEPT WITH CONDITIONS**. The squash and merge-commit scratch variants have identical file trees, but the merge-commit history preserves three ChatGPT commits (`39e9104`, `9014164`, `21cb5f2`) containing the prohibited Gitleaks allow-directive text in their diffs. Gemini's full-history guard detects these commits. Results:
+- Merge-commit variant: 238 tests, 225 passed, 13 failed, exit 1.
+- Squash variant: 238/238 passed, 0 failed, exit 0.
+
+**Integration decision proposed by ChatGPT:** do not merge or rebase the ChatGPT development branch into the candidate history. Build a clean integration branch with Gemini's verified branch as parent and a single new commit containing the already-audited squash tree. This preserves both source branches and avoids rewriting them. This is a staging strategy only, not permission to merge to `main` or PR #9.
+
+### 23.2 Integrated scratch-tree verification
+
+Claude reports on squash tree `cadb66202f2459373e9ce4d087f8ea8de731d3f1`:
+- `npm test`: 238/238 passed.
+- Checksum suite: 29/29.
+- Workflow security suite: 103/103.
+- Repository validator: passed (22 modules, 52 source references).
+- Consumer workflow validator: passed.
+- Evidence validator: passed with example state `NOT_READY`.
+- Module/index/bundle generators: passed, zero drift.
+- Release-style filesystem checksum create/verify: passed for five files.
+- Hosted CI, CodeQL, Gitleaks, OSV, native Windows/macOS, A2-05 ruleset and U-01 signing were not verified.
+
+### 23.3 Gemini scanner P2-01 and remaining scanner P3-04
+
+Claude independently tested the Gemini scanner:
+- `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_OBJECT_DIRECTORY`, `GIT_EXEC_PATH`, `GIT_SSH_COMMAND`, and additional Git environment variables no longer redirect the scanner; each attack detected the tracked NUL-byte file and exited 1.
+- 24 workflow/template mutations across six Git environment variables and workflow/job levels were all caught.
+- 21 earlier D-01/D-02 bypass tests passed.
+- A fake `git` executable placed first in `PATH` still caused scanner exit 0 / PASS.
+
+**P3-04 — OPEN, Gemini owner:** scanner executable resolution trusts `PATH`. Gemini is assigned to design and implement a fail-closed trusted Git executable resolution strategy, with tests for fake-Git PATH precedence, symlink/wrapper executables and supported Windows/Linux execution. Do not simply remove PATH entries without proving the legitimate CI/local Git installations still work. Update scanner, first-party workflow, consumer template/validator and regression tests as required. Return exact platform test evidence.
+
+### 23.4 ChatGPT checksum P3 remediation
+
+Claude verified A2-03 root/ancestor/leaf TOCTOU defenses on Linux. It also identified:
+- **P3-01 — ChatGPT:** checksum Git subprocesses inherited caller-controlled `GIT_*` environment variables.
+- **P3-02 — ChatGPT limitation:** Git-mode repository discovery and subprocesses resolve the worktree by pathname, not by descriptor-pinned root. Claude's crafted ancestor swap was detected by committed byte/mode comparison; no attacker content was accepted.
+- **P3-03 — documented platform boundary:** non-Linux filesystem mode uses path-based checks and is not race-resistant. This limitation is documented; only trusted, non-writable release trees are supported there.
+- **P3-07 — accepted limitation:** content mutation within the already-open directory is not a snapshot guarantee; trusted/quiescent tree is required.
+
+ChatGPT has independently implemented P3-01 on its own branch:
+- `tools/checksums.mjs`: every Git subprocess now removes all inherited environment variables whose names begin with `GIT_` before invocation, while retaining `core.fsmonitor=false`.
+- `tests/checksums.test.mjs`: added an adversarial regression that sets `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_COMMON_DIR`, `GIT_CEILING_DIRECTORIES`, `GIT_NAMESPACE`, `GIT_EXEC_PATH` and `GIT_SSH_COMMAND`, then requires Git-mode create and verify to succeed against the intended checkout.
+- `SECURITY-ROOT.md` and `CONSUMING.md`: document Git environment sanitization and explicitly distinguish Git-mode path resolution from Linux descriptor-pinned filesystem mode.
+
+**Latest ChatGPT code commits for P3-01 and documentation:**
+- `aac4af10de7e81f9cb42af3103008f50ca17e76e` — scrub inherited `GIT_*` in checksum Git subprocesses.
+- `b74ed54a14a2ab398a131df53b68ef65074b6fe3` — add Git environment poisoning regression test.
+- `7d50cda435b672a6d2209aad3c31491fed2f8b64` — document Git-mode path boundary and sanitization.
+- `544bda12f786d4bb1a92e2c4f95118edcbddece5` — consumer guidance update.
+
+**Status: IMPLEMENTED, NOT VERIFIED.** Run focused checksum tests, full suite, repository/evidence validators and generators on the updated branch. Independently verify the test actually fails if the `GIT_*` sanitization is removed.
+
+### 23.5 P3-02, P3-05 and P3-06 dispositions
+
+- **P3-02:** do not claim Git mode has descriptor-pinned TOCTOU protection. The trusted-checkout/ancestor boundary is now documented. A deeper descriptor-relative Git repository implementation is deferred unless a concrete bypass is demonstrated.
+- **P3-05:** scanner checks Git-tracked paths against working-tree bytes and skips symlink leaves. This matches a fresh CI checkout. Whether the scanner must also inspect index blobs is an owner scope decision; no silent scope expansion is authorized.
+- **P3-06:** the two source handoff files contain independently numbered histories. Their scratch union produces duplicate section numbers (Claude cites §17 and other collisions). Before creating the clean integration candidate, ChatGPT must merge both histories and renumber the union sequentially without deleting substantive entries or overwriting either source branch.
+
+### 23.6 Immediate next actions
+
+1. ChatGPT verifies its P3-01 changes with tests and validators.
+2. Gemini implements P3-04 trusted Git executable resolution on its own branch and records exact evidence.
+3. ChatGPT prepares a clean integration tree based on Gemini's verified tip, containing the audited combined tree plus P3 fixes, while preserving both source branches and avoiding the three directive-bearing ChatGPT commits in candidate ancestry.
+4. Claude independently audits the updated candidate tree and exact candidate SHA.
+5. Only after integrated tests and Claude acceptance should hosted CI be run and owner release decisions be requested.
+
+No merge to `main`, PR #9 merge, signing, ruleset change, tag or deployment is authorized by this entry.
+
