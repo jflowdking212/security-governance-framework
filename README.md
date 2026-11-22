@@ -30,6 +30,9 @@ USS is a policy and verification framework. It does not automatically secure an 
 
 ## Verify integrity before use
 
+The filesystem checksum tool uses Linux directory descriptors to pin the selected root and file handles during reads and writes. On non-Linux systems, path-based checks are not race-resistant and must only be used with a trusted, non-writable release tree. See [SECURITY-ROOT.md](SECURITY-ROOT.md) and [CONSUMING.md](CONSUMING.md) for the exact filesystem race boundary.
+
+
 USS is security policy and must be treated as a security-critical dependency. Before reading or executing a vendored copy, follow the trust-bootstrap sequence in [CONSUMING.md](CONSUMING.md): compare the pinned version and commit, obtain the signing-key fingerprint independently, verify the signed `SHA256SUMS` manifest, and verify every file digest. If any check fails, stop and treat the copy as untrusted.
 
 The current owner signing-key fingerprint and verification procedure are documented in [SECURITY-ROOT.md](SECURITY-ROOT.md). The test commit proves GitHub recognises the owner's key; it is not a signed v1.0.0 release. The signed release manifest and tag remain outstanding.
