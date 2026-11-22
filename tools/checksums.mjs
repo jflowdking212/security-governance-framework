@@ -120,14 +120,23 @@ function readRegularFileAtRoot(rel) {
 
 function writeRegularFileAtRoot(rel,content) {
   const parent=openParentAtRoot(rel);
+  const temporary='.'+rel+'.tmp-'+process.pid+'-'+Date.now()+'-'+Math.random().toString(16).slice(2);
   let fd=null;
   try {
-    fd=fs.openSync(fdPath(parent.fd,parent.leaf),fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW|(fs.constants.O_CLOEXEC||0)|(fs.constants.O_NONBLOCK||0),0o644);
-    if(!fs.fstatSync(fd).isFile())throw new Error('Checksum manifest destination is not a regular file.');
+    // O_EXCL prevents opening a pre-existing FIFO, device, symlink or file.
+    fd=fs.openSync(fdPath(parent.fd,temporary),fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW|(fs.constants.O_CLOEXEC||0),0o644);
+    if(!fs.fstatSync(fd).isFile())throw new Error('Temporary checksum manifest is not a regular file.');
     fs.writeFileSync(fd,content,{encoding:'utf8'});
     fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd=null;
+    // Rename is resolved relative to the held directory descriptor. It
+    // replaces a destination symlink itself rather than following it.
+    fs.renameSync(fdPath(parent.fd,temporary),fdPath(parent.fd,rel));
+    fs.fsyncSync(parent.fd);
   } finally {
     if(fd!==null)fs.closeSync(fd);
+    try { fs.unlinkSync(fdPath(parent.fd,temporary)); } catch {}
     parent.close();
   }
 }
@@ -427,8 +436,13 @@ function verifyManifest() {
     runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
   }
   const manifestPath=path.join(ROOT,MANIFEST);
-  if(!fs.existsSync(manifestPath))throw new Error('Missing '+MANIFEST+'.');
-  const raw=(ROOT_FD!==null?readRegularFileAtRoot(MANIFEST).bytes:fs.readFileSync(manifestPath)).toString('utf8');
+  let raw;
+  try {
+    raw=(ROOT_FD!==null?readRegularFileAtRoot(MANIFEST).bytes:fs.readFileSync(manifestPath)).toString('utf8');
+  } catch(error) {
+    if(error.code==='ENOENT')throw new Error('Missing '+MANIFEST+'.');
+    throw error;
+  }
   const lines=raw.replace(/\r/g,'').split('\n').filter(Boolean);
   const entries=[];
   for(const line of lines) {
