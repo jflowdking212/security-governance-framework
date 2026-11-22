@@ -1738,13 +1738,15 @@ Claude verified A2-03 root/ancestor/leaf TOCTOU defenses on Linux. It also ident
 - **P3-07 — accepted limitation:** content mutation within the already-open directory is not a snapshot guarantee; trusted/quiescent tree is required.
 
 ChatGPT has independently implemented P3-01 on its own branch:
-- `tools/checksums.mjs`: every Git subprocess now removes all inherited environment variables whose names begin with `GIT_` before invocation, while retaining `core.fsmonitor=false`.
-- `tests/checksums.test.mjs`: added an adversarial regression that sets `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_COMMON_DIR`, `GIT_CEILING_DIRECTORIES`, `GIT_NAMESPACE`, `GIT_EXEC_PATH` and `GIT_SSH_COMMAND`, then requires Git-mode create and verify to succeed against the intended checkout.
+- `tools/checksums.mjs`: every Git subprocess now removes all inherited environment variables whose names begin with `GIT_` before invocation, using a case-insensitive prefix check for Windows environment semantics, while retaining `core.fsmonitor=false`.
+- `tests/checksums.test.mjs`: added an adversarial regression that sets `GIT_DIR`, case-variant `git_dir`/`Git_Index_File`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_COMMON_DIR`, `GIT_CEILING_DIRECTORIES`, `GIT_NAMESPACE`, `GIT_EXEC_PATH` and `GIT_SSH_COMMAND`, then requires Git-mode create and verify to succeed against the intended checkout.
 - `SECURITY-ROOT.md` and `CONSUMING.md`: document Git environment sanitization and explicitly distinguish Git-mode path resolution from Linux descriptor-pinned filesystem mode.
 
 **Latest ChatGPT code commits for P3-01 and documentation:**
 - `aac4af10de7e81f9cb42af3103008f50ca17e76e` — scrub inherited `GIT_*` in checksum Git subprocesses.
 - `b74ed54a14a2ab398a131df53b68ef65074b6fe3` — add Git environment poisoning regression test.
+- `b6149dae9023d95fd1cd1ddf19701f9291f1ca72` — make the environment-prefix scrub case-insensitive.
+- `e6b17179ad6984106eb716e8cad204f9da0b36ae` — extend regression coverage to case-variant environment names.
 - `7d50cda435b672a6d2209aad3c31491fed2f8b64` — document Git-mode path boundary and sanitization.
 - `544bda12f786d4bb1a92e2c4f95118edcbddece5` — consumer guidance update.
 
