@@ -539,6 +539,8 @@ test('adversarial: checksum Git calls ignore inherited GIT environment overrides
   git(decoy,'init','-q');
   const env={
     GIT_DIR:path.join(decoy,'.git'),
+    git_dir:path.join(decoy,'.git'),
+    Git_Index_File:path.join(decoy,'case-variant.index'),
     GIT_WORK_TREE:decoy,
     GIT_INDEX_FILE:path.join(decoy,'empty.index'),
     GIT_OBJECT_DIRECTORY:path.join(decoy,'.git','objects'),
