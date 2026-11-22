@@ -1497,7 +1497,7 @@ Claude is requested to audit this branch read-only against the exact commit abov
 
 **ChatGPT implementation branch:** `chatgpt/a2-03-toctou-remediation`  
 **Base:** `637f4e29449f2afeff338040764ad81dec399b4b`  
-**Latest implementation commit before this ledger update:** `805bf344b7b2a0afb6d17e5ba1901b2cbe06b601`  
+**Latest implementation commit before this ledger update:** `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`  
 **Scope:** A2-03 checksum tooling, A2-09 checksum documentation.  
 **Claude audit:** `assurance/audit-evidence/final-adversarial/REPORT.md` (Claude's report and reproduction evidence were supplied to ChatGPT; Claude's patch has not been merged).
 
@@ -1524,7 +1524,7 @@ Relevant owner-issued commits:
 - `7a292440b18f311cfe4e0c6a5015eced284963fd` — consumer documentation.
 - `78abe19169b4087c1eee70c3da32ce7d2c079135` — README boundary notice.
 
-**Status: IMPLEMENTED, NOT YET VERIFIED.** ChatGPT has not executed the checksum tests or full suite against this branch. A GitHub clone attempt from the current execution environment failed because github.com DNS/network access was unavailable. Gemini is assigned a read-only cross-platform execution review of this exact branch. Do not represent these changes as fixed-and-verified until the commands and results are returned.
+**Status at initial handoff: IMPLEMENTED, NOT YET VERIFIED.** Gemini subsequently tested code commit `805bf344b7b2a0afb6d17e5ba1901b2cbe06b601` on Windows and Linux and found one Linux-only error-normalization regression. ChatGPT corrected that defect in commit `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`. The corrected head has not yet been retested. Do not represent this branch as fully verified until the exact latest head passes the Linux and Windows suites.
 
 ### 20.2 Integration hygiene completed on the ChatGPT branch
 
@@ -1556,4 +1556,82 @@ Required work:
 - After Gemini's scanner fix and ChatGPT's checksum fix are independently verified, create a fresh integration candidate, resolve the handoff by union with unique section numbering, and rerun all tests/validators on the exact integrated SHA.
 - Hosted GitHub Actions, CodeQL, Gitleaks, OSV, native Windows, live A2-05 ruleset and U-01 release signing remain NOT VERIFIED / OWNER REQUIRED as applicable.
 - No merge to `main`, PR #9 merge, release signing, ruleset change, tag or deployment is authorised by this entry.
+
+
+
+---
+
+## 21. Gemini Cross-Verification Report, P2-01 Acceptance Candidate, and Linux Regression Correction — 2026-11-22
+
+**Evidence supplied:** user-provided `USS Remediation and Supervisory Cross-Verification Report`.  
+**Gemini P2-01 branch:** `gemini/d01-d02-f5-f6-remediation`.  
+**Gemini implementation commit:** `49268f936768671040bee7b6b89e2c7f89535936`.  
+**ChatGPT branch under review:** `chatgpt/a2-03-toctou-remediation`.  
+**Gemini-tested ChatGPT commit:** `805bf344b7b2a0afb6d17e5ba1901b2cbe06b601`.  
+**ChatGPT regression correction commit:** `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`.
+
+### 21.1 P2-01 — Gemini implementation and reported verification
+
+Gemini reports the following changes on its branch:
+- `tools/uss-tracked-binary-scanner.py`: all inherited environment keys beginning `GIT_` are removed from the environment passed to the Git subprocess; explicit safe.directory and core.fsmonitor=false options remain.
+- First-party `.github/workflows/security-scans.yml` and consumer `templates/ci/consumer-security-scans.yml`: shell guards unset inherited `GIT_*` variables before Git-based scanner configuration checks; embedded Python scanner guard uses the sanitized environment.
+- `tools/validate-consumer-workflow.mjs`: adds named Git execution-control variables to its sensitive-variable catalog and validates the exact environment-scrubbing guard.
+- `tests/workflow-security.test.mjs`: rejects `GIT_*` at workflow/job/step scopes and adds live GIT_DIR and related environment-poisoning regressions.
+
+Gemini-reported results:
+
+**Windows, Node.js v26.13.1**
+- `node --test tests/workflow-security.test.mjs`: 102 passed, 0 failed, 1 skipped; exit 0.
+- `npm test`: 230 passed, 0 failed, 1 skipped; exit 0.
+- `node tools/validate.mjs`: exit 0.
+- `node tools/validate-consumer-workflow.mjs`: exit 0.
+- Module/index/bundle generation: clean working tree, zero drift.
+
+**BlissHosts Linux VPS, Node.js v22.16.0**
+- `npm test`: 231 passed, 0 failed, 0 skipped; exit 0.
+- `node tools/validate.mjs`: exit 0.
+- `node tools/validate-consumer-workflow.mjs`: exit 0.
+- `node tools/validate-evidence.mjs --file templates/security-evidence.example.json`: exit 0; 22 controls, all UNKNOWN as expected for the example template.
+- Generator drift: zero tracked changes.
+
+**Supervisory disposition:** P2-01 is implementation-complete and Gemini's reported cross-platform test results are clean. ChatGPT inspected the scanner and synchronized workflow guard code on Gemini's branch. The sanitized Python subprocess environment removes every inherited uppercase `GIT_*` key, while the shell guard removes inherited keys before its Git calls. The first-party workflow test helper also rejects the prefix at workflow, job and step scope. This is accepted as a remediation candidate pending fresh exact-head integration tests and hosted CI. Do not infer hosted CI success from local VPS results.
+
+### 21.2 ChatGPT checksum cross-verification — defect confirmed
+
+Gemini independently tested ChatGPT commit `805bf344b7b2a0afb6d17e5ba1901b2cbe06b601`.
+
+**Windows, Node.js v26.13.1**
+- `node --test tests/checksums.test.mjs`: 24 passed, 0 failed, 5 skipped; exit 0.
+- `npm test`: 178 passed, 0 failed, 6 skipped; exit 0.
+- `node tools/validate.mjs`: exit 0.
+- Evidence validator: exit 0.
+- Generator drift: zero.
+
+**BlissHosts Linux VPS, Node.js v22.16.0**
+- `node --test tests/checksums.test.mjs`: 28 passed, 1 failed; exit 1.
+- `npm test`: 183 passed, 1 failed; exit 1.
+- All three newly added Linux adversarial root/leaf replacement tests passed.
+- Failure: existing test `adversarial: rejects a tracked file reached through a symbolic-link parent directory` expected the stable `symbolic-link parent` error wording but received raw `ENOTDIR` from descriptor-relative traversal.
+
+**Root cause:** `openParentAtRoot()` propagated `ENOTDIR`/ `ELOOP` from `openDirectoryChild()` without normalizing the error. The underlying no-follow descriptor traversal remained in place, but the regression broke Linux suite stability.
+
+### 21.3 ChatGPT correction committed
+
+ChatGPT corrected `openParentAtRoot()` on its own branch in commit `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`:
+- `ENOTDIR` and `ELOOP` from opening a parent component are translated to `Path traverses a non-directory or symbolic-link parent: <relative-path>`.
+- Other errors continue to propagate unchanged.
+- Directory descriptor ownership and cleanup logic remains unchanged.
+
+**Current status: CORRECTED IN SOURCE, NOT RETESTED.** Gemini must rerun the exact previously failing Linux test, the full checksum tests, the full suite, and the Windows checksum suite against exact latest branch head `4e0a875d6338d718bd9ac7ef724f4954a0e9d641`. Re-run the three Linux adversarial tests as well. Return raw output, exact counts and exit codes. Do not modify ChatGPT-owned files.
+
+### 21.4 Next supervisory actions and gates
+
+1. Gemini: read-only retest ChatGPT branch at exact commit `4e0a875d6338d718bd9ac7ef724f4954a0e9d641` on Linux and Windows.
+2. ChatGPT: continue source-level review of Gemini P2-01 branch and reconcile the exact files/commit with the reported test results.
+3. If ChatGPT's correction passes, update the status from corrected-not-retested to independently verified.
+4. Create a fresh integration candidate only after both workstreams pass. Preserve both implementations and union the handoff sections with unique numbering.
+5. Run the entire suite, consumer validator, evidence validator, all generators and adversarial tests against the exact integrated SHA.
+6. Hosted GitHub Actions, CodeQL, Gitleaks, OSV, native Windows hosted CI, A2-05 ruleset and U-01 signing remain separate gates until evidence is supplied.
+
+No merge to `main`, PR #9 merge, release signing, ruleset change, tag or deployment is authorized by this entry.
 
