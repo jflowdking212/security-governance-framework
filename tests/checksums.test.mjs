@@ -474,7 +474,8 @@ test('adversarial: Linux filesystem verification reads the pinned root after an 
   fs.writeFileSync(path.join(root,'README.md'),'trusted verify bytes\\n');
   assert.equal(run(process.cwd(),'create','--root',root,'--filesystem').status,0);
   fs.writeFileSync(path.join(evilRoot,'README.md'),'attacker bytes\\n');
-  fs.writeFileSync(path.join(evilRoot,'SHA256SUMS'),'not a valid manifest\\n');
+  // The replacement tree deliberately has no manifest. Verification must read
+  // the manifest from the already-open original root, not re-resolve this path.
   const hook=path.join(os.tmpdir(),'uss-verify-root-swap-'+process.pid+'.cjs');
   t.after(()=>fs.rmSync(hook,{force:true}));
   fs.writeFileSync(hook,`
