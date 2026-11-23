@@ -234,8 +234,6 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '',
     '            class ACE_HEADER(ctypes.Structure):',
     '                _fields_ = [(\'AceType\', wintypes.BYTE), (\'AceFlags\', wintypes.BYTE), (\'AceSize\', wintypes.WORD)]',
-    '            class ACCESS_ALLOWED_ACE(ctypes.Structure):',
-    '                _fields_ = [(\'Header\', ACE_HEADER), (\'Mask\', wintypes.DWORD), (\'SidStart\', wintypes.DWORD)]',
     '            class ACL_SIZE_INFORMATION(ctypes.Structure):',
     '                _fields_ = [(\'AceCount\', wintypes.DWORD), (\'AclBytesInUse\', wintypes.DWORD), (\'AclBytesFree\', wintypes.DWORD)]',
     '',
@@ -261,18 +259,21 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '                    None,',
     '                    ctypes.byref(p_sec_desc)',
     '                )',
-    '                if res != 0:',
+    '                if res != 0 or not p_sec_desc:',
     '                    return False',
     '                try:',
+    '                    if not p_owner or not p_dacl:',
+    '                        return False',
+    '',
     '                    p_str_sid = wintypes.LPWSTR()',
     '                    if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):',
     '                        return False',
-    '                    owner_sid = p_str_sid.value',
-    '                    kernel32.LocalFree(p_str_sid)',
-    '                    if owner_sid not in TRUSTED_SIDS:',
-    '                        return False',
+    '                    try:',
+    '                        owner_sid = p_str_sid.value',
+    '                    finally:',
+    '                        kernel32.LocalFree(p_str_sid)',
     '',
-    '                    if not p_dacl:',
+    '                    if owner_sid not in TRUSTED_SIDS:',
     '                        return False',
     '',
     '                    acl_info = ACL_SIZE_INFORMATION()',
@@ -281,22 +282,58 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '',
     '                    for i in range(acl_info.AceCount):',
     '                        p_ace = wintypes.LPVOID()',
-    '                        if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)):',
+    '                        if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)) or not p_ace:',
     '                            return False',
     '                        ace_header = ACE_HEADER.from_address(p_ace.value)',
-    '                        if ace_header.AceType == 0:',
-    '                            allowed_ace = ACCESS_ALLOWED_ACE.from_address(p_ace.value)',
+    '                        ace_type = ace_header.AceType',
+    '                        ace_size = ace_header.AceSize',
+    '',
+    '                        # Explicit deny ACEs deny access; they do not grant write rights',
+    '                        if ace_type in (1, 6, 10, 12):',
+    '                            continue',
+    '',
+    '                        # Allow ACEs: standard (0), callback (9), object (5), callback object (11), compound (4)',
+    '                        if ace_type in (0, 9):',
+    '                            if ace_size < 12:',
+    '                                return False',
+    '                            mask = ctypes.c_uint32.from_address(p_ace.value + 4).value',
     '                            p_sid = ctypes.c_void_p(p_ace.value + 8)',
-    '                            p_ace_str_sid = wintypes.LPWSTR()',
-    '                            if advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):',
-    '                                ace_sid = p_ace_str_sid.value',
-    '                                kernel32.LocalFree(p_ace_str_sid)',
-    '                                if (allowed_ace.Mask & WRITE_MASK) != 0:',
-    '                                    if ace_sid in TRUSTED_SIDS:',
-    '                                        continue',
-    '                                    if ace_sid == \'S-1-3-0\' and (ace_header.AceFlags & INHERIT_ONLY_ACE):',
-    '                                        continue',
-    '                                    return False',
+    '                        elif ace_type in (5, 11):',
+    '                            if ace_size < 16:',
+    '                                return False',
+    '                            mask = ctypes.c_uint32.from_address(p_ace.value + 4).value',
+    '                            flags = ctypes.c_uint32.from_address(p_ace.value + 8).value',
+    '                            offset = 12',
+    '                            if (flags & 0x1):',
+    '                                offset += 16',
+    '                            if (flags & 0x2):',
+    '                                offset += 16',
+    '                            if ace_size < offset + 8:',
+    '                                return False',
+    '                            p_sid = ctypes.c_void_p(p_ace.value + offset)',
+    '                        elif ace_type == 4:',
+    '                            if ace_size < 16:',
+    '                                return False',
+    '                            mask = ctypes.c_uint32.from_address(p_ace.value + 4).value',
+    '                            p_sid = ctypes.c_void_p(p_ace.value + 12)',
+    '                        else:',
+    '                            # Unknown / unhandled ACE type: fail closed',
+    '                            return False',
+    '',
+    '                        p_ace_str_sid = wintypes.LPWSTR()',
+    '                        if not advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):',
+    '                            return False',
+    '                        try:',
+    '                            ace_sid = p_ace_str_sid.value',
+    '                        finally:',
+    '                            kernel32.LocalFree(p_ace_str_sid)',
+    '',
+    '                        if (mask & WRITE_MASK) != 0:',
+    '                            if ace_sid in TRUSTED_SIDS:',
+    '                                continue',
+    '                            if ace_sid == \'S-1-3-0\' and (ace_header.AceFlags & INHERIT_ONLY_ACE):',
+    '                                continue',
+    '                            return False',
     '                finally:',
     '                    kernel32.LocalFree(p_sec_desc)',
     '',
@@ -3260,11 +3297,68 @@ test('finding P3-04: scanner rejects writable parent directory in POSIX ancestor
   }
 });
 
-test('finding P3-04: scanner rejects poisoned ProgramFiles and SystemRoot environment variables', () => {
+test('finding P3-04: scanner rejects poisoned ProgramFiles and SystemRoot environment variables even with existing candidate', () => {
   const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
   const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
   const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-poisonenv-'));
+
+  try {
+    const attackerRoot = path.join(tempDir, 'AttackerProgramFiles');
+    const fakeGitCmd = path.join(attackerRoot, 'Git', 'cmd');
+    fs.mkdirSync(fakeGitCmd, { recursive: true });
+    const fakeGitExe = path.join(fakeGitCmd, process.platform === 'win32' ? 'git.exe' : 'git');
+    if (process.platform === 'win32') {
+      fs.writeFileSync(fakeGitExe, '@echo off\r\necho git version 2.99.0\r\n');
+    } else {
+      fs.writeFileSync(fakeGitExe, '#!/bin/sh\necho "git version 2.99.0"\n');
+      fs.chmodSync(fakeGitExe, 0o755);
+    }
+
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      `attacker_root = ${JSON.stringify(attackerRoot)}`,
+      `fake_git_cmd = ${JSON.stringify(fakeGitCmd)}`,
+      `fake_git_exe = ${JSON.stringify(fakeGitExe)}`,
+      'assert os.path.isdir(fake_git_cmd), "Candidate directory must physically exist on disk"',
+      'assert os.path.isfile(fake_git_exe), "Candidate executable must physically exist on disk"',
+      'os.environ["ProgramFiles"] = attacker_root',
+      'os.environ["SystemRoot"] = attacker_root',
+      'os.environ["ProgramFiles(x86)"] = attacker_root',
+      'os.environ["windir"] = attacker_root',
+      `func_code = ${JSON.stringify(funcCode)}`,
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      'exec(func_code, scope)',
+      'if sys.platform == "win32":',
+      '    r_start = func_code.index("def get_windows_authoritative_roots(")',
+      '    r_end = func_code.index("def verify_posix_ancestors(", r_start)',
+      '    r_code = chr(10).join(l[4:] if l.startswith("    ") else l for l in func_code[r_start:r_end].splitlines())',
+      '    r_scope = {"os": os, "winreg": __import__("winreg"), "dict": dict, "list": list}',
+      '    exec(r_code, r_scope)',
+      '    auth_roots = r_scope["get_windows_authoritative_roots"]()',
+      '    assert len(auth_roots) > 0, "Must have authoritative registry roots on Windows"',
+      '    assert attacker_root not in auth_roots, "Poisoned env root must NEVER appear in authoritative roots"',
+      'found = scope["resolve_trusted_git"]({}, candidate_dirs=[fake_git_cmd])',
+      'assert found is None, f"Expected candidate in poisoned environment root to be rejected, got: {found}"',
+      'print("POISONED_ENV_ROOT_REJECTED_WITH_EXISTING_CANDIDATE")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /POISONED_ENV_ROOT_REJECTED_WITH_EXISTING_CANDIDATE/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner fails closed when Windows authoritative registry roots cannot be established', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-regfail-'));
 
   try {
     const scannerCode = fs.readFileSync(scannerPath, 'utf8');
@@ -3272,28 +3366,32 @@ test('finding P3-04: scanner rejects poisoned ProgramFiles and SystemRoot enviro
 
     const testPy = [
       'import os, sys, tempfile, subprocess',
-      'poisoned_root = os.path.realpath("/custom_attacker_tools")',
-      'os.environ["ProgramFiles"] = poisoned_root',
-      'os.environ["SystemRoot"] = poisoned_root',
-      'os.environ["ProgramFiles(x86)"] = poisoned_root',
-      'os.environ["windir"] = poisoned_root',
-      'candidate_dir = os.path.join(poisoned_root, "Git", "cmd")',
+      'sys_orig = sys.platform',
+      'sys.platform = "win32"',
       `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
       `exec(${JSON.stringify(funcCode)}, scope)`,
-      'found = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
-      'assert found is None, f"Expected candidate in poisoned environment root to be rejected, got: {found}"',
-      'print("POISONED_ENV_ROOT_REJECTED")'
+      'class MockWinRegFailure:',
+      '    HKEY_LOCAL_MACHINE = 0x80000002',
+      '    def OpenKey(self, *args, **kwargs):',
+      '        raise OSError("Registry key inaccessible or missing")',
+      'sys.modules["winreg"] = MockWinRegFailure()',
+      'try:',
+      '    found_on_fail = scope["resolve_trusted_git"]({})',
+      '    assert found_on_fail is None, f"Must fail closed when registry lookup fails, got: {found_on_fail}"',
+      'finally:',
+      '    sys.modules.pop("winreg", None)',
+      'print("REGISTRY_ROOT_FAILURE_FAILS_CLOSED")'
     ].join('\n');
 
     const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(pyRun.status, 0, pyRun.stderr);
-    assert.match(pyRun.stdout, /POISONED_ENV_ROOT_REJECTED/);
+    assert.match(pyRun.stdout, /REGISTRY_ROOT_FAILURE_FAILS_CLOSED/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
-test('finding P3-04: scanner rejects candidate in trusted root with permissive Windows DACL or non-admin owner', () => {
+test('finding P3-04: scanner DACL verification rejects permissive write ACEs, object/callback ACEs, and malformed security descriptors', () => {
   const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
   const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
   const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
@@ -3305,53 +3403,154 @@ test('finding P3-04: scanner rejects candidate in trusted root with permissive W
 
     const testPy = [
       'import os, sys, tempfile, subprocess',
-      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
-      `exec(${JSON.stringify(funcCode)}, scope)`,
+      'import ctypes',
+      'from ctypes import wintypes',
+      `func_code = ${JSON.stringify(funcCode)}`,
+      'dacl_start = func_code.index("def verify_windows_dacl(")',
+      'dacl_end = func_code.index("trusted_roots = []", dacl_start)',
+      'raw_dacl = func_code[dacl_start:dacl_end]',
+      'unindented_dacl = chr(10).join(l[4:] if l.startswith("    ") else l for l in raw_dacl.splitlines())',
+      'scope = {"os": os, "sys": sys, "ctypes": ctypes, "tempfile": tempfile, "subprocess": subprocess}',
+      'exec(unindented_dacl, scope)',
+      'verify_windows_dacl = scope["verify_windows_dacl"]',
+      'SE_FILE_OBJECT = 1',
+      'OWNER_SECURITY_INFORMATION = 1',
+      'DACL_SECURITY_INFORMATION = 4',
+      'AclSizeInformation = 2',
+      'INHERIT_ONLY_ACE = 0x08',
+      'class ACE_HEADER(ctypes.Structure):',
+      '    _fields_ = [("AceType", wintypes.BYTE), ("AceFlags", wintypes.BYTE), ("AceSize", wintypes.WORD)]',
+      'class ACL_SIZE_INFORMATION(ctypes.Structure):',
+      '    _fields_ = [("AceCount", wintypes.DWORD), ("AclBytesInUse", wintypes.DWORD), ("AclBytesFree", wintypes.DWORD)]',
+      'def build_raw_ace(ace_type, ace_flags, mask, sid_str, object_flags=0):',
+      '    if ace_type in (0, 9):',
+      '        size = 12',
+      '        buf = (ctypes.c_char * size)()',
+      '        buf[0] = ace_type; buf[1] = ace_flags; buf[2] = size & 0xFF; buf[3] = (size >> 8) & 0xFF',
+      '        ctypes.c_uint32.from_address(ctypes.addressof(buf) + 4).value = mask',
+      '        return buf, sid_str',
+      '    elif ace_type in (5, 11):',
+      '        size = 24',
+      '        buf = (ctypes.c_char * size)()',
+      '        buf[0] = ace_type; buf[1] = ace_flags; buf[2] = size & 0xFF; buf[3] = (size >> 8) & 0xFF',
+      '        ctypes.c_uint32.from_address(ctypes.addressof(buf) + 4).value = mask',
+      '        ctypes.c_uint32.from_address(ctypes.addressof(buf) + 8).value = object_flags',
+      '        return buf, sid_str',
+      '    elif ace_type == 4:',
+      '        size = 16',
+      '        buf = (ctypes.c_char * size)()',
+      '        buf[0] = ace_type; buf[1] = ace_flags; buf[2] = size & 0xFF; buf[3] = (size >> 8) & 0xFF',
+      '        ctypes.c_uint32.from_address(ctypes.addressof(buf) + 4).value = mask',
+      '        return buf, sid_str',
+      '    else:',
+      '        size = 8',
+      '        buf = (ctypes.c_char * size)()',
+      '        buf[0] = ace_type; buf[1] = ace_flags; buf[2] = size & 0xFF; buf[3] = (size >> 8) & 0xFF',
+      '        return buf, sid_str',
+      'def run_test_scenario(owner_sid, ace_specs, fail_api=False, null_dacl=False, fail_conv=False):',
+      '    built_aces = [build_raw_ace(**spec) for spec in ace_specs]',
+      '    ace_buffers = [b for b, s in built_aces]',
+      '    ace_sids = [s for b, s in built_aces]',
+      '    class MockAdvApi:',
+      '        def GetNamedSecurityInfoW(self, path, obj_type, sec_info, p_owner, p_group, p_dacl, p_sacl, p_sd):',
+      '            if fail_api: return 5',
+      '            p_owner._obj.value = 0x1234',
+      '            if null_dacl: p_dacl._obj.value = 0',
+      '            else: p_dacl._obj.value = 0x5678',
+      '            p_sd._obj.value = 0x9999',
+      '            return 0',
+      '        def ConvertSidToStringSidW(self, p_sid, p_str):',
+      '            if fail_conv: return 0',
+      '            val = p_sid.value if hasattr(p_sid, "value") else p_sid',
+      '            if val == 0x1234:',
+      '                p_str._obj.value = owner_sid',
+      '                return 1',
+      '            try:',
+      '                val_stored = ctypes.c_uint32.from_address(val).value',
+      '                idx = val_stored - 0x10000',
+      '                if 0 <= idx < len(ace_sids):',
+      '                    p_str._obj.value = ace_sids[idx]',
+      '                    return 1',
+      '            except Exception:',
+      '                pass',
+      '            return 0',
+      '        def GetAclInformation(self, p_dacl, p_info, info_len, info_class):',
+      '            info = ACL_SIZE_INFORMATION.from_address(ctypes.addressof(p_info._obj))',
+      '            info.AceCount = len(ace_buffers)',
+      '            return 1',
+      '        def GetAce(self, p_dacl, index, p_ace):',
+      '            if index < len(ace_buffers):',
+      '                buf = ace_buffers[index]',
+      '                p_ace._obj.value = ctypes.addressof(buf)',
+      '                return 1',
+      '            return 0',
+      '    class MockKernel32:',
+      '        def LocalFree(self, ptr): return 0',
+      '    class MockWinDLL:',
+      '        def __init__(self):',
+      '            self.advapi32 = MockAdvApi()',
+      '            self.kernel32 = MockKernel32()',
+      '    orig_windll = getattr(ctypes, "windll", None)',
+      '    ctypes.windll = MockWinDLL()',
+      '    try:',
+      '        target = os.path.realpath(r"C:\\Program Files") if sys.platform == "win32" else "/Program Files"',
+      '        trusted_roots = [target]',
+      '        for i, buf in enumerate(ace_buffers):',
+      '            hdr = ACE_HEADER.from_address(ctypes.addressof(buf))',
+      '            t = hdr.AceType',
+      '            if t in (0, 9): off = 8',
+      '            elif t in (5, 11):',
+      '                flags = ctypes.c_uint32.from_address(ctypes.addressof(buf) + 8).value',
+      '                off = 12',
+      '                if flags & 1: off += 16',
+      '                if flags & 2: off += 16',
+      '            elif t == 4: off = 12',
+      '            else: off = None',
+      '            if off is not None and off + 4 <= len(buf):',
+      '                ctypes.c_uint32.from_address(ctypes.addressof(buf) + off).value = 0x10000 + i',
+      '        return verify_windows_dacl(target, trusted_roots)',
+      '    finally:',
+      '        if orig_windll is not None: ctypes.windll = orig_windll',
+      '        else: delattr(ctypes, "windll")',
+      '# 1. Broad principal Everyone S-1-1-0 with GENERIC_ALL',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x10000000, "sid_str": "S-1-1-0"}])',
+      '# 2. Broad principal Authenticated Users S-1-5-11 with FILE_WRITE_DATA',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-11"}])',
+      '# 3. Broad principal Users S-1-5-32-545 with GENERIC_WRITE',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x40000000, "sid_str": "S-1-5-32-545"}])',
+      '# 4. Object ACE (type 5) with untrusted user',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 5, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 5. Callback ACE (type 9) with untrusted user',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 9, "ace_flags": 0, "mask": 0x0004, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 6. Callback Object ACE (type 11) with untrusted user',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 11, "ace_flags": 0, "mask": 0x40000000, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 7. Unknown ACE type (0x7F)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0x7F, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544"}])',
+      '# 8. Malformed SID / conversion failure',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544"}], fail_conv=True)',
+      '# 9. NULL DACL',
+      'assert not run_test_scenario("S-1-5-32-544", [], null_dacl=True)',
+      '# 10. API failure',
+      'assert not run_test_scenario("S-1-5-32-544", [], fail_api=True)',
+      '# 11. Untrusted owner',
+      'assert not run_test_scenario("S-1-5-21-999-1001", [{"ace_type": 0, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544"}])',
+      '# 12. Inherited write ACE for untrusted user (flags=0x10)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0x10, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 13. Inherit-only CREATOR OWNER (flags=0x08, sid=S-1-3-0)',
+      'assert run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0x08, "mask": 0x10000000, "sid_str": "S-1-3-0"}])',
+      '# 14. Trusted Administrators and SYSTEM only',
+      'assert run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x10000000, "sid_str": "S-1-5-32-544"}, {"ace_type": 0, "ace_flags": 0, "mask": 0x10000000, "sid_str": "S-1-5-18"}])',
+      '# Native check on Windows',
       'if sys.platform == "win32":',
-      '    import ctypes',
-      '    real_git_dir = r"C:\\Program Files\\Git\\cmd"',
-      '    # Test A: Mock untrusted owner SID (standard user)',
-      '    class MockAdvApiOwner:',
-      '        def __getattr__(self, name):',
-      '            if name == "ConvertSidToStringSidW":',
-      '                def mock_convert(sid, p_str):',
-      '                    p_str._obj.value = "S-1-5-21-999999-999999-999999-1001"',
-      '                    return 1',
-      '                return mock_convert',
-      '            return getattr(ctypes.windll.advapi32, name)',
-      '    orig_advapi = ctypes.windll.advapi32',
-      '    ctypes.windll.advapi32 = MockAdvApiOwner()',
-      '    try:',
-      '        res_untrusted_owner = scope["resolve_trusted_git"]({}, candidate_dirs=[real_git_dir])',
-      '        assert res_untrusted_owner is None, f"Expected non-admin owner to be rejected, got: {res_untrusted_owner}"',
-      '    finally:',
-      '        ctypes.windll.advapi32 = orig_advapi',
-      '    # Test B: Mock permissive DACL (untrusted Users group ACE with WRITE_MASK)',
-      '    call_count = [0]',
-      '    class MockAdvApiAce:',
-      '        def __getattr__(self, name):',
-      '            if name == "ConvertSidToStringSidW":',
-      '                def mock_convert(sid, p_str):',
-      '                    call_count[0] += 1',
-      '                    if call_count[0] == 1:',
-      '                        p_str._obj.value = "S-1-5-32-544"',
-      '                    else:',
-      '                        p_str._obj.value = "S-1-5-32-545"',
-      '                    return 1',
-      '                return mock_convert',
-      '            return getattr(ctypes.windll.advapi32, name)',
-      '    ctypes.windll.advapi32 = MockAdvApiAce()',
-      '    try:',
-      '        res_permissive_ace = scope["resolve_trusted_git"]({}, candidate_dirs=[real_git_dir])',
-      '        assert res_permissive_ace is None, f"Expected permissive write ACE to be rejected, got: {res_permissive_ace}"',
-      '    finally:',
-      '        ctypes.windll.advapi32 = orig_advapi',
-      'print("PERMISSIVE_DACL_REJECTED")'
+      '    real_git = r"C:\\Program Files\\Git\\cmd\\git.exe"',
+      '    if os.path.isfile(real_git):',
+      '        assert verify_windows_dacl(real_git, [r"C:\\Program Files"]), "Real git.exe must pass DACL validation"',
+      'print("DACL_ALL_14_SCENARIOS_VERIFIED")'
     ].join('\n');
 
     const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(pyRun.status, 0, pyRun.stderr);
-    assert.match(pyRun.stdout, /PERMISSIVE_DACL_REJECTED/);
+    assert.match(pyRun.stdout, /DACL_ALL_14_SCENARIOS_VERIFIED/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

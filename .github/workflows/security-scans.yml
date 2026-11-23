@@ -225,8 +225,6 @@ jobs:
 
                       class ACE_HEADER(ctypes.Structure):
                           _fields_ = [('AceType', wintypes.BYTE), ('AceFlags', wintypes.BYTE), ('AceSize', wintypes.WORD)]
-                      class ACCESS_ALLOWED_ACE(ctypes.Structure):
-                          _fields_ = [('Header', ACE_HEADER), ('Mask', wintypes.DWORD), ('SidStart', wintypes.DWORD)]
                       class ACL_SIZE_INFORMATION(ctypes.Structure):
                           _fields_ = [('AceCount', wintypes.DWORD), ('AclBytesInUse', wintypes.DWORD), ('AclBytesFree', wintypes.DWORD)]
 
@@ -252,18 +250,21 @@ jobs:
                               None,
                               ctypes.byref(p_sec_desc)
                           )
-                          if res != 0:
+                          if res != 0 or not p_sec_desc:
                               return False
                           try:
+                              if not p_owner or not p_dacl:
+                                  return False
+
                               p_str_sid = wintypes.LPWSTR()
                               if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):
                                   return False
-                              owner_sid = p_str_sid.value
-                              kernel32.LocalFree(p_str_sid)
-                              if owner_sid not in TRUSTED_SIDS:
-                                  return False
+                              try:
+                                  owner_sid = p_str_sid.value
+                              finally:
+                                  kernel32.LocalFree(p_str_sid)
 
-                              if not p_dacl:
+                              if owner_sid not in TRUSTED_SIDS:
                                   return False
 
                               acl_info = ACL_SIZE_INFORMATION()
@@ -272,22 +273,58 @@ jobs:
 
                               for i in range(acl_info.AceCount):
                                   p_ace = wintypes.LPVOID()
-                                  if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)):
+                                  if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)) or not p_ace:
                                       return False
                                   ace_header = ACE_HEADER.from_address(p_ace.value)
-                                  if ace_header.AceType == 0:
-                                      allowed_ace = ACCESS_ALLOWED_ACE.from_address(p_ace.value)
+                                  ace_type = ace_header.AceType
+                                  ace_size = ace_header.AceSize
+
+                                  # Explicit deny ACEs deny access; they do not grant write rights
+                                  if ace_type in (1, 6, 10, 12):
+                                      continue
+
+                                  # Allow ACEs: standard (0), callback (9), object (5), callback object (11), compound (4)
+                                  if ace_type in (0, 9):
+                                      if ace_size < 12:
+                                          return False
+                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
                                       p_sid = ctypes.c_void_p(p_ace.value + 8)
-                                      p_ace_str_sid = wintypes.LPWSTR()
-                                      if advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):
-                                          ace_sid = p_ace_str_sid.value
-                                          kernel32.LocalFree(p_ace_str_sid)
-                                          if (allowed_ace.Mask & WRITE_MASK) != 0:
-                                              if ace_sid in TRUSTED_SIDS:
-                                                  continue
-                                              if ace_sid == 'S-1-3-0' and (ace_header.AceFlags & INHERIT_ONLY_ACE):
-                                                  continue
-                                              return False
+                                  elif ace_type in (5, 11):
+                                      if ace_size < 16:
+                                          return False
+                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
+                                      flags = ctypes.c_uint32.from_address(p_ace.value + 8).value
+                                      offset = 12
+                                      if (flags & 0x1):
+                                          offset += 16
+                                      if (flags & 0x2):
+                                          offset += 16
+                                      if ace_size < offset + 8:
+                                          return False
+                                      p_sid = ctypes.c_void_p(p_ace.value + offset)
+                                  elif ace_type == 4:
+                                      if ace_size < 16:
+                                          return False
+                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
+                                      p_sid = ctypes.c_void_p(p_ace.value + 12)
+                                  else:
+                                      # Unknown / unhandled ACE type: fail closed
+                                      return False
+
+                                  p_ace_str_sid = wintypes.LPWSTR()
+                                  if not advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):
+                                      return False
+                                  try:
+                                      ace_sid = p_ace_str_sid.value
+                                  finally:
+                                      kernel32.LocalFree(p_ace_str_sid)
+
+                                  if (mask & WRITE_MASK) != 0:
+                                      if ace_sid in TRUSTED_SIDS:
+                                          continue
+                                      if ace_sid == 'S-1-3-0' and (ace_header.AceFlags & INHERIT_ONLY_ACE):
+                                          continue
+                                      return False
                           finally:
                               kernel32.LocalFree(p_sec_desc)
 
@@ -746,8 +783,6 @@ jobs:
 
                       class ACE_HEADER(ctypes.Structure):
                           _fields_ = [('AceType', wintypes.BYTE), ('AceFlags', wintypes.BYTE), ('AceSize', wintypes.WORD)]
-                      class ACCESS_ALLOWED_ACE(ctypes.Structure):
-                          _fields_ = [('Header', ACE_HEADER), ('Mask', wintypes.DWORD), ('SidStart', wintypes.DWORD)]
                       class ACL_SIZE_INFORMATION(ctypes.Structure):
                           _fields_ = [('AceCount', wintypes.DWORD), ('AclBytesInUse', wintypes.DWORD), ('AclBytesFree', wintypes.DWORD)]
 
@@ -773,18 +808,21 @@ jobs:
                               None,
                               ctypes.byref(p_sec_desc)
                           )
-                          if res != 0:
+                          if res != 0 or not p_sec_desc:
                               return False
                           try:
+                              if not p_owner or not p_dacl:
+                                  return False
+
                               p_str_sid = wintypes.LPWSTR()
                               if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):
                                   return False
-                              owner_sid = p_str_sid.value
-                              kernel32.LocalFree(p_str_sid)
-                              if owner_sid not in TRUSTED_SIDS:
-                                  return False
+                              try:
+                                  owner_sid = p_str_sid.value
+                              finally:
+                                  kernel32.LocalFree(p_str_sid)
 
-                              if not p_dacl:
+                              if owner_sid not in TRUSTED_SIDS:
                                   return False
 
                               acl_info = ACL_SIZE_INFORMATION()
@@ -793,22 +831,58 @@ jobs:
 
                               for i in range(acl_info.AceCount):
                                   p_ace = wintypes.LPVOID()
-                                  if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)):
+                                  if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)) or not p_ace:
                                       return False
                                   ace_header = ACE_HEADER.from_address(p_ace.value)
-                                  if ace_header.AceType == 0:
-                                      allowed_ace = ACCESS_ALLOWED_ACE.from_address(p_ace.value)
+                                  ace_type = ace_header.AceType
+                                  ace_size = ace_header.AceSize
+
+                                  # Explicit deny ACEs deny access; they do not grant write rights
+                                  if ace_type in (1, 6, 10, 12):
+                                      continue
+
+                                  # Allow ACEs: standard (0), callback (9), object (5), callback object (11), compound (4)
+                                  if ace_type in (0, 9):
+                                      if ace_size < 12:
+                                          return False
+                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
                                       p_sid = ctypes.c_void_p(p_ace.value + 8)
-                                      p_ace_str_sid = wintypes.LPWSTR()
-                                      if advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):
-                                          ace_sid = p_ace_str_sid.value
-                                          kernel32.LocalFree(p_ace_str_sid)
-                                          if (allowed_ace.Mask & WRITE_MASK) != 0:
-                                              if ace_sid in TRUSTED_SIDS:
-                                                  continue
-                                              if ace_sid == 'S-1-3-0' and (ace_header.AceFlags & INHERIT_ONLY_ACE):
-                                                  continue
-                                              return False
+                                  elif ace_type in (5, 11):
+                                      if ace_size < 16:
+                                          return False
+                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
+                                      flags = ctypes.c_uint32.from_address(p_ace.value + 8).value
+                                      offset = 12
+                                      if (flags & 0x1):
+                                          offset += 16
+                                      if (flags & 0x2):
+                                          offset += 16
+                                      if ace_size < offset + 8:
+                                          return False
+                                      p_sid = ctypes.c_void_p(p_ace.value + offset)
+                                  elif ace_type == 4:
+                                      if ace_size < 16:
+                                          return False
+                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
+                                      p_sid = ctypes.c_void_p(p_ace.value + 12)
+                                  else:
+                                      # Unknown / unhandled ACE type: fail closed
+                                      return False
+
+                                  p_ace_str_sid = wintypes.LPWSTR()
+                                  if not advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):
+                                      return False
+                                  try:
+                                      ace_sid = p_ace_str_sid.value
+                                  finally:
+                                      kernel32.LocalFree(p_ace_str_sid)
+
+                                  if (mask & WRITE_MASK) != 0:
+                                      if ace_sid in TRUSTED_SIDS:
+                                          continue
+                                      if ace_sid == 'S-1-3-0' and (ace_header.AceFlags & INHERIT_ONLY_ACE):
+                                          continue
+                                      return False
                           finally:
                               kernel32.LocalFree(p_sec_desc)
 
