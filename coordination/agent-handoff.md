@@ -1597,3 +1597,17 @@ ChatGPT appended an A2-03 cross-review request to `coordination/prompts/GEMINI-A
 - No release readiness, merge, signing, tagging or deployment approval is implied.
 
 **Immediate next sequence:** Gemini executes the exact A2-03 test matrix while continuing F5 verification; ChatGPT independently reconciles returned evidence and fixes any confirmed in-scope defects; then Claude performs a read-only adversarial audit of the exact combined candidate SHA. The workstreams remain parallel. No merge or production action without explicit owner approval.
+
+
+### 17.6 Follow-up hardening after source self-review
+
+ChatGPT performed another static pass over the newly changed checksum source and corrected two issues before requesting independent execution:
+
+- Removed an incorrect assumption that Node.js `fs.Dirent` exposes `dev` and `ino` fields. The descriptor-relative opens themselves enforce no-follow and directory/file type constraints; the implementation no longer compares against unavailable Dirent identity properties.
+- Hardened manifest creation in commit `f3b7e2ae77f547d810f75086b326086c610e4745`: open the manifest with `O_NOFOLLOW | O_NONBLOCK`, verify the opened descriptor is a regular file using `fstat`, then truncate and write. This avoids following a substituted symlink and avoids blocking on a substituted FIFO before type validation.
+
+**Current code/test/documentation checkpoint:** `f3b7e2ae77f547d810f75086b326086c610e4745`. Compared with the previous A2-03 baseline `2a0604d3b4b59b8f69cafc3f72657a875b845fcc`, the branch is 7 commits ahead, 0 behind, with intended changes limited to checksum tooling, checksum tests, consumer documentation and this handoff ledger.
+
+The corresponding Gemini cross-review prompt was updated in Gemini prompt commit `00c0fcde0a7a26a96de1b7db2ec5da8e54a5229d` to include this final manifest correction.
+
+**Verification remains NOT EXECUTED by ChatGPT.** GitHub combined commit statuses and PR-triggered workflow-run lookups returned no entries for the A2-03 implementation commits. Do not interpret empty results as successful CI. The code is not ready for merge until Gemini's exact Linux/Windows execution evidence and Claude's independent audit are received and reconciled.
