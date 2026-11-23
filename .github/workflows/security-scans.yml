@@ -256,6 +256,12 @@ jobs:
                               if not p_owner or not p_dacl:
                                   return False
 
+                              if not advapi32.IsValidSid(p_owner):
+                                  return False
+                              owner_len = advapi32.GetLengthSid(p_owner)
+                              if owner_len < 8:
+                                  return False
+
                               p_str_sid = wintypes.LPWSTR()
                               if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):
                                   return False
@@ -285,15 +291,18 @@ jobs:
 
                                   # Allow ACEs: standard (0), callback (9), object (5), callback object (11), compound (4)
                                   if ace_type in (0, 9):
-                                      if ace_size < 12:
-                                          return False
-                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
-                                      p_sid = ctypes.c_void_p(p_ace.value + 8)
-                                  elif ace_type in (5, 11):
                                       if ace_size < 16:
                                           return False
                                       mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
+                                      sid_offset = 8
+                                      p_sid = ctypes.c_void_p(p_ace.value + 8)
+                                  elif ace_type in (5, 11):
+                                      if ace_size < 20:
+                                          return False
+                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
                                       flags = ctypes.c_uint32.from_address(p_ace.value + 8).value
+                                      if (flags & ~0x03) != 0:
+                                          return False
                                       offset = 12
                                       if (flags & 0x1):
                                           offset += 16
@@ -301,14 +310,30 @@ jobs:
                                           offset += 16
                                       if ace_size < offset + 8:
                                           return False
+                                      sid_offset = offset
                                       p_sid = ctypes.c_void_p(p_ace.value + offset)
                                   elif ace_type == 4:
-                                      if ace_size < 16:
+                                      if ace_size < 20:
                                           return False
                                       mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
+                                      compound_type = ctypes.c_uint16.from_address(p_ace.value + 8).value
+                                      reserved = ctypes.c_uint16.from_address(p_ace.value + 10).value
+                                      if compound_type != 1 or reserved != 0:
+                                          return False
+                                      sid_offset = 12
                                       p_sid = ctypes.c_void_p(p_ace.value + 12)
                                   else:
                                       # Unknown / unhandled ACE type: fail closed
+                                      return False
+
+                                  if not advapi32.IsValidSid(p_sid):
+                                      return False
+                                  sid_len = advapi32.GetLengthSid(p_sid)
+                                  if sid_len < 8 or ace_size < sid_offset + sid_len:
+                                      return False
+                                  revision = ctypes.c_uint8.from_address(p_sid.value).value
+                                  sub_auth_count = ctypes.c_uint8.from_address(p_sid.value + 1).value
+                                  if revision != 1 or sid_len != 8 + 4 * sub_auth_count:
                                       return False
 
                                   p_ace_str_sid = wintypes.LPWSTR()
@@ -814,6 +839,12 @@ jobs:
                               if not p_owner or not p_dacl:
                                   return False
 
+                              if not advapi32.IsValidSid(p_owner):
+                                  return False
+                              owner_len = advapi32.GetLengthSid(p_owner)
+                              if owner_len < 8:
+                                  return False
+
                               p_str_sid = wintypes.LPWSTR()
                               if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):
                                   return False
@@ -843,15 +874,18 @@ jobs:
 
                                   # Allow ACEs: standard (0), callback (9), object (5), callback object (11), compound (4)
                                   if ace_type in (0, 9):
-                                      if ace_size < 12:
-                                          return False
-                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
-                                      p_sid = ctypes.c_void_p(p_ace.value + 8)
-                                  elif ace_type in (5, 11):
                                       if ace_size < 16:
                                           return False
                                       mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
+                                      sid_offset = 8
+                                      p_sid = ctypes.c_void_p(p_ace.value + 8)
+                                  elif ace_type in (5, 11):
+                                      if ace_size < 20:
+                                          return False
+                                      mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
                                       flags = ctypes.c_uint32.from_address(p_ace.value + 8).value
+                                      if (flags & ~0x03) != 0:
+                                          return False
                                       offset = 12
                                       if (flags & 0x1):
                                           offset += 16
@@ -859,14 +893,30 @@ jobs:
                                           offset += 16
                                       if ace_size < offset + 8:
                                           return False
+                                      sid_offset = offset
                                       p_sid = ctypes.c_void_p(p_ace.value + offset)
                                   elif ace_type == 4:
-                                      if ace_size < 16:
+                                      if ace_size < 20:
                                           return False
                                       mask = ctypes.c_uint32.from_address(p_ace.value + 4).value
+                                      compound_type = ctypes.c_uint16.from_address(p_ace.value + 8).value
+                                      reserved = ctypes.c_uint16.from_address(p_ace.value + 10).value
+                                      if compound_type != 1 or reserved != 0:
+                                          return False
+                                      sid_offset = 12
                                       p_sid = ctypes.c_void_p(p_ace.value + 12)
                                   else:
                                       # Unknown / unhandled ACE type: fail closed
+                                      return False
+
+                                  if not advapi32.IsValidSid(p_sid):
+                                      return False
+                                  sid_len = advapi32.GetLengthSid(p_sid)
+                                  if sid_len < 8 or ace_size < sid_offset + sid_len:
+                                      return False
+                                  revision = ctypes.c_uint8.from_address(p_sid.value).value
+                                  sub_auth_count = ctypes.c_uint8.from_address(p_sid.value + 1).value
+                                  if revision != 1 or sid_len != 8 + 4 * sub_auth_count:
                                       return False
 
                                   p_ace_str_sid = wintypes.LPWSTR()
