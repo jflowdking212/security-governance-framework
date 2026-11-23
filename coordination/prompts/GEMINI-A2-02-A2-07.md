@@ -414,3 +414,12 @@ F5-R1 remains OPEN until the four implementations (standalone, first-party workf
 6. Continue Gemini-owned F5 work independently: verify the exact four scanner implementations, run the full scanner/workflow regression matrix, and report whether the branch has the latest embedded-guard parity and fail-closed platform handling. Do not merge, sign, tag or deploy.
 
 **Important:** The connected GitHub account is read-only for agent identities. Do not push as the owner or spoof commit author metadata. This is a read-only cross-review and test assignment, not permission to modify the ChatGPT-owned workstream.
+
+
+### A2-03 follow-up correction to include in cross-review
+
+After the initial cross-review assignment, ChatGPT made one further owner-issued correction:
+
+- `f3b7e2ae77f547d810f75086b326086c610e4745` — manifest creation now opens the target with `O_NOFOLLOW | O_NONBLOCK`, verifies via `fstat` that it is a regular file, and only then truncates it. This avoids following a manifest symlink and avoids blocking on a substituted FIFO before type validation.
+
+Please include this exact commit in your review and tests. The exact ChatGPT code/test/documentation diff since base `2a0604d3b4b59b8f69cafc3f72657a875b845fcc` currently covers `tools/checksums.mjs`, `tests/checksums.test.mjs`, and `CONSUMING.md`, plus the shared handoff ledger. Do not report A2-03 verified until the exact branch head is tested on both platforms and the full validation matrix is complete.
