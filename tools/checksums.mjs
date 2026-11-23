@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {openSecureDirectory} from './secure-root.mjs';
 
 const MANIFEST='SHA256SUMS';
 const SIGNATURE='SHA256SUMS.sig';
@@ -27,40 +28,20 @@ for(let i=1;i<argv.length;i++) {
 }
 const START=process.cwd();
 const ROOT=path.resolve(START,rootArg);
+let ROOT_HANDLE;
+let ROOT_IO;
 if(ROOT.split(path.sep).some(part=>part.toLowerCase()==='.git')) {
   console.error('Checksum root cannot be inside a .git directory: '+ROOT);
-  process.exit(1);
-}
-if(!fs.existsSync(ROOT)||!fs.statSync(ROOT).isDirectory()) {
-  console.error('Checksum root does not exist or is not a directory: '+ROOT);
   process.exit(1);
 }
 // Filesystem snapshots must be self-contained. A root .git directory or gitfile
 // is untrusted executable configuration and must never be silently excluded.
 function assertFilesystemRootHasNoGitMetadata() {
   if(!FILESYSTEM)return;
-  const gitEntry=fs.readdirSync(ROOT).find(name=>name.toLowerCase()==='.git');
+  const gitEntry=fs.readdirSync(ROOT_IO).find(name=>name.toLowerCase()==='.git');
   if(gitEntry)throw new Error('Root .git metadata is not allowed in filesystem mode: '+gitEntry);
 }
 
-// Reject symlinks in every component of the selected checksum root. Checking
-// only files beneath ROOT is insufficient because --root itself may resolve
-// through a symlink (including a symlinked ancestor) into an external tree.
-function assertNoSymlinkRootComponents(target) {
-  const parsed=path.parse(target);
-  let current=parsed.root;
-  const components=target.slice(parsed.root.length).split(path.sep).filter(Boolean);
-  for(const component of components) {
-    current=path.join(current,component);
-    const componentStat=fs.lstatSync(current);
-    if(componentStat.isSymbolicLink()) {
-      throw new Error('Checksum root path traverses a symbolic link: '+current);
-    }
-    if(!componentStat.isDirectory()) {
-      throw new Error('Checksum root path component is not a directory: '+current);
-    }
-  }
-}
 // Filesystem mode deliberately avoids invoking Git at all. In particular, do
 // not let an untrusted snapshot's Git configuration influence verification.
 const gitRootResult=FILESYSTEM?null:gitAt(START,['rev-parse','--show-toplevel']);
@@ -131,7 +112,7 @@ function assertNoUnexpectedUntracked() {
   if(extras.length)throw new Error('Untracked or ignored files outside dist/bundles must be staged or removed: '+extras.join(', '));
 }
 
-function assertNoNestedGit(dir=ROOT,relative='') {
+function assertNoNestedGit(dir=ROOT_IO,relative='') {
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
     if(entry.name.toLowerCase()==='.git') {
       // Only the selected repository's own metadata is allowed. When --root
@@ -157,13 +138,13 @@ function assertSafePath(rel) {
   if(parts.some(part=>part.toLowerCase()==='.git')) {
     throw new Error('Unexpected .git entry detected in release path: '+rel);
   }
-  const absolute=path.resolve(ROOT,...parts);
-  const relative=path.relative(ROOT,absolute);
+  const absolute=path.resolve(ROOT_IO,...parts);
+  const relative=path.relative(ROOT_IO,absolute);
   if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('Path escapes checksum root: '+rel);
   // lstat every parent as well as the leaf. lstat(leaf) follows symlinks in
   // parent components, so checking only the final file would miss a directory
   // replaced by a symlink to attacker-controlled content.
-  let parent=ROOT;
+  let parent=ROOT_IO;
   for(const part of parts.slice(0,-1)) {
     parent=path.join(parent,part);
     const parentStat=fs.lstatSync(parent);
@@ -222,7 +203,7 @@ function sha256ForPath(rel) {
   return digestBytes(mode,diskBytes);
 }
 
-function walkFiles(dir=ROOT,relative='') {
+function walkFiles(dir=ROOT_IO,relative='') {
   const out=[];
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
     if(entry.name.toLowerCase()==='.git') {
@@ -263,7 +244,7 @@ function createManifest() {
   // Validate unexpected untracked content after tracked-path checks so a
   // tracked path replaced by a symlinked parent is reported at that boundary.
   if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
-  fs.writeFileSync(path.join(ROOT,MANIFEST),lines.join('\n')+'\n',{encoding:'utf8'});
+  fs.writeFileSync(path.join(ROOT_IO,MANIFEST),lines.join('\n')+'\n',{encoding:'utf8'});
   console.log('Created '+MANIFEST+' for '+files.length+' files (excluding '+MANIFEST+' and '+SIGNATURE+').');
 }
 
@@ -277,7 +258,7 @@ function verifyManifest() {
     // The cached diff is index-to-HEAD only and does not read/clean worktree files.
     runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
   }
-  const manifestPath=path.join(ROOT,MANIFEST);
+  const manifestPath=path.join(ROOT_IO,MANIFEST);
   if(!fs.existsSync(manifestPath))throw new Error('Missing '+MANIFEST+'.');
   const raw=fs.readFileSync(manifestPath,'utf8');
   const lines=raw.replace(/\r/g,'').split('\n').filter(Boolean);
@@ -309,7 +290,8 @@ function verifyManifest() {
 try {
   // Keep this inside the guarded operation so hostile .git metadata produces
   // a controlled diagnostic rather than an uncaught exception and stack trace.
-  assertNoSymlinkRootComponents(ROOT);
+  ROOT_HANDLE=openSecureDirectory(ROOT);
+  ROOT_IO=ROOT_HANDLE.path;
   assertFilesystemRootHasNoGitMetadata();
   if(command==='create')createManifest();
   else if(command==='verify')verifyManifest();
