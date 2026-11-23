@@ -123,8 +123,6 @@ function assertNoNestedGit(dirFd=ROOT_HANDLE.fd,relative='') {
       if(rel!=='node_modules'&&!rel.startsWith('node_modules/')) {
         const childFd=openDirectoryAt(dirFd,entry.name);
         try {
-          const actual=fs.fstatSync(childFd);
-          if(actual.dev!==entry.dev||actual.ino!==entry.ino)throw new Error('Filesystem directory changed during checksum traversal: '+rel);
           assertNoNestedGit(childFd,rel);
         } finally {fs.closeSync(childFd);}
       }
@@ -153,14 +151,11 @@ function openDirectoryAt(parentFd,name) {
   return fd;
 }
 
-function openRegularFileAt(parentFd,name,expectedEntry) {
+function openRegularFileAt(parentFd,name) {
   const fd=fs.openSync('/proc/self/fd/'+parentFd+'/'+name,FILE_FLAGS);
   try {
     const stat=fs.fstatSync(fd);
     if(!stat.isFile())throw new Error('Only regular files can be checksummed: '+name);
-    if(expectedEntry && (stat.dev!==expectedEntry.dev || stat.ino!==expectedEntry.ino)) {
-      throw new Error('Filesystem entry changed during checksum traversal: '+name);
-    }
     return {fd,stat,close(){fs.closeSync(fd);}};
   } catch(error) {
     fs.closeSync(fd);
@@ -247,12 +242,10 @@ function walkFiles(dirFd=ROOT_HANDLE.fd,relative='') {
     if(entry.isDirectory()) {
       const childFd=openDirectoryAt(dirFd,entry.name);
       try {
-        const actual=fs.fstatSync(childFd);
-        if(actual.dev!==entry.dev||actual.ino!==entry.ino)throw new Error('Filesystem directory changed during checksum traversal: '+rel);
         out.push(...walkFiles(childFd,rel));
       } finally {fs.closeSync(childFd);}
     } else if(entry.isFile()) {
-      const opened=openRegularFileAt(dirFd,entry.name,entry);
+      const opened=openRegularFileAt(dirFd,entry.name);
       opened.close();
       out.push(rel);
     } else throw new Error('Unsupported filesystem entry in checksum snapshot: '+rel);
@@ -281,7 +274,11 @@ function createManifest() {
   // Validate unexpected untracked content after tracked-path checks so a
   // tracked path replaced by a symlinked parent is reported at that boundary.
   if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
-  fs.writeFileSync(path.join(ROOT_IO,MANIFEST),lines.join('\n')+'\n',{encoding:'utf8'});
+  const manifestFd=fs.openSync('/proc/self/fd/'+ROOT_HANDLE.fd+'/'+MANIFEST,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW|(fs.constants.O_CLOEXEC||0),0o644);
+  try {
+    if(!fs.fstatSync(manifestFd).isFile())throw new Error('Checksum manifest target is not a regular file.');
+    fs.writeFileSync(manifestFd,lines.join('\n')+'\n',{encoding:'utf8'});
+  } finally {fs.closeSync(manifestFd);}
   console.log('Created '+MANIFEST+' for '+files.length+' files (excluding '+MANIFEST+' and '+SIGNATURE+').');
 }
 
@@ -295,9 +292,17 @@ function verifyManifest() {
     // The cached diff is index-to-HEAD only and does not read/clean worktree files.
     runGit(['diff','--cached','--quiet','--no-ext-diff','--no-textconv','HEAD','--',rootPathspec(),...excludedPathspecs()],{allowDiff:true});
   }
-  const manifestPath=path.join(ROOT_IO,MANIFEST);
-  if(!fs.existsSync(manifestPath))throw new Error('Missing '+MANIFEST+'.');
-  const raw=fs.readFileSync(manifestPath,'utf8');
+  let manifestHandle;
+  let raw;
+  try {
+    manifestHandle=openRegularFile(MANIFEST);
+    raw=fs.readFileSync(manifestHandle.fd,'utf8');
+  } catch(error) {
+    if(error.code==='ENOENT')throw new Error('Missing '+MANIFEST+'.');
+    throw error;
+  } finally {
+    if(manifestHandle)manifestHandle.close();
+  }
   const lines=raw.replace(/\r/g,'').split('\n').filter(Boolean);
   const entries=[];
   for(const line of lines) {
