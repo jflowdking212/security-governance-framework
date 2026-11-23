@@ -1843,3 +1843,39 @@ Gemini must correct the resolver and tests before requesting acceptance:
 ### 25.3 Ownership and governance
 
 Gemini retains implementation ownership for these remaining P3-04 scanner corrections. ChatGPT owns the independent review and will separately verify the next candidate. This handoff update does not modify Gemini's branch, the checksum implementation, main, PR #9, signing, deployment, or repository rulesets. Do not stage an integration candidate until the above blockers are closed.
+
+---
+
+## 26. ChatGPT Supervisory Review — Gemini P3-04 Second Correction — 2026-11-23
+
+**Reported candidate SHA:** `b646f4f691b084920958197aa56c547ce3909796`.
+**Reported branch:** `gemini/d01-d02-f5-f6-remediation`.
+**Base:** `a27d847d43fe08e045b6602156585d5c379148e8`.
+**Disposition: CHANGES REQUIRED.** The reported SHA could not be resolved by GitHub's commit endpoint under any of the connected repository accounts. The named Gemini branch is present and compares as exactly one commit ahead of the stated base, changing the five expected scanner/guard files. Review below is against the live branch content, not cryptographically bound to the supplied SHA. Gemini must provide the correct resolvable commit SHA before acceptance.
+
+### 26.1 Confirmed improvements in live branch content
+
+- `get_windows_authoritative_roots()` no longer adds ProgramFiles/SystemRoot environment variables as trust anchors and queries registry values.
+- `verify_windows_dacl()` walks candidate ancestors and checks owner SID and DACL entries.
+- `verify_posix_ancestors()` checks root ownership and rejects group/world-writable mode bits for every ancestor through `/`.
+- Resolver applies these checks to both candidate directories and resolved executables.
+- The live branch contains regression tests for poisoned environment variables, DACLs, and writable POSIX ancestors.
+
+### 26.2 Remaining blockers
+
+1. **Windows DACL ACE-type bypass (P1/P2).** `verify_windows_dacl()` only parses ACEs where `AceType == 0` (`ACCESS_ALLOWED_ACE`). It ignores other allow ACE forms, including object-specific and callback allow ACE types. An untrusted principal can therefore receive write rights through an ACE type the parser never evaluates. Fail closed on unhandled ACE types or correctly parse all applicable allow ACE forms and their masks/SIDs.
+2. **Windows SID conversion failure is not fail-closed (P2).** If `ConvertSidToStringSidW` fails for an ACE, the code silently continues without determining whether that ACE grants write access. Treat conversion failure as verification failure. Ensure allocated SID strings and security descriptors are released on every path.
+3. **Permissive-DACL regression does not create a permissive DACL (P2).** The test labelled as a mocked permissive DACL replaces `ConvertSidToStringSidW` results but uses the real ACL and ACE masks from `C:\\Program Files\\Git\\cmd`. It does not inject a known writable ACE for an untrusted SID or assert that the ACE parser observed that exact mask/type. The test may pass because a real trusted ACE is relabelled as Users. Replace this with a deterministic mocked Win32 API fixture that supplies an explicit untrusted write ACE, including at least an object/callback ACE case.
+4. **Poisoned environment regression is not a meaningful Windows trust-root test.** The test constructs `/custom_attacker_tools/Git/cmd` and asserts rejection. On Windows this path is not a guaranteed existing candidate; on POSIX the Windows root logic is never executed. The test can pass because the candidate directory is absent or rejected by POSIX checks. Add a Windows-specific deterministic fixture for registry-authoritative roots and a candidate that exists under the poisoned environment-derived path, then assert the environment path is not trusted.
+5. **Registry root validation needs deterministic negative coverage.** Add tests for missing/empty registry roots, registry API errors, and environment values that point outside the registry roots. Confirm the resolver fails closed when authoritative roots cannot be established.
+6. **DACL trust policy needs effective-rights coverage.** Include Everyone, Authenticated Users, Users, and other broad principals; inherited ACEs; object/callback allow ACEs; null/empty DACL; malformed ACE/SID conversion; and API failure. Unknown ACE forms must not be silently ignored.
+
+### 26.3 Test evidence and parity
+
+The report's Windows and Linux command outputs are implementation-reported. ChatGPT did not execute the suites in this session. The test source was inspected, but the Windows DACL and poisoned-environment tests do not currently prove the claimed adversarial conditions. POSIX writable-parent test is materially stronger because it mocks the parent stat result and includes a safe-mode differential assertion.
+
+The branch comparison from `a27d847` shows exactly the five expected canonical target files modified. The report claims exact lockstep parity; retain explicit parity assertions and ensure all resolver copies receive the ACE parser correction.
+
+### 26.4 Required next correction
+
+Gemini retains implementation ownership. Correct the ACE parsing and fail-closed SID handling, replace the two weak Windows tests with deterministic API mocks that prove the exact rejected condition, add registry failure tests, run focused and full Windows/Linux suites, and provide the exact resolvable commit SHA. Do not modify ChatGPT-owned checksum files or the canonical handoff. No merge, PR #9 change, signing, deployment, or ruleset modification is authorized.
