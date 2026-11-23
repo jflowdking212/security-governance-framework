@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {openSecureDirectory} from '../tools/secure-root.mjs';
 
 const TOOL=fileURLToPath(new URL('../tools/checksums.mjs',import.meta.url));
 
@@ -421,4 +422,40 @@ test('adversarial: root .git metadata failure is controlled and has no uncaught 
   assert.notEqual(result.status,0);
   assert.match(result.stderr,/^Checksum operation failed: Root \.git metadata is not allowed in filesystem mode/);
   assert.doesNotMatch(result.stderr,/\n\s+at /);
+});
+
+
+test('A2-03: secure root descriptor rejects symlink components',t=>{
+  if(process.platform!=='linux'){t.skip('Secure directory-descriptor traversal is Linux-only; unsupported platforms fail closed');return;}
+  const base=fs.mkdtempSync(path.join(os.tmpdir(),'uss-secure-root-symlink-'));
+  t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+  const real=path.join(base,'real');
+  const outside=path.join(base,'outside');
+  fs.mkdirSync(real);
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside,'marker.txt'),'outside');
+  const linkPath=path.join(base,'linked');
+  fs.symlinkSync(outside,linkPath,'dir');
+  assert.throws(()=>openSecureDirectory(linkPath),/symbolic link or non-directory component/);
+});
+
+test('A2-03: opened root remains anchored when its pathname is replaced',t=>{
+  if(process.platform!=='linux'){t.skip('Secure directory-descriptor traversal is Linux-only; unsupported platforms fail closed');return;}
+  const base=fs.mkdtempSync(path.join(os.tmpdir(),'uss-secure-root-race-'));
+  t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+  const root=path.join(base,'workspace');
+  const moved=path.join(base,'workspace-original');
+  const external=path.join(base,'external');
+  fs.mkdirSync(root);
+  fs.mkdirSync(external);
+  fs.writeFileSync(path.join(root,'marker.txt'),'original-root');
+  fs.writeFileSync(path.join(external,'marker.txt'),'attacker-root');
+
+  const opened=openSecureDirectory(root);
+  t.after(()=>opened.close());
+  fs.renameSync(root,moved);
+  fs.symlinkSync(external,root,'dir');
+
+  assert.equal(fs.readFileSync(path.join(opened.path,'marker.txt'),'utf8'),'original-root');
+  assert.equal(fs.readFileSync(path.join(root,'marker.txt'),'utf8'),'attacker-root');
 });
