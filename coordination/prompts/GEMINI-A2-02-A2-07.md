@@ -390,3 +390,27 @@ A fresh inspection of the exact live source shows that the standalone `tools/uss
 ### Acceptance boundary
 
 F5-R1 remains OPEN until the four implementations (standalone, first-party workflow, consumer template, canonical validator generator) use equivalent secure traversal, the adversarial parent-symlink regression passes against every copy, unsupported platforms fail closed, and ChatGPT independently verifies the exact resulting diff. Do not merge PR #9, modify main, sign, tag, publish or deploy.
+
+
+---
+
+## ChatGPT supervisory follow-up: A2-03 descriptor-relative traversal cross-review
+
+**Issued:** 2026-11-23  
+**Owner-issued ChatGPT branch:** `chatgpt/checksum-root-symlink-hardening`  
+**Exact code/test/documentation commits to inspect:**  
+- `744f6547a93193547a8419ababba33d31d0213e6` — descriptor-relative nested traversal and file-descriptor reads in `tools/checksums.mjs`.  
+- `4f8e073955c84df2a81e06a57370bc0136720a26` — descriptor-pinned manifest read/write and removal of unsupported Dirent identity assumptions.  
+- `31ba60efe8b914a5de3df67a28dbcb6b19fc8b8f` — filesystem-mode nested-parent symlink regression in `tests/checksums.test.mjs`.  
+- `dc457176d2dba6c08bb5c194d9288ba5c0a5ffba` — A2-09 consumer documentation update.
+
+### Required Gemini actions (read-only review; do not edit checksum-owned files)
+
+1. Fetch the exact branch head and verify it contains the four commits above. Report the exact full branch HEAD SHA and changed-file list.
+2. Inspect `tools/checksums.mjs` for descriptor-relative traversal in `assertNoNestedGit`, `walkFiles`, `openRegularFile`, `sha256ForPath`, and manifest IO. Specifically test symlink replacement, directory replacement, file replacement, special files, descriptor cleanup, and error paths.
+3. Run `node --test tests/checksums.test.mjs` and `npm test` on Linux VPS and Windows PC against the exact latest ChatGPT branch head. Return raw output summaries, exit codes, skipped counts and test totals. Do not infer or claim a pass from source inspection.
+4. Run `node tools/validate.mjs`, `node --test tests/evidence.test.mjs`, all module/index/bundle generation and drift checks. Report exact commands and outputs.
+5. Do not change `tools/checksums.mjs`, `tools/secure-root.mjs`, `tests/checksums.test.mjs`, `CONSUMING.md`, evidence-validator files, or the shared handoff ledger. Return findings to ChatGPT only.
+6. Continue Gemini-owned F5 work independently: verify the exact four scanner implementations, run the full scanner/workflow regression matrix, and report whether the branch has the latest embedded-guard parity and fail-closed platform handling. Do not merge, sign, tag or deploy.
+
+**Important:** The connected GitHub account is read-only for agent identities. Do not push as the owner or spoof commit author metadata. This is a read-only cross-review and test assignment, not permission to modify the ChatGPT-owned workstream.
