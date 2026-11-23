@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
-import { validateConsumerWorkflowStructure } from '../tools/validate-consumer-workflow.mjs';
+import { validateConsumerWorkflowStructure, buildExpectedConsumerGuard } from '../tools/validate-consumer-workflow.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workflowDir = path.join(ROOT, '.github/workflows');
@@ -3849,3 +3849,128 @@ test('finding F6: rejects needs dependencies and strategy matrices on mandatory 
     /mandatory job 'semgrep' must not define strategy matrix/
   );
 });
+
+test('finding W-03: standalone scanner matches all four embedded workflow scanner copies', () => {
+  const standalonePath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  assert.ok(fs.existsSync(standalonePath), 'Standalone scanner tools/uss-tracked-binary-scanner.py must exist');
+  const standaloneContent = fs.readFileSync(standalonePath, 'utf8');
+  const standaloneLines = standaloneContent.split(/\r?\n/);
+  const osIdx = standaloneLines.indexOf('import os');
+  assert.ok(osIdx >= 0, 'Standalone scanner must contain import os');
+  const standaloneEngine = standaloneLines.slice(osIdx).join('\n').trim();
+
+  const workflowTargets = [
+    { file: path.join(ROOT, '.github', 'workflows', 'security-scans.yml'), label: 'security-scans.yml' },
+    { file: path.join(ROOT, 'templates', 'ci', 'consumer-security-scans.yml'), label: 'consumer-security-scans.yml' },
+  ];
+
+  for (const target of workflowTargets) {
+    const content = fs.readFileSync(target.file, 'utf8');
+    const matches = [...content.matchAll(/python3 - <<'EOF'\n([\s\S]*?)\n\s*EOF/g)];
+    assert.strictEqual(matches.length, 2, `${target.label} must contain exactly 2 embedded scanner blocks`);
+    for (let i = 0; i < matches.length; i++) {
+      const dedented = matches[i][1]
+        .split('\n')
+        .map(line => (line.startsWith('          ') ? line.slice(10) : line))
+        .join('\n')
+        .trim();
+      assert.strictEqual(
+        dedented,
+        standaloneEngine,
+        `${target.label} embedded scanner block ${i + 1} must match standalone scanner engine byte-for-byte`
+      );
+    }
+  }
+
+  // Also verify against buildExpectedConsumerGuard in tools/validate-consumer-workflow.mjs
+  const consumerGuard = buildExpectedConsumerGuard();
+  const guardLines = consumerGuard.split(/\r?\n/);
+  const eof1 = guardLines.indexOf("python3 - <<'EOF'");
+  const eof2 = guardLines.lastIndexOf('EOF');
+  assert.ok(eof1 >= 0 && eof2 > eof1, 'buildExpectedConsumerGuard must contain python3 heredoc');
+  const guardEngine = guardLines.slice(eof1 + 1, eof2).join('\n').trim();
+  assert.strictEqual(
+    guardEngine,
+    standaloneEngine,
+    'buildExpectedConsumerGuard must match standalone scanner engine byte-for-byte'
+  );
+});
+
+test('finding W-03: negative: mutating standalone scanner is detected and rejected by parity enforcement', () => {
+  const standalonePath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const original = fs.readFileSync(standalonePath, 'utf8');
+
+  function checkParityWithContent(candidateContent) {
+    const lines = candidateContent.split(/\r?\n/);
+    const osIdx = lines.indexOf('import os');
+    assert.ok(osIdx >= 0, 'Candidate scanner must contain import os');
+    const candidateEngine = lines.slice(osIdx).join('\n').trim();
+
+    const workflowTargets = [
+      { file: path.join(ROOT, '.github', 'workflows', 'security-scans.yml'), label: 'security-scans.yml' },
+      { file: path.join(ROOT, 'templates', 'ci', 'consumer-security-scans.yml'), label: 'consumer-security-scans.yml' },
+    ];
+
+    for (const target of workflowTargets) {
+      const content = fs.readFileSync(target.file, 'utf8');
+      const matches = [...content.matchAll(/python3 - <<'EOF'\n([\s\S]*?)\n\s*EOF/g)];
+      assert.strictEqual(matches.length, 2, `${target.label} must contain exactly 2 embedded scanner blocks`);
+      for (let i = 0; i < matches.length; i++) {
+        const dedented = matches[i][1]
+          .split('\n')
+          .map(line => (line.startsWith('          ') ? line.slice(10) : line))
+          .join('\n')
+          .trim();
+        assert.strictEqual(
+          dedented,
+          candidateEngine,
+          `${target.label} embedded scanner block ${i + 1} must match standalone scanner engine byte-for-byte`
+        );
+      }
+    }
+  }
+
+  // Verify baseline passes
+  checkParityWithContent(original);
+
+  // Adversarial mutations
+  const adversarialMutations = [
+    { name: 'early exit insertion', mutated: original.replace('import os', 'import os\nsys.exit(0)') },
+    { name: 'weaken WRITE_MASK', mutated: original.replace('0x40000000 | 0x10000000', '0x40000000') },
+    { name: 'bypass SECURE_DIR_FD platform gate', mutated: original.replace('if not SECURE_DIR_FD:', 'if False:') },
+    { name: 'remove O_NOFOLLOW check', mutated: original.replace('hasattr(os, "O_NOFOLLOW")', 'True') },
+    { name: 'unauthorized trailing comment or payload', mutated: original + '\n# malicious trailing payload\n' },
+  ];
+
+  for (const mut of adversarialMutations) {
+    assert.notStrictEqual(mut.mutated, original, `Mutation [${mut.name}] must alter content`);
+    assert.throws(
+      () => checkParityWithContent(mut.mutated),
+      assert.AssertionError,
+      `Parity enforcement must reject mutation [${mut.name}]`
+    );
+  }
+});
+
+test('finding W-03: validator enforcement cannot be bypassed by changing only the standalone scanner', () => {
+  const standalonePath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const original = fs.readFileSync(standalonePath, 'utf8');
+
+  try {
+    // Mutate standalone scanner on disk
+    fs.writeFileSync(standalonePath, original + '\n# rogue bypass payload\n');
+
+    // Executing validate.mjs MUST fail
+    const res = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'validate.mjs')], { encoding: 'utf8' });
+    assert.notStrictEqual(res.status, 0, 'tools/validate.mjs MUST exit non-zero when standalone scanner is mutated alone');
+    const combinedOutput = (res.stderr || '') + (res.stdout || '');
+    assert.ok(
+      combinedOutput.includes('Standalone scanner tools/uss-tracked-binary-scanner.py differs from embedded copy'),
+      'tools/validate.mjs must identify standalone scanner divergence'
+    );
+  } finally {
+    // Restore pristine content
+    fs.writeFileSync(standalonePath, original);
+  }
+});
+
