@@ -1920,3 +1920,51 @@ Gemini retains implementation ownership. Correct the ACE parsing and fail-closed
 Gemini retains implementation ownership. Correct the DACL helper/test issues in 27.2 or explicitly remove/disable the unsupported compound/object parsing claims while preserving the Windows fail-closed gate. Re-run focused P3-04 tests and full Windows/Linux suites; provide exact command output and commit SHA. Preserve the five-target parity.
 
 ChatGPT has not modified the Gemini branch, `main`, PR #9, checksum-owned files, or the canonical handoff on Gemini's branch. This supervisory record is on ChatGPT's separately owned branch. No merge, release, signing, deployment, or ruleset change is authorized.
+
+
+---
+
+## 28. ChatGPT Independent Review: P3-04 Access-Mask Gap and Corrective Branch
+
+**Review target:** `gemini/d01-d02-f5-f6-remediation` at `2d509c4394fa0e673b86adc3c59e1f0f00e0df00`  
+**Review date:** 2026-11-23  
+**Disposition:** Changes required. Do not integrate the Gemini candidate yet.
+
+### 28.1 Finding SUP-P3-04-01: Incomplete Windows file/directory write access mask
+
+The `verify_windows_dacl` implementation's `WRITE_MASK` included `FILE_WRITE_DATA`, `FILE_APPEND_DATA`, `DELETE`, `WRITE_DAC`, `WRITE_OWNER`, `GENERIC_WRITE`, and `GENERIC_ALL`, but omitted these file/directory rights:
+
+- `FILE_DELETE_CHILD` = `0x00000040`. On a directory, this grants the ability to delete files and directories contained within it, including read-only children.
+- `FILE_WRITE_EA` = `0x00000010`.
+- `FILE_WRITE_ATTRIBUTES` = `0x00000100`.
+
+The omission of `FILE_DELETE_CHILD` is security-significant because the resolver checks ancestor directory ACLs as well as the executable's ACL. An untrusted principal granted delete-child on a parent directory may be able to delete/replace the Git executable while the current mask does not classify that ACE as a write grant.
+
+The existing test labelled `FILE_ALL_ACCESS` used `0x10000000`, which is `GENERIC_ALL`, not the file-specific `FILE_ALL_ACCESS` mask. The corrected test uses `0x001F01FF`.
+
+### 28.2 ChatGPT corrective implementation
+
+A separate branch was created from the exact Gemini candidate commit:
+
+- Branch: `chatgpt/p3-04-access-mask-hardening`
+- Base: `2d509c4394fa0e673b86adc3c59e1f0f00e0df00`
+- Current commit: `32c04e2737856646d2c3ec5c7eb5dbc9276134b2`
+
+Updated all five canonical guard targets:
+1. `tools/uss-tracked-binary-scanner.py`
+2. `.github/workflows/security-scans.yml` (both scanner jobs)
+3. `templates/ci/consumer-security-scans.yml` (both scanner jobs)
+4. `tools/validate-consumer-workflow.mjs`
+5. `tests/workflow-security.test.mjs`
+
+The mask now also rejects `FILE_WRITE_EA`, `FILE_DELETE_CHILD`, and `FILE_WRITE_ATTRIBUTES`. The raw-buffer test now has four additional scenarios: DELETE_CHILD, WRITE_EA, WRITE_ATTRIBUTES, and the actual FILE_ALL_ACCESS mask. The previous `0x10000000` scenario is correctly labelled GENERIC_ALL. Expected test marker changed from 30 to 34 scenarios.
+
+### 28.3 Verification status and next actions
+
+- Source changes are committed and published on the separate ChatGPT branch.
+- ChatGPT has inspected the resulting commit diff and confirmed the mask and four test scenarios appear in the intended files.
+- **Not yet verified:** test execution, validators, generator drift, hosted CI, Windows-native execution, or Claude's independent audit. Do not represent this patch as tested or accepted.
+- Gemini must fetch `chatgpt/p3-04-access-mask-hardening` at `32c04e2737856646d2c3ec5c7eb5dbc9276134b2`, independently inspect the patch, run the focused P3-04 test and full workflow-security suite, full `npm test`, validators, and generator drift checks on Windows and Linux, then report exact commands, outputs, and exit codes. Gemini must not rewrite the ChatGPT branch.
+- Claude should independently assess the Windows access-mask coverage and adversarially confirm that an untrusted `FILE_DELETE_CHILD` ACE on an ancestor directory is rejected.
+- Keep both candidate branches separate until the supervisory review reconciles the changes. No merge to main, PR #9, deployment, signing, or ruleset change is authorized.
+- The Windows end-to-end scanner remains intentionally fail-closed because the secure directory-descriptor traversal gate is not supported natively on Windows. This is a known platform limitation, not a passing Windows scanner result.
