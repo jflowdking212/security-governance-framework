@@ -1277,3 +1277,62 @@ The checksum helper `assertNoSymlinkRootComponents()` still performs sequential 
 
 Claude is to perform a read-only independent adversarial audit of the exact Gemini and ChatGPT branch commits separately, with special attention to checksum root TOCTOU, scanner guard parity, validator enforcement, and whether the two branches can be integrated without overwriting ownership boundaries. No merge, release, signing, ruleset change or deployment is authorized.
 
+
+
+---
+
+## 15. ChatGPT Supervisory Continuation: F5-R1 Embedded Guard Gap and Active Work Allocation
+
+**Date:** 2026-11-23  
+**Repository:** `jflowdking212/security-governance-framework`  
+**Gemini branch:** `gemini/d01-d02-f5-f6-remediation`  
+**Inspected baseline handoff commit:** `18dafdf526fa8d79e778cd9ee55d543a14a52a34`  
+**Owner-issued prompt update:** `5d14e50c9aee81b57957c9a9f05ab6e87d47f4e7`  
+**PR #9:** remains OPEN and UNMERGED.
+
+### 15.1 Entrypoint and workflow compliance
+
+ChatGPT re-read `automation.md`, `AGENTS.md` and `KERNEL.md` before continuing. The current collaboration rules require implementation agents to reproduce defects, implement within ownership, verify after each fix, keep shared-ledger updates with ChatGPT, preserve distinct agent identity, and prohibit merge/release/signing/deployment without owner approval. Gemini owns A2-02/A2-07 workflow and scanner work. ChatGPT owns A2-03 checksum tooling, A2-09 checksum documentation, A2-04 release-status documentation, A2-10 collaboration protocol, and supervisory review.
+
+### 15.2 Live F5-R1 source discrepancy
+
+At the live Gemini baseline, ChatGPT fetched and inspected:
+- `tools/uss-tracked-binary-scanner.py`
+- `.github/workflows/security-scans.yml`
+- `templates/ci/consumer-security-scans.yml`
+- `tools/validate-consumer-workflow.mjs`
+- `tests/workflow-security.test.mjs`
+
+The standalone scanner uses root/parent directory descriptors and `O_DIRECTORY | O_NOFOLLOW` traversal on supported POSIX systems, and exits 2 when that capability is unavailable. However, both embedded workflow guards still use path-based `os.lstat(target_path)` and `os.open(target_path, O_NOFOLLOW)`. The canonical Python guard embedded in `tools/validate-consumer-workflow.mjs` has the same path-based implementation. The workflow and consumer copies therefore remain susceptible to parent-directory symlink traversal; leaf-only `O_NOFOLLOW` does not protect parent components. Existing F5 tests verify NUL scanning and missing-file failure, but no parent-symlink regression was found for the embedded copies.
+
+**Disposition:** F5-R1 is NOT CLOSED. The standalone implementation alone is insufficient.
+
+### 15.3 Gemini assignment issued
+
+ChatGPT appended a specific urgent F5-R1 implementation addendum to `coordination/prompts/GEMINI-A2-02-A2-07.md` in owner-issued commit `5d14e50c9aee81b57957c9a9f05ab6e87d47f4e7`.
+
+Gemini is directed to:
+1. Port component-by-component descriptor traversal to both workflow guards and the canonical consumer-guard generator.
+2. Fail closed by default on unsupported platforms; no weak path-based fallback may print PASS.
+3. Add a staged NUL-file / symlinked-parent / external-clean-same-name regression.
+4. Run the regression against the standalone scanner, first-party workflow guard, consumer-template guard and generated canonical guard.
+5. Add positive nested-file and unsupported-platform tests.
+6. Add validator mutations preventing removal/weakening of component traversal.
+7. Run targeted/full tests, validation, evidence validation, generator drift and available scanners, returning raw output, exit codes and exact SHA.
+
+Gemini must not edit ChatGPT-owned checksum/evidence files or the shared handoff ledger. The connected bot account remains read-only; no owner-identity push or author spoofing is permitted.
+
+### 15.4 ChatGPT workstream and next actions
+
+ChatGPT will continue A2-03 checksum root hardening on its dedicated `chatgpt/checksum-root-symlink-hardening` branch, independently inspect Gemini's patch when returned, and maintain this shared ledger. The existing A2-03 helper `assertNoSymlinkRootComponents()` uses sequential path-based `lstatSync`; it detects static symlinks but does not pin directory handles against concurrent ancestor replacement. This remains OPEN pending a race-resistant design and executed tests.
+
+The latest A2-03 branch snapshot inspected contains owner-issued commits through `ceea35c50ba874a7c44d374efb6157836c9f546d`; current source blobs fetched were `tools/checksums.mjs` blob `2c64226867a2c314352e1a899639705a653c8e08` and `tests/checksums.test.mjs` blob `d7cff4a304edfe72f26cd170b539adf145fa1899`. Existing root-symlink tests cover static symlink components but do not prove race-resistant use of a pinned root throughout the checksum operation. No new test execution is claimed in this update.
+
+### 15.5 Governance and verification boundary
+
+- No files have been merged to `main`; PR #9 remains open and unmerged.
+- No release tag, signature, ruleset change or deployment was created or authorized.
+- No tests or scanners were executed by ChatGPT in this update. The source review and prompt/ledger writes are the work completed; all unexecuted verification remains NOT VERIFIED.
+- The owner-issued prompt commit is not an implementation-agent commit. Gemini must return its own patch/commit identity or a patch for owner-authorized integration.
+
+**Immediate next sequence:** Gemini implements the F5-R1 embedded guard parity; ChatGPT continues A2-03 descriptor-anchored checksum correction; then ChatGPT reconciles exact diffs and evidence and Claude independently audits the exact combined candidate SHA. Workstreams proceed in parallel without waiting on one another. PR #9 remains OPEN and UNMERGED.
