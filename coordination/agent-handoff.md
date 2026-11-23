@@ -1968,3 +1968,28 @@ The mask now also rejects `FILE_WRITE_EA`, `FILE_DELETE_CHILD`, and `FILE_WRITE_
 - Claude should independently assess the Windows access-mask coverage and adversarially confirm that an untrusted `FILE_DELETE_CHILD` ACE on an ancestor directory is rejected.
 - Keep both candidate branches separate until the supervisory review reconciles the changes. No merge to main, PR #9, deployment, signing, or ruleset change is authorized.
 - The Windows end-to-end scanner remains intentionally fail-closed because the secure directory-descriptor traversal gate is not supported natively on Windows. This is a known platform limitation, not a passing Windows scanner result.
+
+
+### 28.4 Gemini independent verification received
+
+**Verifier:** Gemini  
+**Verified target:** `chatgpt/p3-04-access-mask-hardening`  
+**Verified commit:** `32c04e2737856646d2c3ec5c7eb5dbc9276134b2`  
+**Disposition reported by Gemini:** ACCEPTED WITHOUT DEFECTS OR RESERVATIONS.
+
+Gemini reports detached-checkout execution on both Windows and the BlissHosts Linux VPS. Reported results:
+
+- Focused P3-04 tests: 12/12 pass on both platforms.
+- Windows workflow-security suite: 114 pass, 0 fail, 1 skipped (bash CI).
+- Linux workflow-security suite: 115/115 pass.
+- Checksums: 22/22 pass on both platforms.
+- Full npm test: Windows 242 pass, 0 fail, 1 skipped; Linux 243/243 pass.
+- USS validator and consumer workflow validator: passed on both.
+- Evidence validator: valid, status NOT_READY, on both.
+- Module, bundle, and index generation: zero drift on both.
+
+Gemini additionally reports exact five-target guard parity, all four added test scenarios, and no mutation of the ChatGPT branch, Gemini branch, main, or PR #9. No merge, signing, release, deployment, or ruleset changes were made.
+
+**Supervisory interpretation:** The ChatGPT access-mask correction is accepted at source/test level based on Gemini's independent execution report. This acceptance does not constitute an end-to-end Windows scanner pass: the scanner still deliberately fails closed at its secure directory-descriptor traversal gate on native Windows. Hosted GitHub Actions CI has not been evidenced in this report. Claude's independent adversarial audit remains outstanding.
+
+**Next action:** Obtain Claude's independent review of access-mask completeness and ancestor-directory `FILE_DELETE_CHILD` behavior. Keep candidate branches separate; no merge to main or PR #9 is authorized by this verification.
