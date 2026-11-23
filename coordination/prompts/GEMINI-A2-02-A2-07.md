@@ -423,3 +423,67 @@ After the initial cross-review assignment, ChatGPT made one further owner-issued
 - `f3b7e2ae77f547d810f75086b326086c610e4745` — manifest creation now opens the target with `O_NOFOLLOW | O_NONBLOCK`, verifies via `fstat` that it is a regular file, and only then truncates it. This avoids following a manifest symlink and avoids blocking on a substituted FIFO before type validation.
 
 Please include this exact commit in your review and tests. The exact ChatGPT code/test/documentation diff since base `2a0604d3b4b59b8f69cafc3f72657a875b845fcc` currently covers `tools/checksums.mjs`, `tests/checksums.test.mjs`, and `CONSUMING.md`, plus the shared handoff ledger. Do not report A2-03 verified until the exact branch head is tested on both platforms and the full validation matrix is complete.
+
+
+---
+
+## VPS migration directive: make the VPS the authoritative USS execution host
+
+**Issued:** 2026-11-23  
+**Priority:** Immediate  
+**Execution host:** Owner-authorised Linux VPS (not the local PC)  
+**Scope:** USS A2-03 cross-review, Gemini-owned F5 work, validation and coordination.
+
+The owner has directed that USS work move back from the local PC to the VPS so work can continue without depending on the local PC being powered on. Treat the VPS as the primary execution environment from this directive onward, subject to the preflight gates below. The local PC is no longer the authoritative workspace. It may be used only as a secondary independent Windows compatibility test host when explicitly required.
+
+### A. Do not start from an existing potentially stale worktree
+
+Before any code inspection, test, build, generation, or implementation:
+
+1. Connect to the authorised VPS and identify the actual USS repository clone/worktrees and the existing automation/supervision service. Do not assume a remembered path, branch, service name, or process is correct.
+2. Locate and read the canonical `automation.md` (case-insensitive filename search and `git ls-files` search). Also read `AGENTS.md`, `KERNEL.md`, and any referenced USS automation/runbook instructions. If `automation.md` exists only as an untracked local file, preserve it and report its path/hash; do not overwrite it. If it cannot be found on the VPS or in the authoritative repository, stop only the automation activation step and report the exact search evidence. Continue safe read-only repository discovery.
+3. Check disk space, memory, CPU, Node.js, npm, Python, Git, file ownership, clock/timezone, network connectivity to the configured origin, and VPS process/service health. Do not install or upgrade packages globally or alter system security settings without owner approval.
+4. Record the VPS hostname, UTC timestamp, repository path, tool versions, current worktree status, current branch, and exact HEAD SHA. Do not disclose secrets, environment values, tokens or private key material in reports.
+5. Fetch the authoritative origin: `git fetch origin --prune`. Then capture exact remote refs and commit SHAs with `git ls-remote origin` for:
+   - `refs/heads/main`
+   - `refs/heads/chatgpt/checksum-root-symlink-hardening`
+   - `refs/heads/gemini/d01-d02-f5-f6-remediation`
+6. Compare each local ref with its origin ref. Do not trust branch names alone. Verify the current ChatGPT A2-03 checkpoint includes commit `f3b7e2ae77f547d810f75086b326086c610e4745`, and verify the Gemini branch includes the latest prompt update in this file. Fetch and inspect the latest shared handoff ledger before taking action.
+7. If an existing worktree is dirty, has unknown/uncommitted changes, or cannot be safely fast-forwarded, do not run `reset --hard`, `clean -fdx`, checkout-overwrite, or discard changes. Preserve it. Create a fresh isolated clone/worktree from the exact origin SHA in a new directory and verify the new worktree SHA. Never mix files from old and new worktrees.
+8. Verify the working files against Git object contents (at minimum `git status --short`, `git rev-parse HEAD`, `git diff --exit-code`, and checksums for the critical files). Report exact hashes for `tools/checksums.mjs`, `tests/checksums.test.mjs`, `CONSUMING.md`, `tools/uss-tracked-binary-scanner.py`, both workflow/template files, `tools/validate-consumer-workflow.mjs`, and the prompt/handoff files. No tests may run until this freshness gate passes.
+
+### B. Establish one authoritative VPS workspace per agent
+
+1. Use separate isolated worktrees/directories for ChatGPT-owned A2-03 and Gemini-owned F5 work. Never share one mutable worktree between agents.
+2. ChatGPT A2-03 branch is read-only for Gemini. Test the exact latest origin branch SHA, not a copied folder or old local branch.
+3. Gemini owns F5 implementation. Work only from the freshly synchronized origin Gemini branch. Preserve agent identity and existing branch policy. Do not impersonate the owner or another agent.
+4. Keep main read-only. Do not merge branches, rebase shared branches, rewrite history, force-push, sign releases, tag, publish, deploy, or change branch protections.
+5. Do not use local-PC files as source of truth. If a Windows compatibility run is required, first record the exact SHA and use a clean isolated checkout of that exact SHA on Windows; report it as secondary evidence only.
+
+### C. Continuous VPS operation
+
+1. Inspect the existing USS automation/supervision setup before creating anything. Reuse the established project workflow if it is healthy; do not create duplicate cron entries, systemd timers, loops or competing agents.
+2. Make the VPS supervisor resilient to SSH disconnection and terminal closure. Use the existing approved service/scheduler only after verifying its unit, owner, executable, working directory, environment-file permissions and logs. Do not expose secrets in logs.
+3. If no valid USS supervisor exists, propose the smallest systemd service/timer or existing approved scheduler configuration and provide its unit/config diff for owner review before enabling it. Do not invent a new unattended service or enable it without approval.
+4. A continuous cycle must: fetch/prune; verify clean isolated worktrees and exact remote SHAs; inspect handoff and agent prompts; run the next authorised task; record commands, results, test counts, failures and SHAs; update handoff; then continue to the next independent task. Never wait idle when another safe, authorised task can proceed.
+5. On any sync conflict, dirty worktree, unexpected SHA, missing automation policy, failed preflight, credential issue, resource exhaustion or destructive action risk, preserve all state and report the blocker. Do not silently fall back to stale local files.
+
+### D. First VPS execution cycle
+
+After the preflight and freshness gates pass:
+
+1. Run `node --test tests/checksums.test.mjs` on the exact ChatGPT A2-03 branch SHA.
+2. Run `npm test`, `node tools/validate.mjs`, `node --test tests/evidence.test.mjs`, and all documented module/index/bundle generation and drift checks against that same SHA.
+3. Continue Gemini F5 work on its own clean, updated branch: inspect the four scanner implementations, run the F5 parent-symlink adversarial fixture against every copy, positive nested-file test, unsupported-platform fail-closed tests, validator mutation tests, and full validation/scanner matrix.
+4. Capture exact commands, exit codes, test totals, skipped counts, tool versions, worktree SHAs, and concise raw output. Do not call a test passed if it was not executed.
+5. Return a single VPS migration report showing: preflight, source-of-truth SHA per branch, file hashes, test evidence, automation service state, any stale/dirty worktrees preserved, and remaining risks.
+6. After the first successful cycle, continue with the next independent task without waiting for the owner unless an approval gate or missing essential input is encountered.
+
+### E. Ownership and release controls
+
+- Gemini may implement and verify only Gemini-owned F5 files and tests.
+- Gemini must not modify ChatGPT-owned checksum files, A2-03 tests/docs, evidence-validator files or the shared handoff ledger.
+- ChatGPT maintains the shared handoff ledger and reconciles the two branches.
+- PR #9 remains OPEN and UNMERGED. No merge, production deployment, release signing, tagging, publication, branch-protection change or production policy change is authorised by this migration directive.
+
+**Required acknowledgment:** Start your next report with `VPS PREFLIGHT` and state whether the VPS is now the verified authoritative USS host. Do not say “switched” until the exact origin SHAs, worktree freshness, critical-file hashes and automation status have been verified.
