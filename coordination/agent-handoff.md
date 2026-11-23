@@ -1489,3 +1489,50 @@ The separate checksum-root race limitation remains open: sequential path-based `
 
 Claude is requested to audit this branch read-only against the exact commit above and compare it with Gemini commit `12d252a0054e6e8c7b6a2e71a00d27cf9fcb24e3`. No merge or release is authorized.
 
+
+
+---
+
+## 16. ChatGPT A2-03 Root Descriptor Hardening: Initial Implementation
+
+**Date:** 2026-11-23  
+**Workstream:** A2-03 checksum tooling  
+**Branch:** `chatgpt/checksum-root-symlink-hardening`  
+**Base handoff checkpoint:** `ceea35c50ba874a7c44d374efb6157836c9f546d`  
+**Latest owner-issued commit:** `2a0604d3b4b59b8f69cafc3f72657a875b845fcc`  
+**PR #9:** OPEN and UNMERGED.
+
+### 16.1 Implementation performed
+
+ChatGPT moved beyond review and implemented an initial descriptor-anchored checksum-root correction:
+
+- Added `tools/secure-root.mjs` with `openSecureDirectory(target)`.
+- On Linux, the helper opens the filesystem root and traverses each absolute path component through `/proc/self/fd/<fd>/<component>` using `O_DIRECTORY | O_NOFOLLOW`, retaining the final directory descriptor.
+- Unsupported platforms fail closed with an explicit error rather than claiming equivalent race resistance.
+- `tools/checksums.mjs` now opens the selected checksum root through this helper and uses the retained `/proc/self/fd/<fd>` path for subsequent root-relative filesystem operations, keeping the selected root pinned if an ancestor pathname is renamed or replaced.
+- The root descriptor is closed in a `finally` block after the checksum operation.
+- Added tests in `tests/checksums.test.mjs` for rejecting symlink components and proving that an opened root remains bound to the original directory after its pathname is replaced with a symlink to an external directory.
+
+Owner-issued implementation commits:
+1. `5b6436eb2bcc523bedf4e3575f1f7d05040b7ffd` — add descriptor-anchored root helper.
+2. `17b6ad5a4e732f09cd1fcd88eb28a4c03820273d` — pin checksum operations to the opened root.
+3. `845f4e59cbb5ca3aadaa45eb4d36788fdc8d30d2` — add root descriptor regression tests.
+4. `2a0604d3b4b59b8f69cafc3f72657a875b845fcc` — close descriptor after operation.
+
+### 16.2 Verification actually executed
+
+- A scratch copy of the exact helper implementation was exercised under Node.js `v22.16.0` in the container environment.
+- Focused scratch tests: **2 passed, 0 failed**. The tests rejected a symlinked root component and demonstrated that the opened directory descriptor continued to read the original directory after the pathname was replaced by a symlink to an external directory.
+- This scratch execution did **not** execute the repository's `tests/checksums.test.mjs`, `tools/checksums.mjs`, full `npm test`, repository validation, evidence validation, generator drift checks, Semgrep, Gitleaks or OSV. Those remain **NOT VERIFIED**.
+
+### 16.3 Review limitations and next work
+
+This is an initial A2-03 implementation, not closure. ChatGPT must now:
+1. Reconcile the exact branch diff and run the repository's focused checksum tests and full validation in an authorized fresh workspace.
+2. Inspect all root-relative filesystem accesses to ensure they consistently use the pinned descriptor path and do not accidentally revert to the untrusted logical pathname.
+3. Assess nested path traversal inside the selected root, including races between parent checks and file reads. The present change pins the selected root against ancestor replacement; it does not yet prove every descendant component is opened handle-relative.
+4. Add an end-to-end checksum CLI regression that exercises the actual `--root` operation across an ancestor rename/symlink replacement, not only the helper in isolation.
+5. Request Gemini's read-only cross-review of the exact final A2-03 SHA without allowing edits to ChatGPT-owned files.
+6. Re-run the full verification matrix and obtain fresh hosted CI evidence where available.
+
+**Disposition:** A2-03 root descriptor hardening is **IMPLEMENTED, PARTIALLY SCRATCH-TESTED, NOT FULLY VERIFIED, NOT CLOSED**. No release, merge, signing, tag, ruleset change or deployment is authorized.
