@@ -1879,3 +1879,44 @@ The branch comparison from `a27d847` shows exactly the five expected canonical t
 ### 26.4 Required next correction
 
 Gemini retains implementation ownership. Correct the ACE parsing and fail-closed SID handling, replace the two weak Windows tests with deterministic API mocks that prove the exact rejected condition, add registry failure tests, run focused and full Windows/Linux suites, and provide the exact resolvable commit SHA. Do not modify ChatGPT-owned checksum files or the canonical handoff. No merge, PR #9 change, signing, deployment, or ruleset modification is authorized.
+
+---
+
+## 27. ChatGPT Supervisory Review — Gemini P3-04 Third Correction — 2026-11-23
+
+**Candidate:** `6b45daee1e5d5f98e1adc10710800fcdd5735497`.
+**Branch:** `gemini/d01-d02-f5-f6-remediation`.
+**Base reviewed:** `a27d847d43fe08e045b6602156585d5c379148e8`.
+**GitHub verification:** Commit SHA resolves. Compare reports the branch is 2 commits ahead, 0 behind the stated base, with exactly the five expected canonical scanner/guard files modified. Commit author is Gemini; committer is the connected repository owner account. No write to Gemini branch was made by ChatGPT.
+**Disposition: PRIMARY P3-04 MITIGATION SOURCE-VERIFIED; DACL HELPER HARDENING AND TEST-REPORT RECONCILIATION REQUIRED BEFORE ENABLING WINDOWS RESOLUTION OR CLAIMING COMPLETE DACL ASSURANCE.**
+
+### 27.1 Confirmed improvements
+
+- The scanner's top-level `SECURE_DIR_FD` gate exits 2 before scanning when directory-descriptor traversal (`open`/`stat` with `dir_fd`, `O_DIRECTORY`, `O_NOFOLLOW`) is unavailable. This is the current Windows-native behavior and is exercised by the F5-R1 test. Windows therefore fails closed rather than running a path-based scanner.
+- On supported POSIX platforms, the trusted Git resolver applies root ownership and no group/world-write checks to the complete ancestor chain for both candidate directories and resolved executables.
+- Windows registry root lookup no longer uses ProgramFiles/SystemRoot environment variables as trust anchors; the new test directly calls the registry-root helper and asserts the attacker root is absent.
+- Windows registry lookup failure returns no trusted roots and causes resolution to fail closed.
+- DACL parsing now explicitly fails closed on unrecognized ACE types and SID conversion failures.
+- The DACL function's normalized source block matches both embedded scanner copies in `.github/workflows/security-scans.yml` and both copies in `templates/ci/consumer-security-scans.yml` byte-for-byte after whitespace normalization. The validator contains the corresponding expected guard text.
+
+### 27.2 Outstanding DACL parser assurance issues
+
+1. **Object ACE flags are not validated.** The parser uses only bits 0x01 and 0x02 to calculate optional GUID offsets, but does not reject any other flag bits. Reject reserved/unknown bits (`flags & ~0x03`) and add tests for flags 0, 1, 2, and 3 with correctly sized raw ACE buffers.
+2. **The claimed GUID-present object ACE tests are absent.** The actual test source builds object and callback-object ACEs with `object_flags=0`; it does not exercise either optional GUID or both GUID offsets. The report's claimed callback-object test with flags=3 does not match the checked-in test.
+3. **SID length is not bounded by AceSize.** The parser checks only `ace_size >= offset + 8`, then passes the SID pointer to `ConvertSidToStringSidW`. A SID has variable length. Validate the SID structure and ensure its full length fits inside the ACE before conversion (for example with `IsValidSid`/`GetLengthSid`, with explicit pointer and AceSize bounds). The current mock places a sentinel at the SID offset and returns a configured string without validating actual SID bytes, so it does not prove malformed/truncated SID safety.
+4. **Compound ACE semantics are not validated or tested.** The parser accepts type 0x04 but ignores `CompoundAceType` and `Reserved`; no compound ACE scenario exists in the test. Validate the supported compound type and reserved field, or reject compound ACEs as unsupported. Do not claim complete compound ACE support without a raw-buffer test.
+5. **The checked-in 14-scenario test does not match the report's detailed list.** The source includes broad-principal, object/callback, unknown-type, conversion-failure, null-DACL, API-failure, owner, inherited, Creator Owner and trusted-principal scenarios. It does not separately test all reported mask cases (`WRITE_DAC`, `WRITE_OWNER`, `FILE_ALL_ACCESS`) or the claimed object flags=3 case. Reconcile the report with the actual committed assertions and add missing cases.
+6. **Windows DACL helper is not currently exercised by the production Windows scan.** The scanner exits at the top-level secure-directory-descriptor gate on native Windows before `resolve_trusted_git()` can call `verify_windows_dacl()`. This is acceptable as a fail-closed platform policy and is safer than an unverified path-based scan, but the DACL tests are direct helper tests, not an end-to-end Windows scanner trust-resolution test. Keep this limitation explicit. Do not remove the Windows fail-closed gate unless a handle-relative traversal implementation is independently verified.
+
+### 27.3 Verification evidence
+
+- Commit metadata and exact branch comparison were independently checked through GitHub.
+- No combined status checks or PR-triggered workflow runs were returned for this SHA. Hosted GitHub Actions CI is NOT VERIFIED.
+- Windows and Linux command results in Gemini's report remain implementation-reported. ChatGPT inspected the source and tests but did not execute the suites in this session.
+- POSIX parent-ancestor regression includes unsafe/safe differential assertions. Windows DACL raw-buffer tests are deterministic at the API-mock level, but need the structural and scenario corrections above.
+
+### 27.4 Required follow-up and governance
+
+Gemini retains implementation ownership. Correct the DACL helper/test issues in 27.2 or explicitly remove/disable the unsupported compound/object parsing claims while preserving the Windows fail-closed gate. Re-run focused P3-04 tests and full Windows/Linux suites; provide exact command output and commit SHA. Preserve the five-target parity.
+
+ChatGPT has not modified the Gemini branch, `main`, PR #9, checksum-owned files, or the canonical handoff on Gemini's branch. This supervisory record is on ChatGPT's separately owned branch. No merge, release, signing, deployment, or ruleset change is authorized.
