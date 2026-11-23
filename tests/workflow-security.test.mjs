@@ -242,7 +242,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '                \'S-1-5-18\',',
     '                \'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464\',',
     '            }',
-    '            WRITE_MASK = 0x0002 | 0x0004 | 0x00010000 | 0x00040000 | 0x00080000 | 0x40000000 | 0x10000000',
+    '            WRITE_MASK = 0x0002 | 0x0004 | 0x00000010 | 0x00000040 | 0x00000100 | 0x00010000 | 0x00040000 | 0x00080000 | 0x40000000 | 0x10000000',
     '',
     '            curr = rp',
     '            while True:',
@@ -3583,7 +3583,7 @@ test('finding P3-04: scanner DACL verification rejects permissive write ACEs, ob
       'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00080000, "sid_str": "S-1-5-21-999-1001"}])',
       '# 6. GENERIC_WRITE',
       'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x40000000, "sid_str": "S-1-5-21-999-1001"}])',
-      '# 7. FILE_ALL_ACCESS',
+      '# 7. GENERIC_ALL',
       'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x10000000, "sid_str": "S-1-5-21-999-1001"}])',
       '# 8. Broad principal Everyone S-1-1-0 with FILE_WRITE_DATA',
       'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-1-0"}])',
@@ -3636,12 +3636,20 @@ test('finding P3-04: scanner DACL verification rejects permissive write ACEs, ob
       '    real_git = r"C:\\Program Files\\Git\\cmd\\git.exe"',
       '    if os.path.isfile(real_git):',
       '        assert verify_windows_dacl(real_git, [r"C:\\Program Files"]), "Real git.exe must pass DACL validation"',
-      'print("DACL_ALL_30_SCENARIOS_VERIFIED")'
+      '# 31. FILE_DELETE_CHILD on a parent directory',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00000040, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 32. FILE_WRITE_EA',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00000010, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 33. FILE_WRITE_ATTRIBUTES',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00000100, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 34. FILE_ALL_ACCESS (0x001F01FF)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x001F01FF, "sid_str": "S-1-5-21-999-1001"}])',
+      'print("DACL_ALL_34_SCENARIOS_VERIFIED")'
     ].join('\n');
 
     const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(pyRun.status, 0, pyRun.stderr);
-    assert.match(pyRun.stdout, /DACL_ALL_30_SCENARIOS_VERIFIED/);
+    assert.match(pyRun.stdout, /DACL_ALL_34_SCENARIOS_VERIFIED/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
