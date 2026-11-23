@@ -1611,3 +1611,49 @@ ChatGPT performed another static pass over the newly changed checksum source and
 The corresponding Gemini cross-review prompt was updated in Gemini prompt commit `00c0fcde0a7a26a96de1b7db2ec5da8e54a5229d` to include this final manifest correction.
 
 **Verification remains NOT EXECUTED by ChatGPT.** GitHub combined commit statuses and PR-triggered workflow-run lookups returned no entries for the A2-03 implementation commits. Do not interpret empty results as successful CI. The code is not ready for merge until Gemini's exact Linux/Windows execution evidence and Claude's independent audit are received and reconciled.
+
+
+---
+
+## 18. Owner directive: move USS execution back to VPS
+
+**Date:** 2026-11-23  
+**Decision:** VPS is to become the authoritative USS execution host, replacing the local PC as the primary workspace. The local PC may remain a secondary Windows compatibility test host only when needed. The switch is **DIRECTED, NOT YET VERIFIED**; do not claim completion until Gemini returns the VPS preflight evidence.
+
+### 18.1 Prompt issued
+
+ChatGPT appended the full VPS migration directive to `coordination/prompts/GEMINI-A2-02-A2-07.md` on Gemini's branch.
+
+- **Prompt commit:** `262f1e589cd75ba1bcfc5444bcce669a11c91e19`
+- **Prompt blob:** `da00e0ac29cc89d04629ca981e0ff695c148ca1e`
+
+Gemini is instructed to connect to the authorised VPS, locate and read the canonical automation runbook, verify the host and toolchain, fetch/prune origin, compare exact remote SHAs for main and both agent branches, preserve all dirty or stale worktrees, and create clean isolated worktrees from exact origin SHAs before running any tests. It must verify critical-file hashes and the shared handoff before starting.
+
+### 18.2 Automation and stale-file safeguards
+
+The directive requires:
+- Separate isolated VPS worktrees for ChatGPT A2-03 and Gemini F5.
+- No reuse of a stale local-PC folder as source of truth.
+- No destructive reset/clean of unknown or dirty worktrees.
+- Exact branch SHA and critical-file hash verification before tests.
+- Reuse of an existing approved supervisor if healthy; no duplicate cron/systemd loops.
+- If no valid supervisor exists, submit the smallest service/timer proposal for owner approval before enabling.
+- Keep the existing ownership boundaries and PR #9 release restrictions.
+
+### 18.3 Automation runbook discovery caveat
+
+ChatGPT checked the GitHub `main` branch for root `automation.md`, `AUTOMATION.md`, and several common coordination/docs locations; these paths were not present. `AGENTS.md` and `KERNEL.md` were available and confirm the mandatory policy entrypoints. Gemini must locate the canonical `automation.md` on the VPS, in tracked files, or in the approved local runbook location and report its exact path and hash. Do not substitute an invented workflow or silently proceed as if it had been read.
+
+### 18.4 Current state and acceptance
+
+- VPS migration directive: ISSUED.
+- Gemini prompt updated: COMMITTED.
+- VPS host identity and repository path: NOT YET VERIFIED.
+- Fresh origin refs and exact worktree SHAs: NOT YET VERIFIED.
+- Critical-file hashes: NOT YET VERIFIED.
+- Automation supervisor/service state: NOT YET VERIFIED.
+- First VPS test cycle: NOT YET EXECUTED.
+- Local PC: no longer authoritative once VPS freshness gate passes.
+- PR #9: OPEN and UNMERGED. No merge, signing, tagging, publication, deployment or production policy changes authorised.
+
+**Required next report:** Gemini must begin with `VPS PREFLIGHT` and provide host/time, repo/worktree paths, runbook path/hash, tool versions, dirty-worktree preservation details, remote SHAs, critical-file hashes, supervisor state, and first executed test evidence. The VPS is not considered switched until these checks pass.
