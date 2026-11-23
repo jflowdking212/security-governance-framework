@@ -1536,3 +1536,64 @@ This is an initial A2-03 implementation, not closure. ChatGPT must now:
 6. Re-run the full verification matrix and obtain fresh hosted CI evidence where available.
 
 **Disposition:** A2-03 root descriptor hardening is **IMPLEMENTED, PARTIALLY SCRATCH-TESTED, NOT FULLY VERIFIED, NOT CLOSED**. No release, merge, signing, tag, ruleset change or deployment is authorized.
+
+
+---
+
+## 17. ChatGPT A2-03 descendant traversal hardening and parallel handoff
+
+**Date:** 2026-11-23  
+**Workstream:** A2-03 checksum tooling / A2-09 consumer documentation  
+**Owner-issued branch:** `chatgpt/checksum-root-symlink-hardening`  
+**Gemini implementation branch:** `gemini/d01-d02-f5-f6-remediation`  
+**PR #9:** OPEN and UNMERGED. No merge, release signing, tag, ruleset change or deployment is authorized.
+
+### 17.1 Defect confirmed from live source
+
+The earlier root descriptor pinned the selected root, but the checksum verifier still used path-based descendant operations:
+- `fs.lstatSync` for parent and leaf validation;
+- `fs.statSync` for executable mode;
+- `fs.readFileSync(absolutePath)` for file contents;
+- path-recursive `readdirSync` for nested directories;
+- path-based manifest read/write.
+
+These operations could re-resolve descendant paths after checks and were insufficient to establish descriptor-relative traversal throughout the selected tree.
+
+### 17.2 Owner-issued implementation changes
+
+ChatGPT implemented the following on its own branch:
+
+1. Commit `744f6547a93193547a8419ababba33d31d0213e6` — `tools/checksums.mjs`: added path validation plus descriptor-relative parent traversal, opens each regular file through the verified parent descriptor with `O_NOFOLLOW`, obtains executable mode from `fstat`, reads bytes from the opened file descriptor, and recursively enumerates nested directories through pinned directory descriptors.
+2. Commit `4f8e073955c84df2a81e06a57370bc0136720a26` — `tools/checksums.mjs`: removed unsupported assumptions about `fs.Dirent` exposing inode/device identity; changed manifest reads to use the secure regular-file opener and manifest writes to use root-descriptor-relative `O_NOFOLLOW` open.
+3. Commit `31ba60efe8b914a5de3df67a28dbcb6b19fc8b8f` — `tests/checksums.test.mjs`: added a filesystem-mode CLI regression that creates a valid nested manifest, replaces its nested parent directory with a symlink to an external directory containing a same-named file, and requires verification to fail.
+4. Commit `dc457176d2dba6c08bb5c194d9288ba5c0a5ffba` — `CONSUMING.md`: documents Linux descriptor-relative traversal and the fail-closed platform boundary.
+
+### 17.3 Current source review and limitations
+
+A subsequent static inspection confirms that the checksum implementation no longer uses path-based `lstatSync`, `statSync`, `existsSync`, or absolute-path file reads for descendant checksum operations. Directory enumeration is rooted at `/proc/self/fd/<fd>`; nested directories are opened with `O_DIRECTORY | O_NOFOLLOW`; file bytes and mode are obtained from opened descriptors. Manifest IO is also descriptor-relative and no-follow.
+
+Important limitation: the new implementation has **NOT YET BEEN EXECUTED** against the repository test suite. Do not mark A2-03 closed or claim tests pass. Gemini has been assigned a read-only cross-review and exact execution of:
+- `node --test tests/checksums.test.mjs`
+- `npm test`
+- `node tools/validate.mjs`
+- `node --test tests/evidence.test.mjs`
+- module/index/bundle generation and drift checks
+
+on both Linux VPS and Windows PC, against the exact current ChatGPT branch head. Gemini must return raw summaries, exit codes and skipped counts without modifying ChatGPT-owned files.
+
+### 17.4 Parallel Gemini assignment
+
+ChatGPT appended an A2-03 cross-review request to `coordination/prompts/GEMINI-A2-02-A2-07.md` in Gemini branch commit `038f34485a3d5fdb9e8eb2cec4ac2ef140c5ec2e`. Gemini is also to continue its own F5 work independently, reconcile all four scanner copies, run adversarial and positive tests, and return exact final source SHA and evidence. Gemini must not edit checksum, evidence-validator, documentation or shared-ledger files.
+
+### 17.5 Verification boundary and next actions
+
+- A2-03 descendant traversal: IMPLEMENTED IN SOURCE, NOT EXECUTED / NOT VERIFIED.
+- New filesystem-mode nested-parent symlink regression: ADDED, NOT EXECUTED.
+- Consumer documentation: UPDATED.
+- Gemini A2-03 cross-review: ASSIGNED, RESULT PENDING.
+- Gemini F5 final matrix: PENDING.
+- Claude independent audit of the exact reconciled candidate: NOT YET COMPLETED.
+- Hosted GitHub Actions: NOT VERIFIED; no successful run/job evidence is recorded here.
+- No release readiness, merge, signing, tagging or deployment approval is implied.
+
+**Immediate next sequence:** Gemini executes the exact A2-03 test matrix while continuing F5 verification; ChatGPT independently reconciles returned evidence and fixes any confirmed in-scope defects; then Claude performs a read-only adversarial audit of the exact combined candidate SHA. The workstreams remain parallel. No merge or production action without explicit owner approval.
