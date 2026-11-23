@@ -365,6 +365,24 @@ test('adversarial: rejects a tracked file reached through a symbolic-link parent
 });
 
 
+test('A2-03: filesystem verification opens nested files without following replaced parent symlinks',t=>{
+  if(process.platform!=='linux'){t.skip('Descriptor-relative traversal is Linux-only; unsupported platforms fail closed');return;}
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-nested-parent-fs-'));
+  t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const nested=path.join(cwd,'policy');
+  fs.mkdirSync(nested);
+  fs.writeFileSync(path.join(nested,'README.md'),'trusted nested policy'+String.fromCharCode(10));
+  assert.equal(run(cwd,'create','--filesystem').status,0);
+  const outside=fs.mkdtempSync(path.join(os.tmpdir(),'uss-nested-parent-outside-'));
+  t.after(()=>fs.rmSync(outside,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(outside,'README.md'),'trusted nested policy'+String.fromCharCode(10));
+  fs.rmSync(nested,{recursive:true,force:true});
+  fs.symlinkSync(outside,nested,'dir');
+  const result=run(cwd,'verify','--filesystem');
+  assert.notEqual(result.status,0,'Verification must reject a nested parent replaced by a symlink');
+  assert.match(result.stderr,/symbolic links are not supported|symbolic link or non-directory parent/i);
+});
+
 test('adversarial: rejects .git metadata at the selected vendored root in Git mode',t=>{
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   const vendor=path.join(cwd,'vendor','uss');
