@@ -274,9 +274,10 @@ function createManifest() {
   // Validate unexpected untracked content after tracked-path checks so a
   // tracked path replaced by a symlinked parent is reported at that boundary.
   if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
-  const manifestFd=fs.openSync('/proc/self/fd/'+ROOT_HANDLE.fd+'/'+MANIFEST,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW|(fs.constants.O_CLOEXEC||0),0o644);
+  const manifestFd=fs.openSync('/proc/self/fd/'+ROOT_HANDLE.fd+'/'+MANIFEST,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_NOFOLLOW|(fs.constants.O_NONBLOCK||0)|(fs.constants.O_CLOEXEC||0),0o644);
   try {
     if(!fs.fstatSync(manifestFd).isFile())throw new Error('Checksum manifest target is not a regular file.');
+    fs.ftruncateSync(manifestFd,0);
     fs.writeFileSync(manifestFd,lines.join('\n')+'\n',{encoding:'utf8'});
   } finally {fs.closeSync(manifestFd);}
   console.log('Created '+MANIFEST+' for '+files.length+' files (excluding '+MANIFEST+' and '+SIGNATURE+').');
