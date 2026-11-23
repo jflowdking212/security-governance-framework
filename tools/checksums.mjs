@@ -302,4 +302,6 @@ try {
 } catch(error) {
   console.error('Checksum operation failed: '+error.message);
   process.exitCode=1;
+} finally {
+  if(ROOT_HANDLE)ROOT_HANDLE.close();
 }
