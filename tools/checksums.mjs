@@ -112,53 +112,85 @@ function assertNoUnexpectedUntracked() {
   if(extras.length)throw new Error('Untracked or ignored files outside dist/bundles must be staged or removed: '+extras.join(', '));
 }
 
-function assertNoNestedGit(dir=ROOT_IO,relative='') {
-  for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
+function assertNoNestedGit(dirFd=ROOT_HANDLE.fd,relative='') {
+  for(const entry of fs.readdirSync('/proc/self/fd/'+dirFd,{withFileTypes:true})) {
     if(entry.name.toLowerCase()==='.git') {
-      // Only the selected repository's own metadata is allowed. When --root
-      // selects a vendored subdirectory, a .git entry at that selected root
-      // is nested metadata and must be rejected too.
       if(relative!==''||!GIT_ROOT||ROOT_PREFIX!=='') {
         throw new Error('Unexpected nested .git directory or gitfile detected in release content: '+(relative?relative+'/.git':'.git'));
       }
     } else if(entry.isDirectory()) {
       const rel=relative?relative+'/'+entry.name:entry.name;
       if(rel!=='node_modules'&&!rel.startsWith('node_modules/')) {
-        assertNoNestedGit(path.join(dir,entry.name),rel);
+        const childFd=openDirectoryAt(dirFd,entry.name);
+        try {
+          const actual=fs.fstatSync(childFd);
+          if(actual.dev!==entry.dev||actual.ino!==entry.ino)throw new Error('Filesystem directory changed during checksum traversal: '+rel);
+          assertNoNestedGit(childFd,rel);
+        } finally {fs.closeSync(childFd);}
       }
+    } else if(entry.isSymbolicLink()) {
+      throw new Error('Symbolic links are not supported in checksum snapshots: '+(relative?relative+'/':'')+entry.name);
     }
   }
 }
 
-function assertSafePath(rel) {
+function pathParts(rel) {
   if(!rel||rel.includes('\n')||rel.includes('\r')||rel.includes('\\')||rel.startsWith('/')||/^[A-Za-z]:/.test(rel)||rel.split('/').some(p=>p==='..'||p==='.'||p==='')) {
     throw new Error('Unsafe or unsupported repository path: '+JSON.stringify(rel));
   }
   const parts=rel.split('/');
-  if(parts.some(part=>part.toLowerCase()==='.git')) {
-    throw new Error('Unexpected .git entry detected in release path: '+rel);
-  }
-  const absolute=path.resolve(ROOT_IO,...parts);
-  const relative=path.relative(ROOT_IO,absolute);
-  if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('Path escapes checksum root: '+rel);
-  // lstat every parent as well as the leaf. lstat(leaf) follows symlinks in
-  // parent components, so checking only the final file would miss a directory
-  // replaced by a symlink to attacker-controlled content.
-  let parent=ROOT_IO;
-  for(const part of parts.slice(0,-1)) {
-    parent=path.join(parent,part);
-    const parentStat=fs.lstatSync(parent);
-    if(!parentStat.isDirectory()||parentStat.isSymbolicLink()) {
-      throw new Error('Path traverses a non-directory or symbolic-link parent: '+rel);
-    }
-  }
-  const stat=fs.lstatSync(absolute);
-  if(!stat.isFile()||stat.isSymbolicLink())throw new Error('Only regular files can be checksummed: '+rel);
-  return absolute;
+  if(parts.some(part=>part.toLowerCase()==='.git'))throw new Error('Unexpected .git entry detected in release path: '+rel);
+  return parts;
 }
 
-function executableMode(absolute) {
-  return (fs.statSync(absolute).mode&0o111)!==0?'100755':'100644';
+const DIRECTORY_FLAGS=fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW|(fs.constants.O_CLOEXEC||0);
+const FILE_FLAGS=fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|(fs.constants.O_NONBLOCK||0)|(fs.constants.O_CLOEXEC||0);
+
+function openDirectoryAt(parentFd,name) {
+  const fd=fs.openSync('/proc/self/fd/'+parentFd+'/'+name,DIRECTORY_FLAGS);
+  const stat=fs.fstatSync(fd);
+  if(!stat.isDirectory()){fs.closeSync(fd);throw new Error('Path component is not a directory: '+name);}
+  return fd;
+}
+
+function openRegularFileAt(parentFd,name,expectedEntry) {
+  const fd=fs.openSync('/proc/self/fd/'+parentFd+'/'+name,FILE_FLAGS);
+  try {
+    const stat=fs.fstatSync(fd);
+    if(!stat.isFile())throw new Error('Only regular files can be checksummed: '+name);
+    if(expectedEntry && (stat.dev!==expectedEntry.dev || stat.ino!==expectedEntry.ino)) {
+      throw new Error('Filesystem entry changed during checksum traversal: '+name);
+    }
+    return {fd,stat,close(){fs.closeSync(fd);}};
+  } catch(error) {
+    fs.closeSync(fd);
+    throw error;
+  }
+}
+
+function openRegularFile(rel) {
+  const parts=pathParts(rel);
+  const opened=[];
+  let parentFd=ROOT_HANDLE.fd;
+  try {
+    for(const part of parts.slice(0,-1)) {
+      const nextFd=openDirectoryAt(parentFd,part);
+      opened.push(nextFd);
+      parentFd=nextFd;
+    }
+    return openRegularFileAt(parentFd,parts[parts.length-1]);
+  } catch(error) {
+    if(error.code==='ELOOP'||error.code==='ENOTDIR') {
+      throw new Error('Path traverses a symbolic link or non-directory parent: '+rel);
+    }
+    throw error;
+  } finally {
+    for(let i=opened.length-1;i>=0;i--)try{fs.closeSync(opened[i]);}catch{}
+  }
+}
+
+function executableMode(stat) {
+  return (stat.mode&0o111)!==0?'100755':'100644';
 }
 
 function gitModeForPath(rel) {
@@ -181,44 +213,49 @@ function digestBytes(mode,bytes) {
 }
 
 function sha256ForPath(rel) {
-  const absolute=assertSafePath(rel);
-  const diskBytes=fs.readFileSync(absolute);
-  let mode=executableMode(absolute);
-  if(GIT_ROOT&&!FILESYSTEM) {
-    const gitPath=ROOT_PREFIX+rel;
-    const headMode=gitModeForPath(rel);
-    // Windows worktrees commonly do not expose Git's executable bit through
-    // stat(2); use the committed tree mode there. On POSIX, reject any drift.
-    if(process.platform!=='win32'&&mode!==headMode)throw new Error('Working-tree executable mode differs from committed HEAD: '+rel);
-    mode=headMode;
-    const r=gitAt(GIT_ROOT,['show','HEAD:'+gitPath],{encoding:null});
-    if(r.error||r.status!==0)throw new Error('Unable to read committed file from HEAD: '+rel);
-    const headBytes=r.stdout;
-    if(diskBytes.equals(headBytes))return digestBytes(mode,diskBytes);
-    // Allow Windows CRLF conversion if and only if normalized LF bytes match committed HEAD
-    const normalized=Buffer.from(diskBytes.toString('utf8').replace(/\r\n/g,'\n'),'utf8');
-    if(normalized.equals(headBytes))return digestBytes(mode,headBytes);
-    throw new Error('Working-tree bytes differ from committed HEAD: '+rel);
-  }
-  return digestBytes(mode,diskBytes);
+  const opened=openRegularFile(rel);
+  try {
+    const diskBytes=fs.readFileSync(opened.fd);
+    let mode=executableMode(opened.stat);
+    if(GIT_ROOT&&!FILESYSTEM) {
+      const gitPath=ROOT_PREFIX+rel;
+      const headMode=gitModeForPath(rel);
+      if(process.platform!=='win32'&&mode!==headMode)throw new Error('Working-tree executable mode differs from committed HEAD: '+rel);
+      mode=headMode;
+      const r=gitAt(GIT_ROOT,['show','HEAD:'+gitPath],{encoding:null});
+      if(r.error||r.status!==0)throw new Error('Unable to read committed file from HEAD: '+rel);
+      const headBytes=r.stdout;
+      if(diskBytes.equals(headBytes))return digestBytes(mode,diskBytes);
+      const normalized=Buffer.from(diskBytes.toString('utf8').replace(/\r\n/g,'\n'),'utf8');
+      if(normalized.equals(headBytes))return digestBytes(mode,headBytes);
+      throw new Error('Working-tree bytes differ from committed HEAD: '+rel);
+    }
+    return digestBytes(mode,diskBytes);
+  } finally {opened.close();}
 }
 
-function walkFiles(dir=ROOT_IO,relative='') {
+function walkFiles(dirFd=ROOT_HANDLE.fd,relative='') {
   const out=[];
-  for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
+  for(const entry of fs.readdirSync('/proc/self/fd/'+dirFd,{withFileTypes:true})) {
     if(entry.name.toLowerCase()==='.git') {
-      if(relative===''&&GIT_ROOT&&ROOT_PREFIX==='') {
-        continue;
-      }
+      if(relative===''&&GIT_ROOT&&ROOT_PREFIX==='')continue;
       throw new Error('Unexpected nested .git directory or gitfile detected in release content: '+(relative?relative+'/.git':'.git'));
     }
     const rel=relative?relative+'/'+entry.name:entry.name;
     if(EXCLUDED.has(rel))continue;
-    const full=path.join(dir,entry.name);
     if(entry.isSymbolicLink())throw new Error('Symbolic links are not supported in checksum snapshots: '+rel);
-    if(entry.isDirectory())out.push(...walkFiles(full,rel));
-    else if(entry.isFile())out.push(rel);
-    else throw new Error('Unsupported filesystem entry in checksum snapshot: '+rel);
+    if(entry.isDirectory()) {
+      const childFd=openDirectoryAt(dirFd,entry.name);
+      try {
+        const actual=fs.fstatSync(childFd);
+        if(actual.dev!==entry.dev||actual.ino!==entry.ino)throw new Error('Filesystem directory changed during checksum traversal: '+rel);
+        out.push(...walkFiles(childFd,rel));
+      } finally {fs.closeSync(childFd);}
+    } else if(entry.isFile()) {
+      const opened=openRegularFileAt(dirFd,entry.name,entry);
+      opened.close();
+      out.push(rel);
+    } else throw new Error('Unsupported filesystem entry in checksum snapshot: '+rel);
   }
   return out;
 }
@@ -240,7 +277,7 @@ function createManifest() {
   }
   const files=trackedFiles();
   if(!files.length)throw new Error('No tracked files found to checksum.');
-  const lines=files.map(rel=>{assertSafePath(rel);return sha256ForPath(rel)+'  '+rel;});
+  const lines=files.map(rel=>sha256ForPath(rel)+'  '+rel);
   // Validate unexpected untracked content after tracked-path checks so a
   // tracked path replaced by a symlinked parent is reported at that boundary.
   if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
@@ -268,7 +305,7 @@ function verifyManifest() {
     if(!match)throw new Error('Malformed checksum line: '+line);
     const [,digest,rel]=match;
     if(EXCLUDED.has(rel))throw new Error('Manifest must not include itself or its signature: '+rel);
-    assertSafePath(rel);
+    pathParts(rel);
     entries.push({digest,rel});
   }
   const names=entries.map(x=>x.rel);
