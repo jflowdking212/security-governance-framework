@@ -1657,3 +1657,67 @@ ChatGPT checked the GitHub `main` branch for root `automation.md`, `AUTOMATION.m
 - PR #9: OPEN and UNMERGED. No merge, signing, tagging, publication, deployment or production policy changes authorised.
 
 **Required next report:** Gemini must begin with `VPS PREFLIGHT` and provide host/time, repo/worktree paths, runbook path/hash, tool versions, dirty-worktree preservation details, remote SHAs, critical-file hashes, supervisor state, and first executed test evidence. The VPS is not considered switched until these checks pass.
+
+
+---
+
+## 19. ChatGPT review of Claude release-closure patch (W-A / W-B / W-C)
+
+**Review date:** 2026-11-24  
+**Submitted Claude commit:** `7320298bbfafd13f4aafbaf7d2046b217ee0a566`  
+**Submitted tree:** `669c9ae2169c38b4bf061191f10c85ebcbd7bc8a`  
+**Claimed base:** Gemini branch `262f1e589cd75ba1bcfc5444bcce669a11c91e19`  
+**Review basis:** Full patch and review brief pasted by the owner in ChatGPT. The Claude commit/patch is not present on the GitHub remote branch; this is a source-level review of the submitted diff, not an independent execution or remote-commit verification.
+
+### 19.1 Branch/base reconciliation
+
+The live Gemini branch `gemini/d01-d02-f5-f6-remediation` currently resolves to `262f1e589cd75ba1bcfc5444bcce669a11c91e19`; GitHub compare reports that ref identical to the claimed patch base. The three proposed files in the Claude patch therefore target the stated current Gemini source baseline, not an older code snapshot.
+
+The Claude patch has not been pushed or applied by ChatGPT. No shared branch has been modified with its implementation.
+
+### 19.2 Review results
+
+**W-A — scanner header validation: ACCEPTED WITH NO SOURCE-LEVEL DEFECT FOUND.**
+
+The proposed check anchors the standalone scanner to the exact existing `#!/usr/bin/env python3` shebang and permits only blank lines, comments and a non-prefixed triple-double-quoted docstring before the first exact `import os` line. The live scanner begins with that shebang, a triple-double-quoted module docstring, then `import os`. This closes the reported pre-import executable-payload/early-exit gap while keeping the current canonical header valid.
+
+The rule is intentionally strict: alternate but valid shebangs, coding declarations expressed in an unexpected form, prefixed docstrings, or other harmless header constructs will be rejected. That is acceptable for this pinned canonical scanner, provided the owner intends header changes to require validator updates.
+
+**W-B — required workflow/template presence: ACCEPTED WITH A MAINTAINABILITY NOTE.**
+
+The new missing-file error closes the previous silent skip for `.github/workflows/security-scans.yml` and `templates/ci/consumer-security-scans.yml`. The checks are nested inside the standalone-scanner existence/import guard, but the scanner itself is already independently listed as a required project file and its absence fails validation earlier. The proposed deletion tests cover both workflow files and the scanner. Consider moving the two workflow existence checks outside the scanner-parity conditional for clearer independent invariants; this is not a demonstrated bypass in the submitted patch.
+
+**W-C — LF attributes: CONFIGURATION ACCEPTED; REGRESSION GUARD NEEDS CORRECTION.**
+
+The proposed attributes for public keys, signatures, checksums, CSVs, allowed signers, CODEOWNERS, VERSION, LICENSE, ignore files and example files use text/eol=lf and do not add the specifically prohibited F5 attributes in the displayed diff.
+
+However, the new negative test does not reliably enforce the stated prohibition:
+- `export-ignore` and `export-subst` are listed explicitly, so another `export-*` attribute can evade the test.
+- `linguist[\\w-]\\*` uses an escaped literal asterisk after one character and does not correctly match ordinary attributes such as `linguist-generated`.
+- The comment filter `/^\\s\\*#/ ` is malformed for ordinary leading-`#` comments (it looks for a literal asterisk before `#`). This can produce false positives if a comment mentions a prohibited token, and does not implement the apparent intent.
+
+**Required correction before accepting W-C's regression protection:** parse each non-comment .gitattributes rule into attribute tokens, normalize leading `-` / `!` modifiers, and reject the prohibited exact names plus any `export-*` and `linguist*` family member. Add mutation cases for at least `export-ignore`, an unlisted `export-<name>`, `linguist-generated`, `filter`, `-text`, and `!diff`. Ensure comments are stripped using a correct leading-comment rule.
+
+### 19.3 W-04 remains open and independently confirmed
+
+The live ChatGPT checksum branch source still invokes Git using `spawnSync('git', ...)` in `tools/checksums.mjs` and does not pass a sanitized environment or resolve Git from a trusted absolute path. The inspected `gitAt()` helper inherits the process environment by default. Thus PATH hijacking and inherited `GIT_* ` overrides remain a real unresolved concern; the prior environment-scrubbing/trusted-executable hardening is not present in this current checksum branch snapshot.
+
+This remains ChatGPT-owned and must be fixed independently of Claude's three-file patch. Do not treat Claude's patch as closing W-04.
+
+### 19.4 Verification and disposition
+
+- W-A: SOURCE-LEVEL REVIEW ACCEPTED; not independently executed by ChatGPT.
+- W-B: SOURCE-LEVEL REVIEW ACCEPTED; not independently executed by ChatGPT.
+- W-C: ATTRIBUTE CONFIGURATION ACCEPTED; TEST GUARD REQUIRES CORRECTION.
+- W-04: OPEN; current checksum branch still inherits PATH and Git environment.
+- Claude commit `7320298...`: NOT PRESENT ON REMOTE / NOT APPLIED.
+- Claude's reported 257/257 tests and generator/validator results: REPORTED BY CLAUDE, NOT INDEPENDENTLY VERIFIED BY CHATGPT.
+- Hosted CI, CodeQL, Gitleaks and OSV on the final combined candidate: NOT VERIFIED.
+- No merge, signing, tagging, release publication, ruleset change or deployment is authorized.
+
+### 19.5 Next actions
+
+1. Claude: correct the W-C prohibited-attribute regression test as specified above, retain the actual safe LF attributes, rerun its focused tests and full suite, and return a revised patch plus exact base/head/tree SHAs. Do not push unless separately authorized.
+2. ChatGPT: continue the W-04 trusted Git executable and environment sanitization work on the checksum-owned branch; add regression tests for fake Git on PATH and hostile `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, and `GIT_CONFIG_*` variables. Keep the change isolated from Claude's patch.
+3. After revised Claude patch and W-04 are reconciled, execute the exact combined candidate on the VPS, then obtain hosted CI and Claude's independent final audit of that exact candidate SHA.
+4. Preserve the required squash integration method for A2-03. No merge or production release until all six release gates, signing and owner approvals are satisfied.
