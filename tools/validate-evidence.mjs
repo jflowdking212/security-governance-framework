@@ -56,10 +56,17 @@ function isPlaceholderReference(value){
  return ['n/a','n / a','na','none','unknown','tbd','todo','pending','x','.','see above','http://','https://','-','--','null','undefined','?'].includes(norm)||/^-+$/.test(norm);
 }
 
+const MAX_UNSIGNED_64 = 18446744073709551615n;
+function isRunReference(reference){
+ const match=/^run:([1-9]\d{0,19})$/i.exec(reference);
+ if(!match)return false;
+ return BigInt(match[1])<=MAX_UNSIGNED_64;
+}
+
 function validEvidenceReference(value){
  if(!nonEmpty(value)||isPlaceholderReference(value))return false;
  const reference=value.trim();
- if(/^run:[1-9]\d{4,19}$/i.test(reference))return true;
+ if(isRunReference(reference))return true;
  if(/^https:\/\//i.test(reference)){
   try{
    const url=new URL(reference);
