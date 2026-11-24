@@ -89,7 +89,7 @@ for (const workflow of WORKFLOWS) {
       fs.rmSync(path.join(dir, workflow));
       const result = validate(dir);
       assert.notEqual(result.status, 0, 'validator silently accepted a missing workflow');
-      assert.match(result.stdout + result.stderr, new RegExp('Missing required scanner workflow ' + workflow.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.ok((result.stdout + result.stderr).includes('Missing required scanner workflow ' + workflow));
     } finally {
       fs.rmSync(dir, {recursive: true, force: true});
     }
