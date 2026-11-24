@@ -1,7 +1,7 @@
 # React and TypeScript reference profile
 
 **Profile status:** REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION  
-**Framework scope:** Single-Page Applications (SPAs) and component frontends using React 18/19 with TypeScript  
+**Framework scope:** React 19.3 (latest version listed on 2026-11-20) and TypeScript SPAs/component frontends; React 18 is a legacy documentation line and must be recorded explicitly when retained  
 **Related modules:** M01, M02, M03, M04, M05, M09, M12, M21  
 **Companion supplements:** API protocol security; authentication and federation; data lifecycle and privacy  
 
@@ -38,3 +38,28 @@ This profile specifies client-side security architecture and verification standa
 - Never embed backend secret keys, private API credentials, or database passwords in client environment variables (e.g. `VITE_*` or `REACT_APP_*`). Any variable bundled into client bundles is publicly readable by anyone inspecting JavaScript assets.
 - Disable production source map deployment to public CDN origins or restrict source maps to internal debugging and error tracking systems.
 - Pin frontend dependencies in `package-lock.json` and run `npm audit` or automated supply-chain scanners in CI.
+
+
+## React Server Components and server actions
+
+- If the application uses React Server Components, server functions or server actions, treat every action as a network-accessible server endpoint. Authenticate and authorize every invocation on the server; do not rely on the calling component or hidden UI.
+- Validate and constrain all action arguments, enforce object- and tenant-level authorization, and prevent replay or duplicate state changes where relevant.
+- Keep React, React DOM and all `react-server-dom-*` packages on patched compatible releases. Review official React security advisories before upgrades; pin and test the exact package set because RSC protocol packages must remain version-aligned.
+- Do not expose server-only modules, credentials or privileged environment variables through client imports, serialized props, build output or source maps.
+
+## Required application tests
+
+- Stored/reflected XSS, unsafe URL and CSP tests, including any approved rich-HTML rendering.
+- Cookie/session CSRF, token leakage, refresh rotation and logout invalidation tests.
+- Cross-tenant cache switching and backend authorization tests independent of client route guards.
+- If RSC/server actions are used: unauthenticated invocation, forged arguments, cross-tenant object IDs, replay and duplicate-submission tests.
+- Production bundle and source-map inspection for secrets and internal source exposure.
+
+## Verification record required before marking this profile validated
+
+Record the exact consuming application commit, React/React DOM/TypeScript and build framework versions, whether SSR/RSC/server actions are enabled, CSP and cookie configuration, auth/session architecture, lockfile digest, negative test commands/results, deployment topology and independent reviewer identity. Keep this profile REFERENCE ONLY until those application-specific records are complete.
+
+## Primary references
+
+- [React versions and release archive](https://react.dev/versions)
+- [React official security and release announcements](https://react.dev/blog)

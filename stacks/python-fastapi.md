@@ -64,3 +64,12 @@ This profile is a practical review checklist, not a tested framework preset or a
 ## Verification record required before marking this profile validated
 
 Record the consuming repository and commit, Python version, FastAPI/Starlette/Pydantic versions, ASGI server, reverse-proxy configuration, dependency lockfile, commands and test results, deployment configuration reviewed, known exceptions and reviewer. Until this evidence exists, keep the profile status as NOT VERIFIED.
+
+## Primary references
+
+- [FastAPI Security](https://fastapi.tiangolo.com/tutorial/security/)
+- [FastAPI Behind a Proxy](https://fastapi.tiangolo.com/advanced/behind-a-proxy/)
+- [FastAPI Handling Errors](https://fastapi.tiangolo.com/tutorial/handling-errors/)
+- [Starlette Middleware](https://www.starlette.io/middleware/)
+
+Use the documentation matching the exact FastAPI, Starlette and Pydantic versions in the consuming application. In particular, configure trusted forwarded headers only for the actual proxy addresses; do not copy wildcard trust settings from illustrative deployment examples without verifying network isolation.

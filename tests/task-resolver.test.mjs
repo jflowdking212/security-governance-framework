@@ -191,6 +191,36 @@ test('resolver normal mode allows unmatched keywords with warning',()=>{
  assert.match(r.stderr,/WARNING: keywords not matched to any trigger/);
 });
 
+test('resolver without arguments exits with status code 2',()=>{
+ const r=run([]);
+ assert.equal(r.status,2);
+ assert.match(r.stderr,/Usage:/);
+});
+
+test('resolver with --stack resolves stack profile by id, slug and path',()=>{
+ for(const flag of ['go','nodejs-express','stacks/laravel-php.md','rust','java-spring','flutter-dart']){
+  const r=run(['--stack',flag]);
+  assert.equal(r.status,0,flag+': '+r.stderr);
+  assert.match(r.stdout,/Stack profiles:/);
+  assert.match(r.stdout,/REFERENCE_ONLY/);
+  assert.ok(r.stdout.includes('M01 '),flag+' should include M01');
+ }
+});
+
+test('resolver rejects unknown stack profile reference',()=>{
+ const r=run(['--stack','non-existent-stack']);
+ assert.equal(r.status,2);
+ assert.match(r.stderr,/Unknown stack profile/);
+});
+
+test('resolver combines --task and --stack',()=>{
+ const r=run(['--task','code-change','--stack','nodejs-express']);
+ assert.equal(r.status,0,r.stderr);
+ assert.ok(r.stdout.includes('task code-change'));
+ assert.ok(r.stdout.includes('Stack profiles: nodejs-express'));
+ assert.ok(r.stdout.includes('M21 modules/m21-cors-browser-boundary.md'));
+});
+
 test('resolver keyword search identifies applicable supplement triggers',()=>{
  const r=run(['--keywords','graphql']);
  assert.equal(r.status,0,r.stderr);

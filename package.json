@@ -1,7 +1,9 @@
 {
   "name": "universal-security-standard",
-  "version": "1.0.0",
+  "version": "1.0.0-rc.1",
   "description": "Universal Security Standard (USS)",
+  "author": "Jude O. Richard / Jay Bliss Tech Limited",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "private": true,
   "scripts": {
@@ -11,7 +13,7 @@
     "build:indexes": "node tools/build-indexes.mjs",
     "build:bundles": "node tools/build-bundles.mjs"
   },
-  "dependencies": {
+  "devDependencies": {
     "yaml": "2.9.1"
   },
   "engines": {

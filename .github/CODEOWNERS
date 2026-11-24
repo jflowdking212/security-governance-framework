@@ -3,6 +3,10 @@
 # identifies the maintainer responsible for review, but does not require a
 # second GitHub account to approve a pull request.
 
+# Default fallback owner for the entire repository
+* @jflowdking212
+
+# Explicit ownership for security-critical policy, release, tooling, and workflow files
 /AGENTS.md @jflowdking212
 /KERNEL.md @jflowdking212
 /SECURITY-ROOT.md @jflowdking212
@@ -10,15 +14,26 @@
 /.security/ @jflowdking212
 /SHA256SUMS @jflowdking212
 /SHA256SUMS.sig @jflowdking212
+/VERSION @jflowdking212
 /manifest.json @jflowdking212
+/package.json @jflowdking212
+/package-lock.json @jflowdking212
+/THIRD-PARTY-NOTICES.md @jflowdking212
 /source/ @jflowdking212
 /modules/ @jflowdking212
+/bundles/ @jflowdking212
+/MODULE-INDEX.md @jflowdking212
 /tools/ @jflowdking212
+/tests/ @jflowdking212
 /assurance/ @jflowdking212
 /supplements/ @jflowdking212
 /stacks/ @jflowdking212
 /templates/ @jflowdking212
+/CONSUMING.md @jflowdking212
 /OWNER-ACTIONS.md @jflowdking212
 /RELEASE-CHECKLIST.md @jflowdking212
+/automation.md @jflowdking212
+/coordination/ @jflowdking212
+/.github/ @jflowdking212
 /.github/workflows/ @jflowdking212
 /.github/dependabot.yml @jflowdking212

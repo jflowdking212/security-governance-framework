@@ -8,11 +8,14 @@ These items track repository-owner and rights-holder governance decisions.
 **Observed state:** GitHub ruleset `Protect Main` (ruleset ID `27612394`) is active on `~DEFAULT_BRANCH` (`main`).
 Enforced rules:
 - Requires pull requests for changes to `main`.
-- Requires conversation resolution before merge.
-- Requires linear history.
+- Requires review thread resolution before merge (`required_review_thread_resolution: true`).
 - Blocks force pushes (`non_fast_forward`).
 - Blocks branch deletion (`deletion`).
-- Enforces CODEOWNERS review for canonical directives, generated modules, resolver/validator tools, workflows, supplements, and stack profiles.
+
+Rules not configured in the active ruleset:
+- Linear history is not required (`allowed_merge_methods` permits `merge`, `squash`, and `rebase`).
+- CODEOWNERS approval is not enforced (`require_code_owner_review: false`, `required_approving_review_count: 0`), preserving single-owner operations without self-blocking.
+- Required status checks are not currently configured (see Section 7 for owner option).
 
 ## 2. Enable dependency graph access and scanner execution
 
@@ -44,6 +47,33 @@ Enforced rules:
 - Authoritative URL: `https://github.com/jflowdking212/security-governance-framework`
 - All documentation, clone commands, and consuming references have been updated.
 
+## 6. Release signing ceremony (U-01)
+
+**Status: PENDING OWNER EXECUTION**  
+The release candidate `v1.0.0-rc.1` is not yet release-ready. Claude's second independent audit on 2026-11-20 identified findings A2-02 through A2-12 with different dispositions. The follow-up implementation record is maintained in `REVIEW-CORRECTION-LOG.md`. As of the current remediation work: A2-03 checksum code/tests and A2-09 checksum documentation have owner-issued updates; A2-04 README status and A2-10 collaboration protocol have been corrected; Gemini has implemented A2-02/A2-07 on commit `33186db096265b1affe908931132dfefa1a5f646` with hosted checks passing on that SHA. These are not independently closed until the current combined head passes CI and the assigned independent reviews are complete. Claude's A2-06/A2-11/A2-12 implementation handback is still pending. A2-08 remains an owner identity/provenance decision because the connected bot account is read-only. A2-05 ruleset evidence is verified. Resolve all remaining work and independently verify the follow-up changes before beginning the owner signing ceremony. To finalize the official `v1.0.0` release:
+1. Merge the remediation PR into `integration/uss-pr3-pr8-hardening`.
+2. Fast-forward merge `integration/uss-pr3-pr8-hardening` into `main` after owner review.
+3. On the owner's workstation (where the private SSH key resides):
+   ```sh
+   git checkout main
+   git pull origin main
+   node tools/checksums.mjs create
+   ssh-keygen -Y sign -f ~/.ssh/security_layer_signing -n USS-SHA256SUMS SHA256SUMS
+   git add SHA256SUMS SHA256SUMS.sig
+   git commit -S -m "release: Universal Security Standard v1.0.0"
+   git tag -s -m "Universal Security Standard v1.0.0" v1.0.0
+   git push origin main v1.0.0
+   ```
+4. Verify the published release commit and tag on GitHub.
+
+## 7. Main branch required status checks (U-08)
+
+**Status: OWNER DECISION RECORDED**  
+- The active `Protect Main` ruleset (ID `27612394`) enforces pull requests, conversation resolution, and blocks force pushes and deletion.
+- In accordance with the owner's directive, mandatory second-person approval remains disabled.
+- Once hosted GitHub Actions runners are confirmed active and the workflow name `USS validation` is verified in GitHub checks, the owner can optionally add `USS validation` as a required status check in `Protect Main` ruleset.
+- No repository settings were modified by engineering agents.
+
 ## Release rule
 
-All foundational owner governance actions are complete. USS v1.0.0 is technically validated and ready for independent review by Claude and personal release signing by the owner.
+The `v1.0.0-rc.1` candidate is NOT APPROVED FOR RELEASE and is not a final release. Gemini's A2-02/A2-07 commit `33186db096265b1affe908931132dfefa1a5f646` passed its configured hosted validation and security scans. At head `a52b22e337a3fc44f5cb0931004e63c1a2f77068`, hosted USS validation run `44714438971` passed 155/155 tests and security-scans run `44714439491` completed successfully. All 7 reported check runs passed: Gitleaks reported no leaks, Semgrep scanned 26 tracked files with 237 rules and no skipped files/findings, CodeQL scanned 18/18 JavaScript files and 2/2 GitHub Actions files, and OSV scanned one package with no issues. This green run does not close the remaining A2-02/A2-07 mutation gaps found in supervisory review, nor the pending Claude A2-06/A2-11/A2-12 handback. The candidate remains blocked pending those corrections and independent review. A2-03/A2-09/A2-04/A2-10 owner-issued follow-up changes remain subject to current-head CI and independent cross-review. Claude's A2-06/A2-11/A2-12 implementation and independent follow-up review remain pending. The U-01 signing ceremony remains owner-only, and the U-08 required-status-check decision remains with the owner.

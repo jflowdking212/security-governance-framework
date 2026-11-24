@@ -174,21 +174,65 @@ test('adversarial: rejects uncommitted working tree modifications in Git mode',t
   assert.match(result.stderr,/Repository has changes outside|Working-tree bytes differ|SHA-256 mismatch/);
 });
 
-test('adversarial: does not exclude nested .git directories in filesystem mode',t=>{
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-nested-git-'));
+test('adversarial: rejects nested .git directories in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-nested-git-fs-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
   fs.mkdirSync(path.join(dir,'sub','.git'),{recursive:true});
   fs.writeFileSync(path.join(dir,'sub','.git','config'),'sub git config\n');
   const created=run(dir,'create','--filesystem');
-  assert.equal(created.status,0,created.stderr);
-  const manifest=fs.readFileSync(path.join(dir,'SHA256SUMS'),'utf8');
-  assert.match(manifest,/sub\/\.git\/config/,'Manifest must include nested .git files');
-  assert.equal(run(dir,'verify','--filesystem').status,0);
-  fs.writeFileSync(path.join(dir,'sub','.git','config'),'tampered sub git config\n');
-  const tampered=run(dir,'verify','--filesystem');
-  assert.notEqual(tampered.status,0);
-  assert.match(tampered.stderr,/SHA-256 mismatch: sub\/\.git\/config/);
+  assert.notEqual(created.status,0,'Creation must fail when nested .git directory exists in filesystem mode');
+  assert.match(created.stderr,/Unexpected nested \.git directory/);
+});
+
+test('adversarial: rejects nested .git directories in Git mode',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  fs.mkdirSync(path.join(cwd,'sub','.git'),{recursive:true});
+  fs.writeFileSync(path.join(cwd,'sub','.git','config'),'sub git config\n');
+  const created=run(cwd,'create');
+  assert.notEqual(created.status,0,'Creation must fail when nested .git directory exists in Git mode');
+  assert.match(created.stderr,/Unexpected nested \.git directory/);
+});
+
+test('adversarial: rejects all root .git directory metadata in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-git-dir-fs-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
+
+  const initial=run(dir,'create','--filesystem');
+  assert.equal(initial.status,0,initial.stderr);
+  fs.mkdirSync(path.join(dir,'.git','hooks'),{recursive:true});
+  fs.writeFileSync(path.join(dir,'.git','config'),'[core]\n  fsmonitor = ./malicious-monitor\n');
+  fs.writeFileSync(path.join(dir,'.git','hooks','pre-commit'),'#!/bin/sh\nexit 1\n');
+  const verified=run(dir,'verify','--filesystem');
+  assert.notEqual(verified.status,0,'Verification must fail when root .git/config is introduced after manifest creation');
+  assert.match(verified.stderr,/Root \.git metadata is not allowed in filesystem mode/);
+
+  fs.rmSync(path.join(dir,'.git'),{recursive:true,force:true});
+  fs.mkdirSync(path.join(dir,'.git'),{recursive:true});
+  fs.writeFileSync(path.join(dir,'.git','config'),'[core]\n  fsmonitor = ./malicious-monitor\n');
+  const created=run(dir,'create','--filesystem');
+  assert.notEqual(created.status,0,'Creation must fail when root .git directory metadata exists');
+  assert.match(created.stderr,/Root \.git metadata is not allowed in filesystem mode/);
+});
+
+test('adversarial: rejects root .git gitfiles in filesystem mode',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-git-file-fs-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
+
+  const initial=run(dir,'create','--filesystem');
+  assert.equal(initial.status,0,initial.stderr);
+  fs.writeFileSync(path.join(dir,'.git'),'gitdir: ../attacker-controlled-gitdir\n');
+  const verified=run(dir,'verify','--filesystem');
+  assert.notEqual(verified.status,0,'Verification must fail when a root .git gitfile is introduced after manifest creation');
+  assert.match(verified.stderr,/Root \.git metadata is not allowed in filesystem mode/);
+
+  fs.rmSync(path.join(dir,'.git'),{force:true});
+  fs.writeFileSync(path.join(dir,'.git'),'gitdir: ../attacker-controlled-gitdir\n');
+  const created=run(dir,'create','--filesystem');
+  assert.notEqual(created.status,0,'Creation must fail when a root .git gitfile exists');
+  assert.match(created.stderr,/Root \.git metadata is not allowed in filesystem mode/);
 });
 
 test('adversarial: does not silently exclude top-level dist directory in filesystem mode',t=>{
@@ -215,4 +259,100 @@ test('adversarial: rejects unexpected untracked files in dist outside bundles',t
   const result=run(cwd,'create');
   assert.notEqual(result.status,0,'Manifest creation must reject unexpected files in dist');
   assert.match(result.stderr,/Untracked or ignored files/);
+});
+
+
+test('adversarial: Git-mode checksum operations do not execute repository-configured fsmonitor commands',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const hookDir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-fsmonitor-hook-'));
+  t.after(()=>fs.rmSync(hookDir,{recursive:true,force:true}));
+  const marker=path.join(hookDir,'executed.txt');
+  const hook=path.join(hookDir,'fsmonitor.cjs');
+  fs.writeFileSync(hook,[
+    "const fs=require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(marker)},'executed');`,
+    "process.stdout.write('0'+String.fromCharCode(10));"
+  ].join(String.fromCharCode(10)));
+  const command='"'+process.execPath+'" "'+hook+'"';
+  git(cwd,'config','core.fsmonitor',command);
+
+  const created=run(cwd,'create');
+  assert.equal(created.status,0,created.stderr);
+  assert.equal(fs.existsSync(marker),false,'Checksum creation must not execute repository core.fsmonitor');
+  const verified=run(cwd,'verify');
+  assert.equal(verified.status,0,verified.stderr);
+  assert.equal(fs.existsSync(marker),false,'Checksum verification must not execute repository core.fsmonitor');
+});
+
+test('adversarial: Git-mode checksum operations do not execute repository-configured clean filters',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(cwd,'.gitattributes'),'*.uss-filtered filter=uss-audit'+String.fromCharCode(10));
+  fs.writeFileSync(path.join(cwd,'policy.uss-filtered'),'trusted policy bytes'+String.fromCharCode(10));
+  git(cwd,'add','.gitattributes','policy.uss-filtered');
+  git(cwd,'commit','-m','add filtered policy fixture');
+
+  const hookDir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-clean-filter-'));
+  t.after(()=>fs.rmSync(hookDir,{recursive:true,force:true}));
+  const marker=path.join(hookDir,'executed.txt');
+  const hook=path.join(hookDir,'clean-filter.cjs');
+  fs.writeFileSync(hook,[
+    "const fs=require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(marker)},'executed');`,
+    "process.stdin.pipe(process.stdout);"
+  ].join(String.fromCharCode(10)));
+  const command='"'+process.execPath+'" "'+hook+'"';
+  git(cwd,'config','filter.uss-audit.clean',command);
+
+  const created=run(cwd,'create');
+  assert.equal(created.status,0,created.stderr);
+  assert.equal(fs.existsSync(marker),false,'Checksum creation must not execute configured clean filters');
+  const verified=run(cwd,'verify');
+  assert.equal(verified.status,0,verified.stderr);
+  assert.equal(fs.existsSync(marker),false,'Checksum verification must not execute configured clean filters');
+});
+
+test('adversarial: rejects a tracked file reached through a symbolic-link parent directory',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const policyDir=path.join(cwd,'policy');
+  fs.mkdirSync(policyDir);
+  fs.writeFileSync(path.join(policyDir,'README.md'),'trusted nested policy'+String.fromCharCode(10));
+  git(cwd,'add','policy/README.md');
+  git(cwd,'commit','-m','add nested policy fixture');
+  assert.equal(run(cwd,'create').status,0);
+  git(cwd,'add','SHA256SUMS');
+  git(cwd,'commit','-m','add checksum manifest');
+
+  const target=fs.mkdtempSync(path.join(os.tmpdir(),'uss-parent-symlink-target-'));
+  t.after(()=>fs.rmSync(target,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(target,'README.md'),'trusted nested policy'+String.fromCharCode(10));
+  fs.rmSync(policyDir,{recursive:true,force:true});
+  fs.symlinkSync(target,policyDir,process.platform==='win32'?'junction':'dir');
+
+  const result=run(cwd,'verify');
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/symbolic-link parent/);
+});
+
+
+test('adversarial: rejects .git metadata at the selected vendored root in Git mode',t=>{
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const vendor=path.join(cwd,'vendor','uss');
+  fs.mkdirSync(vendor,{recursive:true});
+  fs.writeFileSync(path.join(vendor,'KERNEL.md'),'vendored policy content'+String.fromCharCode(10));
+  git(cwd,'add','vendor/uss/KERNEL.md');
+  git(cwd,'commit','-m','add vendored USS fixture');
+
+  // A selected subdirectory is not the outer repository root. Its own .git
+  // directory must therefore be treated as nested, untrusted Git metadata.
+  fs.mkdirSync(path.join(vendor,'.git','hooks'),{recursive:true});
+  fs.writeFileSync(path.join(vendor,'.git','config'),'[core]'+String.fromCharCode(10));
+  const directoryResult=run(cwd,'create','--root','vendor/uss');
+  assert.notEqual(directoryResult.status,0,'Creation must reject .git directory at selected vendored root');
+  assert.match(directoryResult.stderr,/Unexpected nested \.git directory or gitfile/);
+
+  fs.rmSync(path.join(vendor,'.git'),{recursive:true,force:true});
+  fs.writeFileSync(path.join(vendor,'.git'),'gitdir: ../../.git/modules/uss'+String.fromCharCode(10));
+  const gitfileResult=run(cwd,'verify','--root','vendor/uss');
+  assert.notEqual(gitfileResult.status,0,'Verification must reject .git gitfile at selected vendored root');
+  assert.match(gitfileResult.stderr,/Unexpected nested \.git directory or gitfile/);
 });
