@@ -1861,7 +1861,13 @@ ChatGPT implemented the first W-04 hardening pass on `chatgpt/checksum-root-syml
 - `24e87d2f3be0afa9ccaf3d41bd5c14753c02f7b9` — `tests/checksums.test.mjs`: add adversarial test using a fake executable in hostile PATH plus hostile `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, object-directory and injected `GIT_CONFIG_COUNT` overrides.
 - `f68d4278a4553d719dd1cac8eee99d2e1cec9a29` — correct the manifest-path assertion in that regression test.
 
-**Verification boundary:** The implementation is committed remotely, but this entry does not claim it has been executed. The branch's latest code/test SHA must be checked, and the focused test, full suite, validators, generators and drift checks must run on a clean exact-SHA VPS worktree. Hosted CI must also be checked for that exact SHA. If the fixed-path ownership checks or platform constraints fail on the supported VPS, correct the implementation rather than weakening the fail-closed policy.
+**Verification evidence (hosted CI):**
+- Exact tested head: `1c7f94816c47872749fe06ebbd36924210ed5065`.
+- USS validation run `45381165269`: SUCCESS. The full test job reports **185 tests, 185 passed, 0 failed, 0 skipped**. The new W-04 hostile-PATH/GIT_* regression test passed.
+- USS security scans run `45381165928`: IN PROGRESS at the time of this handoff update; re-fetch before claiming scanner completion.
+- An earlier run at `f68d427...` exposed two pre-existing stale symlink-diagnostic assertions. Those assertions were aligned with the existing fail-closed diagnostics, and the next full suite at `48d8d6d...` passed 185/185. The final environment-allowlist implementation at `1c7f948...` also passed 185/185.
+- **VPS execution is still pending.** Gemini must execute the exact W-04 branch head in a clean isolated VPS worktree or confirm the same trusted-path ownership assumptions on the production target. Do not claim VPS verification yet.
+- If the VPS does not contain a trusted Git binary in the fixed system locations or the ownership/mode checks fail, correct the deployment assumptions or fail closed; do not fall back to PATH-based Git.
 
 ### 22.4 Immediate execution order
 
