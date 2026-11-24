@@ -41,7 +41,7 @@ if(await exists('tools/uss-tracked-binary-scanner.py')){
  const scannerLines=scannerRaw.split(/\r?\n/);
  const osIdx=scannerLines.indexOf('import os');
  const scannerHeader=scannerLines.slice(0,osIdx).join('\n')+'\n';
- if(osIdx<0||!/^#!\\/usr\\/bin\\/env python3\n(?:\n|#[^\n]*\n|\"\"\"(?:(?!\"\"\")[\\s\\S])*\"\"\"\n)*$/.test(scannerHeader))errors.push('tools/uss-tracked-binary-scanner.py has executable or unexpected content before import os; only the python3 shebang, comments and a docstring are permitted');
+  if(osIdx<0||!/^#![/]usr[/]bin[/]env python3\n(?:\n|#[^\n]*\n|\"\"\"(?:(?!\"\"\")[\s\S])*\"\"\"\n)*$/.test(scannerHeader))errors.push('tools/uss-tracked-binary-scanner.py has executable or unexpected content before import os; only the python3 shebang, comments and a docstring are permitted');
  if(osIdx<0)errors.push('tools/uss-tracked-binary-scanner.py missing import os');
  else{
   const standaloneEngine=scannerLines.slice(osIdx).join('\n').trim();
