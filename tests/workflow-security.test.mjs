@@ -2708,13 +2708,30 @@ test('finding F5-R1: multi-level nested tracked files pass cleanly', () => {
     spawnSync('git', ['add', '.'], { cwd: tempDir });
     spawnSync('git', ['commit', '-m', 'clean nested files'], { cwd: tempDir });
 
-    const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
-    if (process.platform === 'win32') {
-      assert.equal(res.status, 2, 'Scanner must fail closed by default on win32');
-      assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
-    } else {
-      assert.equal(res.status, 0, 'Clean multi-level nested files must pass with exit 0: ' + res.stderr);
-      assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+    function extractPyFromScript(script) {
+      const lines = script.split(/\r?\n/);
+      const eof1 = lines.indexOf("python3 - <<'EOF'");
+      const eof2 = lines.lastIndexOf('EOF');
+      return lines.slice(eof1 + 1, eof2).join('\n');
+    }
+
+    const allEngines = [
+      { name: 'standalone scanner', file: scannerPath },
+      { name: 'security-scans.yml embedded python', code: extractPyFromScript(SCANNER_CONFIG_GUARD_RUN) },
+      { name: 'consumer-security-scans.yml embedded python', code: extractPyFromScript(CONSUMER_CONFIG_GUARD_RUN) },
+      { name: 'buildExpectedConsumerGuard embedded python', code: extractPyFromScript(buildExpectedConsumerGuard()) },
+    ];
+
+    for (const eng of allEngines) {
+      const args = eng.file ? [eng.file] : ['-c', eng.code];
+      const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, eng.name + ' must fail closed by default on win32');
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.equal(res.status, 0, eng.name + ': clean multi-level nested files must pass with exit 0: ' + res.stderr);
+        assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+      }
     }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -2762,11 +2779,35 @@ test('finding F5-R1: fails closed on unsupported platforms when directory-descri
     assert.equal(cliRes.status, 2, 'Scanner must fail closed by default on win32');
     assert.match(cliRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
   }
+
+  // Cross-platform simulated unsupported platform test across all shipped copies
+  function extractPyFromScript(script) {
+    const lines = script.split(/\r?\n/);
+    const eof1 = lines.indexOf("python3 - <<'EOF'");
+    const eof2 = lines.lastIndexOf('EOF');
+    return lines.slice(eof1 + 1, eof2).join('\n');
+  }
+
+  const allCopies = [
+    { name: 'standalone scanner', code: fs.readFileSync(scannerPath, 'utf8') },
+    { name: 'first-party workflow guard', code: extractPyFromScript(SCANNER_CONFIG_GUARD_RUN) },
+    { name: 'consumer template guard', code: extractPyFromScript(CONSUMER_CONFIG_GUARD_RUN) },
+    { name: 'canonical generated guard', code: extractPyFromScript(buildExpectedConsumerGuard()) },
+  ];
+
+  for (const copy of allCopies) {
+    const mockPy = 'import os; os.supports_dir_fd = set();\n' + copy.code;
+    const res = spawnSync(pythonBin, ['-c', mockPy], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(res.status, 2, copy.name + ' must exit 2 when supports_dir_fd is empty');
+    assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform:/);
+  }
 });
 
 test('finding F5-R1: live workflow guard rejects parent-directory symlink malicious fixture', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-guard-'));
   const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-guard-ext-'));
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
   try {
     spawnSync('git', ['init', '-q'], { cwd: tempDir });
     spawnSync('git', ['config', 'user.name', 'Guard Symlink User'], { cwd: tempDir });
@@ -2795,19 +2836,59 @@ test('finding F5-R1: live workflow guard rejects parent-directory symlink malici
       ? { ...process.env, PATH: 'C:\\Program Files\\Git\\usr\\bin;C:\\Users\\HP\\AppData\\Roaming\\Python\\Python314\\Scripts;' + (process.env.PATH || '') }
       : { ...process.env };
 
-    const guardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], {
-      cwd: tempDir,
-      encoding: 'utf8',
-      env: bashEnv,
-      input: SCANNER_CONFIG_GUARD_RUN
-    });
+    const guards = [
+      { name: 'first-party workflow guard (security-scans.yml)', script: SCANNER_CONFIG_GUARD_RUN },
+      { name: 'consumer template guard (consumer-security-scans.yml)', script: CONSUMER_CONFIG_GUARD_RUN },
+      { name: 'canonical generated guard (buildExpectedConsumerGuard)', script: buildExpectedConsumerGuard() },
+    ];
 
-    if (process.platform === 'win32') {
-      assert.equal(guardRun.status, 2, 'Live workflow guard must fail closed by default on unsupported win32 platform');
-      assert.match(guardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
-    } else {
-      assert.notEqual(guardRun.status, 0, 'Live workflow guard must reject parent symlink fixture');
-      assert.match(guardRun.stderr, /FAIL: parent directory component is a symbolic link/);
+    for (const guard of guards) {
+      const guardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], {
+        cwd: tempDir,
+        encoding: 'utf8',
+        env: bashEnv,
+        input: guard.script
+      });
+
+      if (guardRun.error && guardRun.error.code === 'ENOENT') {
+        continue;
+      }
+
+      if (process.platform === 'win32') {
+        assert.equal(guardRun.status, 2, guard.name + ' must fail closed by default on unsupported win32 platform');
+        assert.match(guardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.notEqual(guardRun.status, 0, guard.name + ' must reject parent symlink fixture');
+        assert.match(guardRun.stderr, /FAIL: parent directory component is a symbolic link/);
+      }
+    }
+
+    // Direct python engine test across all 4 shipped copies
+    function extractPyFromScript(script) {
+      const lines = script.split(/\r?\n/);
+      const eof1 = lines.indexOf("python3 - <<'EOF'");
+      const eof2 = lines.lastIndexOf('EOF');
+      return lines.slice(eof1 + 1, eof2).join('\n');
+    }
+
+    const allEngines = [
+      { name: 'standalone scanner', file: scannerPath },
+      { name: 'security-scans.yml embedded python', code: extractPyFromScript(SCANNER_CONFIG_GUARD_RUN) },
+      { name: 'consumer-security-scans.yml embedded python', code: extractPyFromScript(CONSUMER_CONFIG_GUARD_RUN) },
+      { name: 'buildExpectedConsumerGuard embedded python', code: extractPyFromScript(buildExpectedConsumerGuard()) },
+    ];
+
+    for (const eng of allEngines) {
+      const args = eng.file ? [eng.file] : ['-c', eng.code];
+      const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, eng.name + ' must fail closed on win32');
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported/);
+      } else {
+        assert.equal(res.status, 1, eng.name + ' must exit 1 on parent symlink redirect');
+        assert.match(res.stderr, /FAIL: parent directory component is a symbolic link/);
+        assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/);
+      }
     }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
