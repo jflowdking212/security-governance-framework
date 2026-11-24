@@ -1009,7 +1009,7 @@ Added regression test in `tests/evidence.test.mjs`:
 
 ### Verification boundary
 
-GitHub Actions was triggered for the implementation and test commits. At the time this entry was written, the latest validation run for the test commit was queued; implementation-commit validation and security scans were still in progress. No test pass or hosted scan completion is claimed here. Re-fetch the runs for the exact final test SHA before accepting this correction.
+Hosted GitHub Actions validation for exact code+test SHA `d0b5ff69efc8d002eccc5166ffba40a05fd00c37` completed successfully (run `45488652812`). It reports **178 tests, 178 passed, 0 failed, 0 skipped**; the new unsigned-64-bit boundary regression passed. The job also ran `build-modules.mjs`, `build-indexes.mjs`, `build-bundles.mjs` and `validate.mjs` successfully. Security scan run `45488653164` for the same SHA was still in progress at the time of this update. The handoff-only branch head is `97825f424a9b940d72a568a20f49053c8456f2cb`; the tested code+test tree is the parent content at `d0b5ff69efc8d002eccc5166ffba40a05fd00c37`. Re-fetch the scan run before accepting full CI completion.
 
 This branch is based on the remote base SHA above and contains only this isolated correction plus this handoff entry. Claude's A2-06/A2-11/A2-12 commits remain local/unpushed and are not included. Cherry-pick or reapply this correction onto Claude's corrected branch after that branch is made available; do not treat this branch as the combined release candidate.
 
