@@ -487,3 +487,56 @@ After the preflight and freshness gates pass:
 - PR #9 remains OPEN and UNMERGED. No merge, production deployment, release signing, tagging, publication, branch-protection change or production policy change is authorised by this migration directive.
 
 **Required acknowledgment:** Start your next report with `VPS PREFLIGHT` and state whether the VPS is now the verified authoritative USS host. Do not say “switched” until the exact origin SHAs, worktree freshness, critical-file hashes and automation status have been verified.
+
+
+---
+
+## VPS verification assignment: ChatGPT W-A / W-B / W-C release-closure branch
+
+**Issued:** 2026-11-24  
+**Branch to verify:** `chatgpt/release-closure-wabc`  
+**Base:** `262f1e589cd75ba1bcfc5444bcce669a11c91e19`  
+**Scope:** Read-only verification only. ChatGPT owns this branch. Do not edit, cherry-pick, rebase, merge, or push to it.
+
+The branch contains ChatGPT's independent implementation of Claude's W-A/W-B/W-C release-closure changes. It is seven commits ahead of the stated base and changes only:
+- `.gitattributes`
+- `tools/validate.mjs`
+- `tools/gitattributes-policy.mjs`
+- `tests/gitattributes-policy.test.mjs`
+- `tests/validate-scanner-parity.test.mjs`
+
+### Mandatory freshness gate
+
+1. On the VPS, fetch/prune origin and verify the exact remote branch SHA for `chatgpt/release-closure-wabc`.
+2. Create a fresh isolated read-only worktree from that exact SHA. Do not reuse the local-PC checkout or an existing stale VPS directory.
+3. Verify the five changed paths and their blob hashes against GitHub before running commands.
+4. Read `automation.md`, `AGENTS.md`, `KERNEL.md` and the current handoff before proceeding.
+5. Keep Gemini's own F5 worktree separate and unchanged.
+
+### Required verification
+
+Run on the VPS:
+1. `npm ci --ignore-scripts` only if the isolated worktree has no valid dependencies; do not change lockfiles.
+2. `node --test tests/gitattributes-policy.test.mjs`
+3. `node --test tests/validate-scanner-parity.test.mjs`
+4. `npm test`
+5. `node tools/validate.mjs`
+6. `node tools/validate-evidence.mjs --file templates/security-evidence.example.json`
+7. `node tools/validate-consumer-workflow.mjs`
+8. All documented module/index/bundle generators and zero-drift checks.
+9. `git ls-files --eol` and verify all tracked files remain LF.
+10. Confirm the actual `.gitattributes` rules contain no prohibited `diff`, `binary`, `filter`, `merge`, `-text`, `export-*`, or `linguist*` attributes.
+
+### Adversarial checks
+
+- Confirm the header validator rejects early executable content, altered shebangs and code inserted before the scanner's first `import os`.
+- Confirm both mandatory workflow files fail validation when removed.
+- Confirm prohibited attributes are rejected including `export-custom-policy`, `linguist-generated`, `filter`, `-text`, and `!diff`.
+- Confirm ordinary `text=auto` and `text eol=lf` rules remain accepted and comments mentioning prohibited words do not trigger false positives.
+- Confirm the scanner's canonical header still passes.
+
+### Report
+
+Update the shared handoff with a read-only verification report: exact branch/head SHA, five changed-file hashes, VPS hostname/time, tool versions, each command/exit code, test pass/fail/skip totals, generator drift, LF count, and any failure output. If the shared handoff is not writable under the established ownership rules, return the complete report to ChatGPT for ledger entry.
+
+Do not claim any test passed unless it was executed on this exact SHA. Continue Gemini's independent F5 implementation in its separate worktree while this verification runs. No merge, signing, release, or deployment.
