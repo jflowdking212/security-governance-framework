@@ -1780,3 +1780,48 @@ Gemini must fetch the exact branch SHA, create a fresh isolated VPS worktree, ve
 - Claude's original patch: NOT APPLIED; this branch is an independent implementation of its three findings.
 - Hosted CI and final combined candidate: NOT VERIFIED.
 - PR #9 remains OPEN and UNMERGED. No signing, tagging, release publication, ruleset changes or deployment.
+
+
+---
+
+## 21. Production release readiness assessment
+
+**Assessment date:** 2026-11-24  
+**Disposition:** **NO-GO for production release. ACCEPT WITH CONDITIONS remains the appropriate engineering posture.**  
+**Scope:** Repository state, release checklist, owner actions, automation protocol, current PR metadata and available hosted workflow evidence.
+
+### 21.1 Positive evidence
+
+- PR #9 remains open and unmerged. Current fetched PR metadata reports head `80754305a9c9ee5d9848b1da17274f9e0cfc39ee` on `fix/uss-final-audit-remediation`, targeting `integration/uss-pr3-pr8-hardening` at base `58afa246b2c0d0601a5f3945d72bc3243e657c01`; it is not a direct PR into `main`.
+- GitHub reports two successful workflow runs associated with PR head `80754305...`: USS validation run `44741990545` and USS security scans run `44741991238`. These are positive evidence for that PR head, not proof that every newer isolated remediation branch or the final release candidate has been integrated and verified.
+- The repository's `Protect Main` ruleset is documented as active (ID `27612394`) and requires pull requests, conversation resolution, and blocks deletion/non-fast-forward updates.
+- The release signing identity/public key bootstrap and a prior local signing workflow have been documented as tested. This does not constitute the final signed release ceremony.
+
+### 21.2 Release blockers / unresolved gates
+
+1. **No single final integrated candidate:** W-A/W-B/W-C are implemented on isolated branch `chatgpt/release-closure-wabc` (7 commits ahead of Gemini base `262f1e5...`) but VPS execution remains pending. Its tests, validators, generators and LF checks have not been independently executed on that exact branch head.
+2. **F5-R1 scanner parity remains unresolved in the supervisory ledger:** The last recorded supervisory review found parent-directory symlink traversal in the embedded first-party workflow guard, consumer-template guard and canonical generated guard, even though the standalone scanner had descriptor-based protection. Gemini was assigned to remediate all copies, add parent-symlink and unsupported-platform fail-closed tests, and preserve a separate worktree. No later Gemini verification report was found in the inspected handoff.
+3. **W-04 checksum executable/environment hardening remains open:** The live ChatGPT checksum branch was previously found invoking bare `git` through PATH with inherited environment. A trusted absolute Git executable and sanitized Git environment plus adversarial tests are required. No closure evidence was present in the inspected ledger.
+4. **Independent audit of the exact final combined candidate is outstanding:** The prior Claude assessment was against a disposable local candidate and explicitly excluded later Gemini and ChatGPT fixes. Claude must audit the exact reconciled candidate after implementation and VPS/hosted verification.
+5. **A2-06/A2-11/A2-12 closure is not fully independently evidenced:** The latest inspected integration handoff reports ChatGPT takeover work and identifies remaining authenticity/issuer-identity limits in evidence validation and the need for line-by-line profile cross-review. Those items require exact-head verification and independent review before claiming closure.
+6. **U-01 final release ceremony is pending:** The owner must generate and sign the checksum manifest for the exact release file set, create the signed annotated `v1.0.0` tag, and independently verify the commit, tag, manifest signature and every digest. A previously tested signing workflow is not a substitute.
+7. **Required CI status enforcement is not configured:** The active `Protect Main` ruleset is documented as not requiring the `USS validation` status check. Since hosted workflows are now evidenced as successful on PR head `80754305...`, confirm the exact check name and have the owner decide/configure the required check before release integration.
+8. **Release package and consumer trust evidence:** The release checklist still requires release notes/known limitations and rollback instructions, and consuming applications must pin the signed release commit and verify the manifest/profile digests. The eight stack profiles remain reference-only until exercised against real applications; do not represent them as validated.
+
+### 21.3 Required order to reach GO
+
+1. Gemini closes F5-R1 across standalone, first-party, consumer-template and generated guards, including Windows unsupported-platform fail-closed behaviour; return exact commit and raw test evidence.
+2. Gemini verifies ChatGPT's W-A/W-B/W-C branch on a fresh isolated VPS worktree at its exact latest SHA; do not modify that branch.
+3. ChatGPT closes W-04 on its owned checksum branch and proves fake-PATH Git and hostile `GIT_*` environment variables are neutralized.
+4. Reconcile ownership branches into one candidate using the required squash/rebuild strategy; do not overwrite agent work or change `main`.
+5. Run full VPS validation, all generators/drift checks, regression suite, Semgrep, Gitleaks, OSV and CodeQL where supported on the exact combined candidate; obtain successful hosted CI and record run IDs.
+6. Claude independently audits the exact final candidate SHA, including all previously outstanding A2 findings, and returns a disposition.
+7. Resolve or explicitly disposition known limitations, verify required status-check policy, publish release notes/rollback, then request the owner's explicit release approval.
+8. Owner alone performs U-01 signing/tag ceremony and independently verifies the signed release artefacts. Only then consider production publication and consumer pinning.
+
+### 21.4 Explicit non-claims
+
+- The two successful hosted workflow runs on PR head `80754305...` are acknowledged; they are not claimed as verification of `chatgpt/release-closure-wabc` or a final combined release candidate.
+- No assertion is made that Gemini has no local work; only that no corresponding new report was present in the inspected shared handoff.
+- No production deployment, merge, tag, signing ceremony, or final owner release approval is recorded.
+- Do not change the disposition to GO until the exact candidate and all gates above are evidenced.
