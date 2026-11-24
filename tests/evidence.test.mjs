@@ -337,3 +337,14 @@ test('validator does not invent a maximum evidence age or risk-acceptance durati
  });
  try{const result=run(fixture.file);assert.equal(result.status,0,result.stderr);}finally{fixture.cleanup();}
 });
+
+
+test('run evidence IDs enforce the exact unsigned 64-bit boundary',()=>{
+ for(const reference of ['run:1','run:42','run:18446744073709551615']){
+  const fixture=withReport(r=>{markAllPass(r);r.controls[0].evidence[0].reference=reference;});
+  try{const result=run(fixture.file);assert.equal(result.status,0,reference+': '+result.stderr);}finally{fixture.cleanup();}
+ }
+ for(const reference of ['run:0','run:01','run:-1','run:1.0','run:18446744073709551616','run:99999999999999999999']){
+  expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
+ }
+});
