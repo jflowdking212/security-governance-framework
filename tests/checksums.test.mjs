@@ -56,7 +56,7 @@ test('W-04: ignores hostile PATH Git and inherited GIT_* overrides',t=>{
     GIT_CONFIG_VALUE_0:fakeGit
   });
   assert.equal(result.status,0,result.stderr);
-  assert.match(fs.readFileSync(path.join(cwd,'SHA256SUMS'),'utf8'),/README\\.md/);
+  assert.match(fs.readFileSync(path.join(cwd,'SHA256SUMS'),'utf8'),/README\.md/);
   assert.equal(fs.existsSync(marker),false,'Checksum operation must not execute Git found through hostile PATH');
 });
 
