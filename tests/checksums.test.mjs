@@ -179,7 +179,7 @@ test('adversarial: filesystem checksum mode rejects a symlinked root and symlink
 
   const ancestor=run(cwd,'create','--root','parent-link/subdir','--filesystem');
   assert.notEqual(ancestor.status,0,'Filesystem mode must reject a symlink in a parent component of the selected root');
-  assert.match(ancestor.stderr,/Checksum root path traverses a symbolic link/);
+  assert.match(ancestor.stderr,/Checksum root path (contains|traverses) a symbolic link/);
 });
 
 test('Git-mode verification is stable across Windows CRLF worktree conversion',t=>{
