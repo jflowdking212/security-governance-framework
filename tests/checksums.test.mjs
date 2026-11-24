@@ -28,6 +28,37 @@ function fixture() {
 function run(cwd,command,...args) {
   return spawnSync(process.execPath,[TOOL,command,...args],{cwd,encoding:'utf8'});
 }
+function runWithEnv(cwd,command,args,overrides) {
+  return spawnSync(process.execPath,[TOOL,command,...args],{
+    cwd,encoding:'utf8',env:{...process.env,...overrides}
+  });
+}
+
+test('W-04: ignores hostile PATH Git and inherited GIT_* overrides',t=>{
+  if(process.platform!=='linux'){t.skip('Trusted absolute Git resolution is Linux-only; unsupported platforms fail closed');return;}
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const attacker=fs.mkdtempSync(path.join(os.tmpdir(),'uss-fake-git-path-'));
+  t.after(()=>fs.rmSync(attacker,{recursive:true,force:true}));
+  const marker=path.join(attacker,'executed.txt');
+  const fakeGit=path.join(attacker,'git');
+  fs.writeFileSync(fakeGit,'#!/bin/sh\nprintf executed > '+JSON.stringify(marker)+'\nexit 97\n');
+  fs.chmodSync(fakeGit,0o755);
+
+  const result=runWithEnv(cwd,'create',[],{
+    PATH:attacker,
+    GIT_DIR:path.join(attacker,'attacker.git'),
+    GIT_WORK_TREE:attacker,
+    GIT_INDEX_FILE:path.join(attacker,'attacker.index'),
+    GIT_OBJECT_DIRECTORY:path.join(attacker,'objects'),
+    GIT_ALTERNATE_OBJECT_DIRECTORIES:path.join(attacker,'alternate'),
+    GIT_CONFIG_COUNT:'1',
+    GIT_CONFIG_KEY_0:'core.fsmonitor',
+    GIT_CONFIG_VALUE_0:fakeGit
+  });
+  assert.equal(result.status,0,result.stderr);
+  assert.match(fs.readFileSync(path.join(cwd,'SHA256SUMS'),'utf8'),/README\\.md/);
+  assert.equal(fs.existsSync(marker),false,'Checksum operation must not execute Git found through hostile PATH');
+});
 
 test('checksum tool creates a deterministic manifest and verifies it',t=>{
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
