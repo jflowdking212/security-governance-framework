@@ -9,11 +9,74 @@ const MANIFEST='SHA256SUMS';
 const SIGNATURE='SHA256SUMS.sig';
 const EXCLUDED=new Set([MANIFEST,SIGNATURE]);
 
+function resolveTrustedGit() {
+  // USS checksum verification is Linux-only because its root traversal relies
+  // on O_NOFOLLOW and /proc/self/fd. Resolve Git from fixed system locations,
+  // never from PATH or a caller-controlled environment variable.
+  if(process.platform!=='linux') {
+    throw new Error('Trusted Git resolution is supported only on Linux; refusing to use PATH-based Git.');
+  }
+  const candidates=['/usr/bin/git','/bin/git','/usr/local/bin/git'];
+  for(const candidate of candidates) {
+    try {
+      const resolved=fs.realpathSync(candidate);
+      const stat=fs.statSync(resolved);
+      if(!stat.isFile()||(stat.mode&0o111)===0||(stat.mode&0o022)!==0)continue;
+      if(typeof process.getuid==='function'&&stat.uid!==0&&stat.uid!==process.getuid())continue;
+      let directory=path.dirname(resolved);
+      let safe=true;
+      while(directory!=='/') {
+        const parentStat=fs.statSync(directory);
+        if(!parentStat.isDirectory()||(parentStat.mode&0o022)!==0||
+          (typeof process.getuid==='function'&&parentStat.uid!==0&&parentStat.uid!==process.getuid())) {
+          safe=false;break;
+        }
+        directory=path.dirname(directory);
+      }
+      if(safe)return resolved;
+    } catch {}
+  }
+  throw new Error('No trusted Git executable found in /usr/bin, /bin or /usr/local/bin; refusing to use PATH.');
+}
+
+const TRUSTED_GIT=resolveTrustedGit();
+
+function sanitizedGitEnvironment() {
+  // Do not inherit GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_CONFIG_*,
+  // GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES or other Git
+  // overrides from the caller. The verifier supplies only controlled values.
+  const env={};
+  for(const [key,value] of Object.entries(process.env)) {
+    if(!/^GIT_/i.test(key)&&key!=='PATH'&&key!=='HOME'&&key!=='XDG_CONFIG_HOME')env[key]=value;
+  }
+  env.PATH='/usr/bin:/bin';
+  env.HOME='/nonexistent';
+  env.XDG_CONFIG_HOME='/nonexistent';
+  env.GIT_CONFIG_NOSYSTEM='1';
+  env.GIT_CONFIG_GLOBAL='/dev/null';
+  env.GIT_ATTR_NOSYSTEM='1';
+  env.GIT_TERMINAL_PROMPT='0';
+  env.GIT_OPTIONAL_LOCKS='0';
+  env.LC_ALL='C';
+  return env;
+}
+
 function gitAt(cwd,args,{encoding='utf8'}={}) {
-  // Repository-local core.fsmonitor is executable configuration. Disable it for
-  // every Git invocation made by this verifier, including index enumeration.
-  const r=spawnSync('git',['-c','core.fsmonitor=false',...args],{cwd,encoding,stdio:['ignore','pipe','pipe']});
-  if(r.error)throw new Error('Unable to run git: '+r.error.message);
+  const hardenedArgs=[
+    '-c','core.fsmonitor=false',
+    '-c','core.hooksPath=/dev/null',
+    '-c','core.pager=cat',
+    '-c','core.attributesFile=/dev/null',
+    '-c','core.excludesFile=/dev/null',
+    '-c','diff.external=',
+    '-c','protocol.ext.allow=never',
+    '-c','credential.helper=',
+    ...args
+  ];
+  const r=spawnSync(TRUSTED_GIT,hardenedArgs,{
+    cwd,encoding,stdio:['ignore','pipe','pipe'],env:sanitizedGitEnvironment()
+  });
+  if(r.error)throw new Error('Unable to run trusted Git: '+r.error.message);
   return r;
 }
 
