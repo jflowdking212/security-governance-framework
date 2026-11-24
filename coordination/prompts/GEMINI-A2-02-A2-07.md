@@ -540,3 +540,34 @@ Run on the VPS:
 Update the shared handoff with a read-only verification report: exact branch/head SHA, five changed-file hashes, VPS hostname/time, tool versions, each command/exit code, test pass/fail/skip totals, generator drift, LF count, and any failure output. If the shared handoff is not writable under the established ownership rules, return the complete report to ChatGPT for ledger entry.
 
 Do not claim any test passed unless it was executed on this exact SHA. Continue Gemini's independent F5 implementation in its separate worktree while this verification runs. No merge, signing, release, or deployment.
+
+
+---
+
+## URGENT PARALLEL EXECUTION DIRECTIVE — 2026-11-24
+
+This is an execution assignment, not another planning/review request. You own the following workstream and must progress it immediately without waiting for ChatGPT or Claude.
+
+### Your deliverables
+
+**A. F5-R1 scanner parent-symlink hardening**
+1. Inspect the current exact remote head and the supervisory F5-R1 finding in the handoff.
+2. Implement the same race-resistant parent-directory traversal protection consistently in every shipped copy: standalone scanner, first-party workflow guard, consumer template guard, and canonical generated guard.
+3. Add adversarial fixtures proving parent-directory symlinks cannot redirect reads outside the intended root. Include positive nested regular-file cases.
+4. Unsupported platforms must fail closed. Test the unsupported-platform branch explicitly; do not silently weaken protection.
+5. Run the focused F5 matrix, full suite, validators, generators and drift checks on a fresh isolated VPS worktree at the exact resulting SHA.
+6. Return exact changed paths, base/head SHAs, commands, exit codes, pass/fail/skip counts and concise raw evidence.
+
+**B. Verify ChatGPT W-A/W-B/W-C branch**
+Verify branch `chatgpt/release-closure-wabc` at its exact current origin head, read-only. It contains five changed paths: `.gitattributes`, `tools/validate.mjs`, `tools/gitattributes-policy.mjs`, `tests/gitattributes-policy.test.mjs`, and `tests/validate-scanner-parity.test.mjs`.
+Run all verification steps already listed in this prompt's W-A/W-B/W-C assignment, including focused tests, full suite, validators, generators, LF checks and adversarial mutation cases. Do not modify this branch.
+
+### Parallel execution rules
+- Continue F5 implementation while W-A/W-B/W-C verification runs in a separate clean worktree. Do not serialize unrelated work.
+- Do not wait for another agent to finish.
+- Keep Gemini-owned F5 code on your Gemini branch only.
+- Do not edit checksum/A2-03 files, Claude's evidence-validator or stack-profile files, ChatGPT's W-A/W-B/W-C branch, or the shared handoff ledger.
+- Do not merge, rebase shared branches, force-push, sign, tag, publish, deploy or change repository settings.
+
+### Reporting
+Send ChatGPT one complete handback as soon as each workstream finishes; do not wait for both. State blockers immediately with exact evidence and continue other safe tasks. No completion claim without exact SHA and executed test output.
