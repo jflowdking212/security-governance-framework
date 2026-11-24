@@ -1825,3 +1825,48 @@ Gemini must fetch the exact branch SHA, create a fresh isolated VPS worktree, ve
 - No assertion is made that Gemini has no local work; only that no corresponding new report was present in the inspected shared handoff.
 - No production deployment, merge, tag, signing ceremony, or final owner release approval is recorded.
 - Do not change the disposition to GO until the exact candidate and all gates above are evidenced.
+
+
+---
+
+## 22. Three-way parallel execution split and ChatGPT W-04 implementation
+
+**Issued:** 2026-11-24  
+**Owner directive:** Divide the remaining release blockers into three independent workstreams and execute in parallel. No agent should wait for another agent's unrelated work. Owner approval remains required for merge, signing, tagging, publication and deployment.
+
+### 22.1 Workstream ownership
+
+| Owner | Workstream | Required output |
+|---|---|---|
+| Gemini | F5-R1 parent-symlink hardening across all scanner copies; W-A/W-B/W-C verification on the VPS | Code/tests for F5-R1 plus exact-SHA VPS verification evidence for W-A/W-B/W-C |
+| ChatGPT | W-04 trusted Git executable and environment sanitisation; adversarial tests; supervisory integration | Implementation, regression tests, exact-SHA execution evidence, branch reconciliation plan |
+| Claude | A2-06 evidence-validator closure; A2-11 eight-profile cross-review; A2-12 PNA/LNA terminology and primary-source review | Corrections/patch, test evidence, source URLs and explicit residual limitations |
+
+No overlap is authorised. Gemini must not modify checksum/A2-03, Claude A2-06/A2-11/A2-12, or ChatGPT W-A/W-B/W-C files. Claude must not modify Gemini workflow/scanner files or ChatGPT checksum/W-A/W-B/W-C files. ChatGPT owns the shared handoff ledger.
+
+### 22.2 Prompt delivery
+
+The work instructions were committed to the repository so each agent can fetch the authoritative assignment:
+
+- Gemini prompt commit: `7ade60b1a264770ec55a9034f187a247a0a6729a` on `gemini/d01-d02-f5-f6-remediation`.
+- Claude prompt commit: `933eacd9b0d84b69cafc31f767d82d9f0d534dad` on `fix/uss-final-audit-remediation`.
+
+These are repository-published prompts, not proof that either agent has read or acknowledged them. The owner/agent must surface the relevant prompt in its active workspace.
+
+### 22.3 ChatGPT W-04 implementation
+
+ChatGPT implemented the first W-04 hardening pass on `chatgpt/checksum-root-symlink-hardening`:
+
+- `fed873f07b11c6f3cb8021a370d1be39a8b192fc` — `tools/checksums.mjs`: replace bare `git` lookup through PATH with fixed Linux system candidates, canonical-path resolution, regular-file/executable checks, ownership and write-permission checks; fail closed if no trusted executable is found; scrub inherited `GIT_*`, PATH, HOME and XDG config overrides; set controlled Git environment; disable system/global config, system attributes, fsmonitor, hooks, pager, external diff, credential helper and ext protocol.
+- `24e87d2f3be0afa9ccaf3d41bd5c14753c02f7b9` — `tests/checksums.test.mjs`: add adversarial test using a fake executable in hostile PATH plus hostile `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, object-directory and injected `GIT_CONFIG_COUNT` overrides.
+- `f68d4278a4553d719dd1cac8eee99d2e1cec9a29` — correct the manifest-path assertion in that regression test.
+
+**Verification boundary:** The implementation is committed remotely, but this entry does not claim it has been executed. The branch's latest code/test SHA must be checked, and the focused test, full suite, validators, generators and drift checks must run on a clean exact-SHA VPS worktree. Hosted CI must also be checked for that exact SHA. If the fixed-path ownership checks or platform constraints fail on the supported VPS, correct the implementation rather than weakening the fail-closed policy.
+
+### 22.4 Immediate execution order
+
+1. Gemini begins F5-R1 implementation in its own worktree while separately verifying W-A/W-B/W-C on a fresh read-only worktree.
+2. ChatGPT continues W-04 adversarial coverage and obtains exact-SHA VPS/hosted verification; do not wait for Gemini.
+3. Claude executes A2-06/A2-11/A2-12 implementation and review, returning each completed finding as soon as ready.
+4. ChatGPT reviews all three handbacks, reconciles them into one candidate without overwriting agent commits, then requests Claude's separate independent audit of the exact final combined SHA.
+5. Release gates, owner signing and production approval remain separate final steps. No merge, tag, signing, publication or deployment is authorised by this work split.
