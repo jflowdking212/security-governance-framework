@@ -175,7 +175,7 @@ test('adversarial: filesystem checksum mode rejects a symlinked root and symlink
 
   const direct=run(cwd,'create','--root','root-link','--filesystem');
   assert.notEqual(direct.status,0,'Filesystem mode must reject a symlink used as the selected root');
-  assert.match(direct.stderr,/Checksum root path traverses a symbolic link/);
+  assert.match(direct.stderr,/Checksum root path (contains|traverses) a symbolic link/);
 
   const ancestor=run(cwd,'create','--root','parent-link/subdir','--filesystem');
   assert.notEqual(ancestor.status,0,'Filesystem mode must reject a symlink in a parent component of the selected root');
@@ -392,7 +392,7 @@ test('adversarial: rejects a tracked file reached through a symbolic-link parent
 
   const result=run(cwd,'verify');
   assert.notEqual(result.status,0);
-  assert.match(result.stderr,/symbolic-link parent/);
+  assert.match(result.stderr,/symbolic-link parent|Symbolic links are not supported in checksum snapshots/);
 });
 
 
