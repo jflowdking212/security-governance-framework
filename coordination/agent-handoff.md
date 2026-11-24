@@ -976,3 +976,41 @@ Fresh scanner run `44741749763` at `e290a19`:
 - CodeQL job `136306855460`: still IN PROGRESS at the time this note was written. Re-fetch before claiming the four-scanner run is fully complete.
 
 This correction demonstrates why generated modules must be changed through their canonical builder source, then verified by the drift gate. Do not treat the earlier failed validation as a remaining code defect after the `e290a19` pass; retain it as historical evidence of the corrected workflow.
+
+
+---
+
+## 23. ChatGPT A2-06 unsigned 64-bit run-ID boundary correction
+
+**Date:** 2026-11-24  
+**Owner:** ChatGPT  
+**Branch:** `chatgpt/a2-06-uint64-boundary`  
+**Base:** `933eacd9b0d84b69cafc31f767d82d9f0d534dad`
+
+### Change
+
+The earlier Claude handover described a 20-digit positive decimal run ID as an unsigned 64-bit value. A 20-digit regex alone incorrectly accepts values above the unsigned 64-bit maximum.
+
+Implemented in `tools/validate-evidence.mjs`:
+- Positive decimal only; no leading zero.
+- Maximum 20 decimal digits.
+- Exact numeric upper-bound check using JavaScript `BigInt`.
+- Maximum accepted value: `18446744073709551615`.
+- Reject values above that maximum.
+
+Added regression test in `tests/evidence.test.mjs`:
+- Accept `run:1`, `run:42`, and `run:18446744073709551615`.
+- Reject `run:0`, `run:01`, `run:-1`, `run:1.0`, `run:18446744073709551616`, and `run:99999999999999999999`.
+
+### Commits
+
+- Implementation: `ad467607a503a1141763fb707fe1651f73920844`
+- Regression test: `d0b5ff69efc8d002eccc5166ffba40a05fd00c37`
+
+### Verification boundary
+
+GitHub Actions was triggered for the implementation and test commits. At the time this entry was written, the latest validation run for the test commit was queued; implementation-commit validation and security scans were still in progress. No test pass or hosted scan completion is claimed here. Re-fetch the runs for the exact final test SHA before accepting this correction.
+
+This branch is based on the remote base SHA above and contains only this isolated correction plus this handoff entry. Claude's A2-06/A2-11/A2-12 commits remain local/unpushed and are not included. Cherry-pick or reapply this correction onto Claude's corrected branch after that branch is made available; do not treat this branch as the combined release candidate.
+
+No merge, signing, tagging, publication or deployment was performed.
