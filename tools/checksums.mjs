@@ -42,23 +42,22 @@ function resolveTrustedGit() {
 const TRUSTED_GIT=resolveTrustedGit();
 
 function sanitizedGitEnvironment() {
-  // Do not inherit GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_CONFIG_*,
-  // GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES or other Git
-  // overrides from the caller. The verifier supplies only controlled values.
-  const env={};
-  for(const [key,value] of Object.entries(process.env)) {
-    if(!/^GIT_/i.test(key)&&key!=='PATH'&&key!=='HOME'&&key!=='XDG_CONFIG_HOME')env[key]=value;
-  }
-  env.PATH='/usr/bin:/bin';
-  env.HOME='/nonexistent';
-  env.XDG_CONFIG_HOME='/nonexistent';
-  env.GIT_CONFIG_NOSYSTEM='1';
-  env.GIT_CONFIG_GLOBAL='/dev/null';
-  env.GIT_ATTR_NOSYSTEM='1';
-  env.GIT_TERMINAL_PROMPT='0';
-  env.GIT_OPTIONAL_LOCKS='0';
-  env.LC_ALL='C';
-  return env;
+  // Build a strict allowlist. Do not inherit loader variables (LD_PRELOAD,
+  // LD_LIBRARY_PATH, LD_AUDIT), shell startup variables, PATH, HOME, XDG or
+  // any Git override from the caller.
+  return {
+    PATH:'/usr/bin:/bin',
+    HOME:'/nonexistent',
+    XDG_CONFIG_HOME:'/nonexistent',
+    TMPDIR:'/tmp',
+    GIT_CONFIG_NOSYSTEM:'1',
+    GIT_CONFIG_SYSTEM:'/dev/null',
+    GIT_CONFIG_GLOBAL:'/dev/null',
+    GIT_ATTR_NOSYSTEM:'1',
+    GIT_TERMINAL_PROMPT:'0',
+    GIT_OPTIONAL_LOCKS:'0',
+    LC_ALL:'C'
+  };
 }
 
 function gitAt(cwd,args,{encoding='utf8'}={}) {
