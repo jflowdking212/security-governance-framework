@@ -1721,3 +1721,62 @@ This remains ChatGPT-owned and must be fixed independently of Claude's three-fil
 2. ChatGPT: continue the W-04 trusted Git executable and environment sanitization work on the checksum-owned branch; add regression tests for fake Git on PATH and hostile `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, and `GIT_CONFIG_*` variables. Keep the change isolated from Claude's patch.
 3. After revised Claude patch and W-04 are reconciled, execute the exact combined candidate on the VPS, then obtain hosted CI and Claude's independent final audit of that exact candidate SHA.
 4. Preserve the required squash integration method for A2-03. No merge or production release until all six release gates, signing and owner approvals are satisfied.
+
+
+---
+
+## 20. ChatGPT implementation of W-A / W-B / W-C release-closure corrections
+
+**Date:** 2026-11-24  
+**Implementation branch:** `chatgpt/release-closure-wabc`  
+**Base:** `262f1e589cd75ba1bcfc5444bcce669a11c91e19`  
+**Current disposition:** IMPLEMENTED IN ISOLATED BRANCH; VPS EXECUTION PENDING.
+
+Claude's submitted patch commit `7320298bbfafd13f4aafbaf7d2046b217ee0a566` and patch file were supplied in the conversation but were not available on the remote. Rather than leave the correction waiting, ChatGPT implemented the W-A/W-B/W-C changes independently on a new branch from the exact Gemini base. This branch does not alter Gemini's branch, ChatGPT's A2-03 branch, PR #9, or main.
+
+### 20.1 Changes committed
+
+Branch compare against the exact base reports **7 commits ahead, 0 behind**, with five changed paths:
+
+| File | Change |
+|---|---|
+| `tools/validate.mjs` | Enforces canonical scanner header before `import os`; fails if either required scanner workflow/template is missing; invokes the new .gitattributes policy check |
+| `tools/gitattributes-policy.mjs` | Parses attribute tokens and rejects prohibited exact names and attribute families |
+| `tests/gitattributes-policy.test.mjs` | Tests allowed LF rules, comments, exact line reporting, and prohibited `diff`, `-diff`, `!diff`, `binary`, `filter`, `merge`, `-text`, `!text`, `export-*`, and `linguist*` tokens |
+| `tests/validate-scanner-parity.test.mjs` | Adds adversarial scanner-header mutations and deletion tests for both required workflow files |
+| `.gitattributes` | Forces LF for trust-root, signature, checksum, CSV, allowed-signers, CODEOWNERS, version, license, ignore and example files |
+
+The W-C guard now parses tokens after the path pattern, strips leading `-` or `!` modifiers for classification, ignores full-line comments, rejects all `export-*` and `linguist*` names, and rejects modified `text` attributes while preserving ordinary `text=auto` and `text eol=lf`.
+
+### 20.2 Branch evidence
+
+- Branch: `chatgpt/release-closure-wabc`
+- Base: `262f1e589cd75ba1bcfc5444bcce669a11c91e19`
+- Ahead/behind: `7 / 0`
+- Latest known commit: `71d8eb86da384a7cf2efe5a98c2caff9a9123def`
+- `tools/validate.mjs` blob: `73561b8e8cadd4a9ec69252ca1db1b03941139c5`
+- `tools/gitattributes-policy.mjs` blob: `89a874067f3b193b4efbf0db211532064b036a02`
+- `tests/gitattributes-policy.test.mjs` blob: `33bdfede79f3765d791f7efbadf23bcf99348784`
+- `tests/validate-scanner-parity.test.mjs` blob: `2ce8c29e8aac18e63f2cd2a5cde7a60ed4d8a2a3`
+- `.gitattributes` blob: `5a606078ebfa0516ac7441aa2bd471c855cac59f`
+
+The exact latest branch head should be fetched again by Gemini on the VPS before execution. No local test execution is claimed in this handoff entry.
+
+### 20.3 Gemini VPS verification assignment
+
+ChatGPT appended a read-only verification assignment to Gemini's prompt:
+
+- Prompt commit: `f7c2883d456e0ad5e9fe42bbf10f5a0bfe216042`
+- Prompt blob: `e051ed6242307fc6e50a29c6701763b89aca9f47`
+
+Gemini must fetch the exact branch SHA, create a fresh isolated VPS worktree, verify all five changed-file hashes, then run the focused tests, full suite, validators, generators, drift checks and LF checks. Gemini must not edit this ChatGPT-owned branch. Its F5 workstream must continue in a separate worktree.
+
+### 20.4 Current release status
+
+- W-A: IMPLEMENTED; execution pending.
+- W-B: IMPLEMENTED; execution pending.
+- W-C: IMPLEMENTED with corrected token parser and regression tests; execution pending.
+- W-04: OPEN; separately owned by ChatGPT on the checksum branch.
+- Claude's original patch: NOT APPLIED; this branch is an independent implementation of its three findings.
+- Hosted CI and final combined candidate: NOT VERIFIED.
+- PR #9 remains OPEN and UNMERGED. No signing, tagging, release publication, ruleset changes or deployment.
