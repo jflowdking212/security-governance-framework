@@ -4436,12 +4436,12 @@ test('A2-07: live POSIX scanner guards reject .semgrepignore multi-token/non-fil
     assert.notEqual(multiToken.status, 0, `${guardLabel} must reject multi-token .semgrepignore`);
     assert.match(multiToken.stderr, /\.semgrepignore may exclude only/);
 
-    // 2. Directory .semgrepignore bypass
+    // 2. Directory .semgrepignore bypass (when tracked: rejected fail-closed by binary scanner)
     fs.rmSync(path.join(cwd, '.semgrepignore'));
     fs.mkdirSync(path.join(cwd, '.semgrepignore'));
-    const dirIgnore = runGuard();
-    assert.notEqual(dirIgnore.status, 0, `${guardLabel} must reject directory .semgrepignore`);
-    assert.match(dirIgnore.stderr, /\.semgrepignore must be a regular file/);
+    const dirIgnoreTracked = runGuard();
+    assert.notEqual(dirIgnoreTracked.status, 0, `${guardLabel} must reject tracked path replaced by directory`);
+    assert.match(dirIgnoreTracked.stderr, /tracked path is not a regular file or symlink: \.semgrepignore/);
     fs.rmSync(path.join(cwd, '.semgrepignore'), { recursive: true, force: true });
     fs.writeFileSync(path.join(cwd, '.semgrepignore'), '.git/\nnode_modules/\n');
 
@@ -4480,6 +4480,15 @@ test('A2-07: live POSIX scanner guards reject .semgrepignore multi-token/non-fil
     assert.notEqual(symInfoAttrs.status, 0, `${guardLabel} must reject symlinked .git/info/attributes`);
     assert.match(symInfoAttrs.stderr, /Symlinked \.git\/info\/attributes is not permitted/);
     fs.rmSync(path.join(cwd, '.git', 'info', 'attributes'));
+
+    // 6. Untracked directory .semgrepignore bypass (rejected by bash file-type guard)
+    runGit(['rm', '-q', '.semgrepignore']);
+    runGit(['commit', '-m', 'untrack semgrepignore']);
+    fs.mkdirSync(path.join(cwd, '.semgrepignore'));
+    const dirIgnoreUntracked = runGuard();
+    assert.notEqual(dirIgnoreUntracked.status, 0, `${guardLabel} must reject untracked directory .semgrepignore`);
+    assert.match(dirIgnoreUntracked.stderr, /\.semgrepignore must be a regular file/);
+    fs.rmSync(path.join(cwd, '.semgrepignore'), { recursive: true, force: true });
   }
 });
 
