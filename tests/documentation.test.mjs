@@ -105,5 +105,21 @@ test('Go profile reflects the two newest supported release lines as of 2026-11-2
 
 test('M21 records a dated browser-specific LNA matrix without asserting cross-browser parity',()=>{
  const m21=read('modules/m21-cors-browser-boundary.md');
- for(const term of ['Browser implementation matrix (reviewed 2026-11-25)','Firefox 153','Edge 143','WebKit Bugzilla','not proof of a shipped Safari release','Cross-browser verification rule'])assert.ok(m21.includes(term),'M21 missing '+term);
+ for(const term of ['Browser implementation matrix (reviewed 2026-11-25)','Firefox 153','ESR 153','Edge 143','WebKit Bugzilla','not proof of a shipped Safari release','Cross-browser verification rule'])assert.ok(m21.includes(term),'M21 missing '+term);
+ assert.doesNotMatch(m21,/ESR 145/);
+});
+
+test('F-6: Rust, Node/Express, FastAPI and Spring profiles record 2026-11-25 primary-source lifecycle state and mark unverified claims NOT VERIFIED',()=>{
+ const rust=read('stacks/rust.md');
+ for(const term of ['2026-11-25','Rust 1.85.0','-Zsanitizer=address','DefaultBodyLimit','PayloadConfig','cargo audit','NOT VERIFIED'])assert.ok(rust.includes(term),'Rust profile missing '+term);
+
+ const node=read('stacks/nodejs-express.md');
+ for(const term of ['2026-11-25','Node.js 22','Node.js 24','Node.js 26','2027-04-30','Express','5.x','trust proxy','NOT VERIFIED'])assert.ok(node.includes(term),'Node/Express profile missing '+term);
+
+ const fastapi=read('stacks/python-fastapi.md');
+ for(const term of ['2026-11-25','Python 3.10 reached EOL in October 2026','0.165.0','requires-python >= 3.11','Pydantic v2','TrustedHostMiddleware','NOT VERIFIED'])assert.ok(fastapi.includes(term),'FastAPI profile missing '+term);
+
+ const spring=read('stacks/java-spring.md');
+ for(const term of ['2026-11-25','ended on `2026-06-30`','Spring Boot `3.5.x`','Spring Security `6.5.x`','2026-12-31','2027-07-31','2027-12-31','PolymorphicTypeValidator','NOT VERIFIED'])assert.ok(spring.includes(term),'Spring profile missing '+term);
+ assert.doesNotMatch(spring,/maintained 3\.5\.x deployments may remain valid where the corresponding Spring Security and dependency lines are still supported/);
 });

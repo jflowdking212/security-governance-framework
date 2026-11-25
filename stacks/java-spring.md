@@ -1,7 +1,7 @@
 # Java and Spring Boot reference profile
 
 **Profile status:** REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION  
-**Framework scope:** Enterprise applications using supported Java LTS releases (Java 17+) and maintained Spring Boot 3.5.x/4.x with the matching supported Spring Security 6.5.x/7.x line  
+**Framework scope:** Enterprise applications using supported Java LTS releases (`Java 17+`; `17`/`21`/`25` supported per Spring Boot 4.x system requirements) and actively supported Spring Boot (`4.0.x`/`4.1.x`/`4.2.x`) with the matching supported Spring Security (`7.0.x`/`7.1.x`/`7.2.x`) line. Open-source (OSS) support for Spring Boot `3.5.x` and Spring Security `6.5.x` ended on `2026-06-30` (commercial support only; primary sources checked `2026-11-25`).
 **Related modules:** M01, M02, M03, M04, M05, M06, M08, M09, M10, M12, M21  
 **Companion supplements:** Authentication and federation; API protocol security; container and cloud runtime  
 
@@ -17,7 +17,7 @@ This profile defines security standards for enterprise services built with Java 
 ## Deserialization defense and XML security
 
 - Prohibit the use of Java native serialization (`ObjectInputStream`) on untrusted data streams.
-- Do not activate Jackson polymorphic default typing for untrusted input. If polymorphic deserialization is unavoidable, use a strict `PolymorphicTypeValidator` allowlist, constrain types and payload size, and test the exact Jackson major version; avoid relying on deprecated `disableDefaultTyping()` APIs.
+- Do not activate Jackson polymorphic default typing for untrusted input. If polymorphic deserialization is unavoidable, use a strict `PolymorphicTypeValidator` allowlist with `activateDefaultTyping(ptv, ...)` or `deactivateDefaultTyping()` (Jackson `2.10+`), constrain types and payload size, and test the exact Jackson major version; avoid relying on deprecated `disableDefaultTyping()` APIs. Exact Jackson `3.x` / Spring Boot `4.x` default-typing and module API behavior in a consuming repository is NOT VERIFIED until tested against the resolved BOM.
 - Secure XML parsers against XML External Entity (XXE) attacks: explicitly disable `DOCTYPE` declarations, external general entities, and external parameter entities on all `DocumentBuilderFactory`, `SAXParserFactory`, and `XMLInputFactory` instances.
 
 ## Data access and injection prevention
@@ -42,7 +42,10 @@ This profile defines security standards for enterprise services built with Java 
 ## Runtime support and version verification
 
 - Record the exact JDK vendor and patch version, Spring Boot, Spring Framework, Spring Security, Jackson and servlet-container versions. Use a maintained JDK/Spring release combination and verify it against the official system-requirements and support matrix at review time.
-- Spring Boot 4.x is the current generation and requires Java 17 or later; maintained 3.5.x deployments may remain valid where the corresponding Spring Security and dependency lines are still supported. Do not assume every Spring Boot 3.x application is on Spring Security 6.x.
+- Primary source status (checked `2026-11-25` on `spring.io`):
+  - **Spring Boot `3.5.x` and Spring Security `6.5.x`:** Open-source (OSS) support **ended on `2026-06-30`** (commercial/extended support runs through `2032-06-30`). Do not treat an OSS-only `3.5.x`/`6.5.x` deployment as maintained; whether a consuming deployment holds valid commercial extended support is **NOT VERIFIED** without contract/vendor-repo evidence.
+  - **Spring Boot `4.x` and Spring Security `7.x` (Java `17+` minimum, `17`/`21`/`25` documented):** `4.0.x`/`7.0.x` OSS support ends `2026-12-31`; `4.1.x`/`7.1.x` OSS support ends `2027-07-31`; `4.2.x`/`7.2.x` (released November 2026) OSS support ends `2027-12-31`. Exact Spring Framework, Jackson, Tomcat/Jetty/Undertow, and third-party starter compatibility in a consuming repository is **NOT VERIFIED** until checked against the project BOM/lockfile.
+- Do not assume every Spring Boot major/minor line automatically selects a compatible or patched Spring Security artifact when overrides or parent BOM customizations exist.
 - Keep Actuator management endpoints on a private management interface or restrict them through explicit authentication and network policy. Expose only the health details required for the relevant probe.
 
 ## Required application tests
@@ -57,11 +60,13 @@ This profile defines security standards for enterprise services built with Java 
 
 ## Verification record required before marking this profile validated
 
-Record the consuming repository and exact commit, JDK vendor/version, Spring Boot/Framework/Security/Jackson/container versions, build-tool version, lockfile or dependency verification metadata, security filter chains, CSRF/session model, actuator exposure, negative test commands/results, deployment topology and independent reviewer identity.
+Record the consuming repository and exact commit, JDK vendor/version, Spring Boot/Framework/Security/Jackson/container versions, any active commercial-support entitlement if using `3.5.x`/`6.5.x`, build-tool version, lockfile or dependency verification metadata, security filter chains, CSRF/session model, actuator exposure, negative test commands/results, deployment topology and independent reviewer identity. Until this evidence exists, keep the profile status and consuming-application support claims marked **NOT VERIFIED**.
 
 ## Primary references
 
 - [Spring Boot system requirements](https://docs.spring.io/spring-boot/system-requirements.html)
 - [Spring Boot supported versions](https://docs.spring.io/spring-boot/)
+- [Spring Boot support timeline](https://spring.io/projects/spring-boot#support)
+- [Spring Security support timeline](https://spring.io/projects/spring-security#support)
 - [Spring Security reference](https://docs.spring.io/spring-security/reference/)
 - [Jackson polymorphic deserialization security](https://github.com/FasterXML/jackson-docs/wiki/JacksonPolymorphicDeserialization)

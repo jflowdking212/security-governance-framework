@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { validateConsumerWorkflowStructure, buildExpectedConsumerGuard } from '../tools/validate-consumer-workflow.mjs';
+import { collectScannerParityErrors } from '../tools/validate.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workflowDir = path.join(ROOT, '.github/workflows');
@@ -19,12 +20,15 @@ const FORBIDDEN_ERROR_SUPPRESSIONS = [
   /\|\|\s*\/(?:usr\/)?bin\/true\b/,
   /\|\|\s*:/,
   /\|\|\s*return\b/,
+  /\|\|\s*(?:command|builtin|env)\s+(?:true|:|\/(?:usr\/)?bin\/true)\b/,
+  /\|\|\s*[({]\s*(?:true|:|exit\s+0|return(?:\s+0)?)\b/,
   /;\s*true\b/,
   /;\s*exit\s+0\b/,
   /;\s*(?:echo|printf)\b/,
   /;\s*:/,
-  /\bset\s+\+e\b/,
-  /\bset\s+\+o\s+(?:errexit|e|pipefail)\b/,
+  /;\s*[({]\s*(?:true|:|exit\s+0|return(?:\s+0)?)\b/,
+  /\bset\s+(?:[^;\n]*\s+)?\+[a-zA-Z]*e/i,
+  /\bset\s+(?:[^;\n]*\s+)?\+o\s+(?:errexit|e|pipefail)\b/i,
   /\btrap\s+[^;\n]*\s+ERR\b/i,
   /--suppress-errors\b/,
   /--no-error\b/,
@@ -35,9 +39,9 @@ const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_
 const FORBIDDEN_TRIGGER_FILTER_KEYS = new Set(['branches-ignore', 'tags', 'tags-ignore', 'paths', 'paths-ignore', 'types']);
 
 // Matches any GitHub Actions expression span containing untrusted context or input references,
-// including dot/bracket notation and expressions wrapped inside helper functions like format() or toJSON().
+// including bare context objects (`toJSON(github)`), dot/bracket notation, and helper functions.
 const EXPRESSION_SPAN_REGEX = /\$\{\{([\s\S]*?)\}\}/g;
-const UNTRUSTED_CONTEXT_REGEX = /\b(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|event_path|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
+const UNTRUSTED_CONTEXT_REGEX = /\b(?:github(?:\s*\.\s*(?:event|event_path|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|\s*\[|\s*(?:[,)\]}]|$))|inputs\b)/i;
 
 function hasUntrustedExpression(text) {
   EXPRESSION_SPAN_REGEX.lastIndex = 0;
@@ -490,7 +494,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '',
     'try:',
     '    result = subprocess.run(',
-    '        [trusted_git, "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],',
+    '        [trusted_git, "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-s", "-z"],',
     '        cwd=ROOT,',
     '        stdout=subprocess.PIPE,',
     '        stderr=subprocess.PIPE,',
@@ -515,9 +519,30 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '        print("FAIL CLOSED: repository root is not a directory", file=sys.stderr)',
     '        sys.exit(2)',
     '',
-    '    for rel in result.stdout.split(b"\\0"):',
-    '        if not rel:',
+    '    for record in result.stdout.split(b"\\0"):',
+    '        if not record:',
     '            continue',
+    '',
+    '        meta, sep, rel = record.partition(b"\\t")',
+    '        meta_parts = meta.split(b" ")',
+    '        if sep != b"\\t" or len(meta_parts) != 3 or not rel:',
+    '            print(f"FAIL CLOSED: malformed git ls-files -s record: {record!r}", file=sys.stderr)',
+    '            sys.exit(2)',
+    '',
+    '        index_mode, _obj, stage = meta_parts',
+    '        if stage != b"0":',
+    '            print(',
+    '                f"FAIL CLOSED: unmerged git index stage {stage.decode(\'ascii\', \'replace\')} for tracked path: {os.fsdecode(rel)}",',
+    '                file=sys.stderr,',
+    '            )',
+    '            sys.exit(2)',
+    '',
+    '        if index_mode not in (b"100644", b"100755", b"120000"):',
+    '            print(',
+    '                f"FAIL: unsupported git index mode {index_mode.decode(\'ascii\', \'replace\')} for tracked path: {os.fsdecode(rel)}",',
+    '                file=sys.stderr,',
+    '            )',
+    '            sys.exit(1)',
     '',
     '        parts = rel.split(b"/")',
     '        for comp in parts:',
@@ -549,11 +574,24 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '                print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
     '                sys.exit(2)',
     '',
+    '            if index_mode == b"120000":',
+    '                if stat.S_ISLNK(leaf_stat.st_mode):',
+    '                    continue',
+    '                print(',
+    '                    f"FAIL: tracked symbolic link (mode 120000) is not a symbolic link in worktree: {os.fsdecode(rel)}",',
+    '                    file=sys.stderr,',
+    '                )',
+    '                sys.exit(1)',
+    '',
     '            if stat.S_ISLNK(leaf_stat.st_mode):',
-    '                continue',
+    '                print(',
+    '                    f"FAIL: tracked regular file (mode {index_mode.decode(\'ascii\')}) is replaced by a symbolic link in worktree: {os.fsdecode(rel)}",',
+    '                    file=sys.stderr,',
+    '                )',
+    '                sys.exit(1)',
     '',
     '            if not stat.S_ISREG(leaf_stat.st_mode):',
-    '                print(f"FAIL: tracked path is not a regular file or symlink: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                print(f"FAIL: tracked path is not a regular file: {os.fsdecode(rel)}", file=sys.stderr)',
     '                sys.exit(1)',
     '',
     '            file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
@@ -647,6 +685,10 @@ const CONSUMER_CONFIG_GUARD_RUN = buildScannerConfigGuard(
 function assertScannerConfigGuard(step, label, consumerTemplate = false) {
   assert.equal(step.name, 'Reject unreviewed scanner configuration', label + ' must include the scanner configuration guard');
   assert.equal(step.shell, 'bash', label + ' scanner configuration guard must use bash');
+  assert.equal(step.uses, undefined, label + ' scanner configuration guard must not define uses');
+  assert.equal(step.with, undefined, label + ' scanner configuration guard must not define with');
+  assert.equal(step.env, undefined, label + ' scanner configuration guard must not define env');
+  assert.equal(step['continue-on-error'], undefined, label + ' scanner configuration guard must not define continue-on-error');
   const expected = consumerTemplate ? CONSUMER_CONFIG_GUARD_RUN : SCANNER_CONFIG_GUARD_RUN;
   assert.equal(step.run?.trim(), expected.trim(), label + ' must execute the exact fail-closed scanner configuration guard');
 }
@@ -736,7 +778,10 @@ function assertNoUntrustedExpressionsInValue(value, context) {
     return;
   }
   if (value && typeof value === 'object') {
-    for (const [key, item] of Object.entries(value)) assertNoUntrustedExpressionsInValue(item, context + '.' + key);
+    for (const [key, item] of Object.entries(value)) {
+      assertNoUntrustedExpressionsInValue(key, context + ' key ' + key);
+      assertNoUntrustedExpressionsInValue(item, context + '.' + key);
+    }
   }
 }
 
@@ -772,6 +817,7 @@ function assertSafeEnv(env, context, allowedKeys = null) {
   if (env === undefined || env === null) return;
   assert.ok(typeof env === 'object' && !Array.isArray(env), context + ' env must be an object');
   for (const [name, value] of Object.entries(env)) {
+    assertNoUntrustedExpressionsInValue(name, context + ' env key ' + name);
     const upper = name.toUpperCase();
     if (FORBIDDEN_ENV_NAMES.has(upper) || upper.startsWith('NPM_CONFIG_') || upper.startsWith('GIT_')) {
       assert.fail(context + " must not define forbidden runtime environment variable '" + name + "'");
@@ -1069,8 +1115,13 @@ function validateWorkflowSecurity(parsed, label) {
   assertNoUntrustedExpressionsInValue(parsed.defaults, label + ' defaults');
   assertNoUntrustedExpressionsInValue(parsed.concurrency, label + ' concurrency');
 
-  if (parsed.concurrency) {
+  if (parsed.concurrency !== undefined) {
+    assert.ok(parsed.concurrency && typeof parsed.concurrency === 'object' && !Array.isArray(parsed.concurrency), label + ' concurrency must be an object');
     assert.notEqual(parsed.concurrency['cancel-in-progress'], true, label + ' must not set concurrency cancel-in-progress: true');
+    assert.ok(
+      parsed.concurrency['cancel-in-progress'] === undefined || parsed.concurrency['cancel-in-progress'] === false,
+      label + ' must not set concurrency cancel-in-progress'
+    );
   }
 
   assert.ok(parsed.permissions !== undefined && parsed.permissions !== null, label + ' must declare workflow-level permissions');
@@ -1101,28 +1152,54 @@ function validateWorkflowSecurity(parsed, label) {
     assertNoUntrustedExpressionsInValue(rawTriggers.workflow_dispatch, label + ' trigger workflow_dispatch');
   }
   if (rawTriggers.schedule !== undefined) {
+    assertNoUntrustedExpressionsInValue(rawTriggers.schedule, label + ' trigger schedule');
     assert.ok(Array.isArray(rawTriggers.schedule) && rawTriggers.schedule.length > 0, label + ' schedule must be a non-empty array');
     for (const entry of rawTriggers.schedule) {
       assert.ok(
-        entry && typeof entry === 'object' && !Array.isArray(entry) && Object.keys(entry).every(k => k === 'cron') && typeof entry.cron === 'string',
-        label + ' schedule entries must define only a cron string'
+        entry && typeof entry === 'object' && !Array.isArray(entry) && Object.keys(entry).every(k => k === 'cron') && typeof entry.cron === 'string' && entry.cron.trim().split(/\s+/).length === 5,
+        label + ' schedule entries must define only a 5-field cron string'
       );
     }
   }
 
   assertSafeEnv(parsed.env, label + ' workflow');
-  if (parsed.defaults?.run?.['working-directory']) {
-    assert.fail(label + ' defaults.run must not override working-directory');
+  if (parsed.defaults !== undefined) {
+    assert.ok(parsed.defaults && typeof parsed.defaults === 'object' && !Array.isArray(parsed.defaults), label + ' defaults must be an object');
+    for (const dKey of Object.keys(parsed.defaults)) {
+      assert.equal(dKey, 'run', label + " defaults contains unapproved key '" + dKey + "'");
+    }
+    if (parsed.defaults.run !== undefined) {
+      assert.ok(parsed.defaults.run && typeof parsed.defaults.run === 'object' && !Array.isArray(parsed.defaults.run), label + ' defaults.run must be an object');
+      if (parsed.defaults.run['working-directory']) {
+        assert.fail(label + ' defaults.run must not override working-directory');
+      }
+      assertSafeShell(parsed.defaults.run.shell, label + ' workflow defaults.run.shell');
+      for (const rKey of Object.keys(parsed.defaults.run)) {
+        assert.equal(rKey, 'shell', label + " defaults.run contains unapproved key '" + rKey + "'");
+      }
+    }
   }
-  assertSafeShell(parsed.defaults?.run?.shell, label + ' workflow defaults.run.shell');
   assertPinnedActions(parsed, label);
 
   const jobs = parsed.jobs || {};
   assert.ok(Object.keys(jobs).length > 0, label + ' must define at least one job');
   for (const [jobId, job] of Object.entries(jobs)) {
     assert.equal(job.services, undefined, label + ' job ' + jobId + ' must not declare services');
-    if (job.defaults?.run?.['working-directory']) {
-      assert.fail(label + ' job ' + jobId + ' defaults.run must not override working-directory');
+    if (job.defaults !== undefined) {
+      assert.ok(job.defaults && typeof job.defaults === 'object' && !Array.isArray(job.defaults), label + ' job ' + jobId + ' defaults must be an object');
+      for (const dKey of Object.keys(job.defaults)) {
+        assert.equal(dKey, 'run', label + ' job ' + jobId + " defaults contains unapproved key '" + dKey + "'");
+      }
+      if (job.defaults.run !== undefined) {
+        assert.ok(job.defaults.run && typeof job.defaults.run === 'object' && !Array.isArray(job.defaults.run), label + ' job ' + jobId + ' defaults.run must be an object');
+        if (job.defaults.run['working-directory']) {
+          assert.fail(label + ' job ' + jobId + ' defaults.run must not override working-directory');
+        }
+        assertSafeShell(job.defaults.run.shell, label + ' job ' + jobId + ' defaults.run.shell');
+        for (const rKey of Object.keys(job.defaults.run)) {
+          assert.equal(rKey, 'shell', label + ' job ' + jobId + " defaults.run contains unapproved key '" + rKey + "'");
+        }
+      }
     }
     for (const key of Object.keys(job)) {
       assert.ok(ALLOWED_JOB_KEYS.has(key), label + ' job ' + jobId + " contains unapproved key '" + key + "'");
@@ -1133,9 +1210,9 @@ function validateWorkflowSecurity(parsed, label) {
     assertJobPermissions(jobId, job, label);
     assertNotConstantFalse(job.if, label + ' job ' + jobId);
     assert.ok(!job['continue-on-error'], label + ' job ' + jobId + ' must not have continue-on-error: true');
+    assert.equal(job['continue-on-error'], undefined, label + ' job ' + jobId + ' must not define continue-on-error');
     assertSafeEnv(job.env, label + ' job ' + jobId);
     assertSafeWith(job.with, label + ' job ' + jobId);
-    assertSafeShell(job.defaults?.run?.shell, label + ' job ' + jobId + ' defaults.run.shell');
 
     if (job.uses) {
       assert.equal(job['runs-on'], undefined, label + ' reusable job ' + jobId + ' must not override runs-on');
@@ -1156,6 +1233,9 @@ function validateWorkflowSecurity(parsed, label) {
       if (step.uses !== undefined && step.run !== undefined) {
         assert.fail(label + ' job ' + jobId + ' step ' + i + " must not combine both 'uses' and 'run'");
       }
+      if (step.uses !== undefined && step.shell !== undefined) {
+        assert.fail(label + ' job ' + jobId + ' step ' + i + " using 'uses' must not specify shell");
+      }
       for (const k of Object.keys(step)) {
         assert.ok(ALLOWED_STEP_KEYS.has(k), label + ' job ' + jobId + ' step ' + i + " contains unapproved key '" + k + "'");
       }
@@ -1163,6 +1243,7 @@ function validateWorkflowSecurity(parsed, label) {
       assertNoUntrustedExpressionsInValue(step.if, label + ' job ' + jobId + ' step ' + i + ' if');
       assertNotConstantFalse(step.if, label + ' job ' + jobId + ' step ' + i + ' (' + (step.name || 'unnamed') + ')');
       assert.ok(!step['continue-on-error'], label + ' job ' + jobId + ' step ' + i + ' must not have continue-on-error: true');
+      assert.equal(step['continue-on-error'], undefined, label + ' job ' + jobId + ' step ' + i + ' must not define continue-on-error');
       assertSafeEnv(step.env, label + ' job ' + jobId + ' step ' + i);
       assertSafeWith(step.with, label + ' job ' + jobId + ' step ' + i);
       assertSafeShell(step.shell, label + ' job ' + jobId + ' step ' + i + ' shell');
@@ -1215,12 +1296,16 @@ function validateWorkflowSecurity(parsed, label) {
  */
 function validateUssValidationWorkflow(parsed) {
   validateWorkflowSecurity(parsed, 'uss-validation.yml');
+  assert.equal(parsed.env, undefined, 'uss-validation.yml workflow-level env is not permitted');
+  assert.equal(parsed.defaults, undefined, 'uss-validation.yml workflow-level defaults is not permitted');
   assertExactObject(parsed.permissions, { contents: 'read' }, 'uss-validation.yml workflow permissions');
   assertBranchCoverage(parsed, 'uss-validation.yml', ['main', 'integration/uss-pr3-pr8-hardening']);
 
   const job = parsed.jobs?.validate;
   assert.ok(job, 'uss-validation.yml must contain validate job');
   assert.equal(job.permissions, undefined, 'uss-validation.yml validate job must inherit read-only workflow permissions');
+  assert.equal(job.env, undefined, 'uss-validation.yml validate job env is not permitted');
+  assert.equal(job.defaults, undefined, 'uss-validation.yml validate job defaults is not permitted');
   assertNoMandatoryJobConditions('validate', job, 'uss-validation.yml');
   const steps = job.steps || [];
   const stepMatchers = [
@@ -1253,6 +1338,7 @@ function validateUssValidationWorkflow(parsed) {
       assert.equal(steps[idx].uses, undefined, 'uss-validation.yml step ' + idx + ' must not define uses');
       assert.equal(steps[idx].with, undefined, 'uss-validation.yml step ' + idx + ' must not define with');
       assert.equal(steps[idx].env, undefined, 'uss-validation.yml step ' + idx + ' must not define env');
+      assert.equal(steps[idx].shell, undefined, 'uss-validation.yml step ' + idx + ' must not override shell');
       const normalizedRun = (steps[idx].run || '').replace(/\r\n/g, '\n').trim();
       assert.equal(normalizedRun, EXPECTED_USS_COMMANDS[idx - 2], 'uss-validation.yml step ' + idx + ' does not match exact approved execution contract');
       if (/(?:^|\s)\|(?:\s|$)/.test(steps[idx].run)) {
@@ -1287,6 +1373,8 @@ function validateUssValidationWorkflow(parsed) {
  */
 function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', consumerTemplate = false) {
   validateWorkflowSecurity(parsed, label);
+  assert.equal(parsed.env, undefined, label + ' workflow-level env is not permitted');
+  assert.equal(parsed.defaults, undefined, label + ' workflow-level defaults is not permitted');
   assertExactObject(parsed.permissions, { contents: 'read' }, label + ' workflow permissions');
   assertBranchCoverage(parsed, label, consumerTemplate ? ['**'] : ['main', 'integration/uss-pr3-pr8-hardening']);
 
@@ -1304,6 +1392,8 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   assert.ok(gitleaksJob, label + ' must contain ' + gitleaksId + ' job');
   for (const jobId of [gitleaksId, 'semgrep', 'codeql', 'osv']) {
     assert.ok(jobs[jobId], label + ' must contain ' + jobId + ' job');
+    assert.equal(jobs[jobId].env, undefined, label + ' job ' + jobId + ' env is not permitted');
+    assert.equal(jobs[jobId].defaults, undefined, label + ' job ' + jobId + ' defaults is not permitted');
     assertNoMandatoryJobConditions(jobId, jobs[jobId], label);
   }
 
@@ -1353,6 +1443,7 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   const semgrepStep = semgrepSteps[2];
   assert.equal(semgrepStep.uses, undefined, label + ' Semgrep scan step must not define uses');
   assert.equal(semgrepStep.with, undefined, label + ' Semgrep scan step must not define with');
+  assert.equal(semgrepStep.shell, undefined, label + ' Semgrep scan step must not override shell');
   assert.ok(semgrepStep.run && semgrepStep.run.includes('semgrep scan'), label + ' Semgrep job must execute a scan');
   assert.ok(semgrepStep.run.includes('--error'), 'Semgrep scan must fail on findings with --error');
   assert.ok(semgrepStep.run.includes('--strict'), 'Semgrep scan must fail on findings with --strict');
@@ -4264,7 +4355,7 @@ test('A2-02: consumer validator rejects unapproved triggers, string permissions,
 
   const badSchedule = YAML.parse(baseText);
   badSchedule.on.schedule = [{ cron: '17 5 * * 1' }, { invalid: true }];
-  assert.throws(() => validateConsumerWorkflowStructure(badSchedule), /schedule entries must define only a cron string/);
+  assert.throws(() => validateConsumerWorkflowStructure(badSchedule), /schedule entries must define only a 5-field cron string/);
 
   const emptyBuildMode = YAML.parse(baseText);
   emptyBuildMode.jobs.codeql.steps[1].with['build-mode'] = '   ';
@@ -4443,7 +4534,7 @@ test('A2-07: live POSIX scanner guards reject .semgrepignore multi-token/non-fil
     fs.mkdirSync(path.join(cwd, '.semgrepignore'));
     const dirIgnoreTracked = runGuard();
     assert.notEqual(dirIgnoreTracked.status, 0, `${guardLabel} must reject tracked path replaced by directory`);
-    assert.match(dirIgnoreTracked.stderr, /tracked path is not a regular file or symlink: \.semgrepignore/);
+    assert.match(dirIgnoreTracked.stderr, /tracked path is not a regular file: \.semgrepignore/);
     fs.rmSync(path.join(cwd, '.semgrepignore'), { recursive: true, force: true });
     fs.writeFileSync(path.join(cwd, '.semgrepignore'), '.git/\nnode_modules/\n');
 
@@ -4494,7 +4585,406 @@ test('A2-07: live POSIX scanner guards reject .semgrepignore multi-token/non-fil
   }
 });
 
+// ==============================================================================
+// SCAN-S6 + W-02/W-03 Adversarial Addendum Tests
+// ==============================================================================
 
+function extractScannerBlocksFromWorkflow(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  return [...content.matchAll(/python3 - <<'EOF'\r?\n([\s\S]*?)\r?\n\s*EOF/g)].map(m =>
+    m[1].split(/\r?\n/).map(l => (l.startsWith('          ') ? l.slice(10) : l)).join('\n').trim()
+  );
+}
+
+function getAllShippedScannerEngines() {
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const firstPartyBlocks = extractScannerBlocksFromWorkflow(path.join(ROOT, '.github', 'workflows', 'security-scans.yml'));
+  const consumerBlocks = extractScannerBlocksFromWorkflow(path.join(ROOT, 'templates', 'ci', 'consumer-security-scans.yml'));
+  const expectedGuard = buildExpectedConsumerGuard();
+  const guardLines = expectedGuard.split(/\r?\n/);
+  const eof1 = guardLines.indexOf("python3 - <<'EOF'");
+  const eof2 = guardLines.lastIndexOf('EOF');
+  const expectedEngine = guardLines.slice(eof1 + 1, eof2).join('\n').trim();
+
+  assert.strictEqual(firstPartyBlocks.length, 2);
+  assert.strictEqual(consumerBlocks.length, 2);
+  assert.ok(eof1 >= 0 && eof2 > eof1);
+
+  return [
+    { name: 'standalone scanner', file: scannerPath, code: fs.readFileSync(scannerPath, 'utf8') },
+    { name: 'security-scans.yml gitleaks copy', code: firstPartyBlocks[0] },
+    { name: 'security-scans.yml semgrep copy', code: firstPartyBlocks[1] },
+    { name: 'consumer-security-scans.yml secrets copy', code: consumerBlocks[0] },
+    { name: 'consumer-security-scans.yml semgrep copy', code: consumerBlocks[1] },
+    { name: 'validate-consumer-workflow.mjs expected guard', code: expectedEngine }
+  ];
+}
+
+test('SCAN-S6: scanner rejects regular files (100644 and 100755) replaced by worktree symlinks across all shipped copies and live workflow guards', t => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-scan-s6-reg-'));
+  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+
+  const runGit = args => {
+    const res = spawnSync('git', args, { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(res.status, 0, 'git ' + args.join(' ') + ' failed: ' + res.stderr);
+    return res;
+  };
+  runGit(['init', '-q']);
+  runGit(['config', 'user.name', 'USS SCAN-S6 Test']);
+  runGit(['config', 'user.email', 'uss-s6@example.invalid']);
+  runGit(['config', 'commit.gpgsign', 'false']);
+
+  for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+    fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+  }
+  fs.writeFileSync(path.join(tempDir, '.semgrepignore'), '.git/\nnode_modules/\n');
+  fs.writeFileSync(path.join(tempDir, 'tools/clean.txt'), 'clean text\n');
+  fs.writeFileSync(path.join(tempDir, 'tools/payload.bin'), Buffer.from('binary\x00blob'));
+  fs.writeFileSync(path.join(tempDir, 'tools/script.sh'), '#!/bin/sh\necho hi\n');
+  fs.writeFileSync(path.join(tempDir, 'tests/t.mjs'), 'export const t = true;\n');
+  fs.writeFileSync(path.join(tempDir, '.github/workflows/ci.yml'), 'name: ci\n');
+  fs.writeFileSync(path.join(tempDir, 'templates/t.yml'), 'name: t\n');
+  runGit(['add', '.']);
+  runGit(['update-index', '--chmod=+x', 'tools/script.sh']);
+  runGit(['commit', '-m', 'indexed 100644 and 100755 files']);
+
+  const modeOut = runGit(['ls-files', '-s', 'tools/payload.bin', 'tools/script.sh']).stdout;
+  assert.match(modeOut, /^100644 .*tools\/payload\.bin$/m);
+  assert.match(modeOut, /^100755 .*tools\/script\.sh$/m);
+
+  const copies = getAllShippedScannerEngines();
+
+  // Replace 100644 binary file in worktree with symlink to clean regular file
+  try {
+    fs.rmSync(path.join(tempDir, 'tools/payload.bin'));
+    fs.symlinkSync('clean.txt', path.join(tempDir, 'tools/payload.bin'));
+  } catch (err) {
+    if (process.platform === 'win32' && err.code === 'EPERM') {
+      for (const eng of copies) {
+        const args = eng.file ? [eng.file] : ['-c', eng.code];
+        const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+        assert.equal(res.status, 2, eng.name + ' must fail closed on win32');
+      }
+      return;
+    }
+    throw err;
+  }
+
+  for (const eng of copies) {
+    const args = eng.file ? [eng.file] : ['-c', eng.code];
+    const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+    if (process.platform === 'win32') {
+      assert.equal(res.status, 2, eng.name + ' must fail closed on win32');
+      assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(res.status, 1, eng.name + ' must reject worktree symlink replacing 100644 file');
+      assert.match(res.stderr, /tracked regular file \(mode 100644\) is replaced by a symbolic link in worktree: tools\/payload\.bin/);
+      assert.doesNotMatch(res.stdout, /PASS:/);
+    }
+  }
+
+  if (process.platform !== 'win32') {
+    for (const [guardLabel, guardScript] of [
+      ['SCANNER_CONFIG_GUARD_RUN', SCANNER_CONFIG_GUARD_RUN],
+      ['CONSUMER_CONFIG_GUARD_RUN', CONSUMER_CONFIG_GUARD_RUN]
+    ]) {
+      const liveGuard = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd: tempDir, encoding: 'utf8', input: guardScript });
+      assert.equal(liveGuard.status, 1, guardLabel + ' must fail on 100644 worktree symlink');
+      assert.match(liveGuard.stderr, /tracked regular file \(mode 100644\) is replaced by a symbolic link in worktree: tools\/payload\.bin/);
+    }
+
+    // Restore payload.bin to clean regular text file, then replace 100755 script.sh with symlink
+    fs.rmSync(path.join(tempDir, 'tools/payload.bin'));
+    fs.writeFileSync(path.join(tempDir, 'tools/payload.bin'), 'clean text now\n');
+    fs.rmSync(path.join(tempDir, 'tools/script.sh'));
+    fs.symlinkSync('clean.txt', path.join(tempDir, 'tools/script.sh'));
+
+    for (const eng of copies) {
+      const args = eng.file ? [eng.file] : ['-c', eng.code];
+      const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+      assert.equal(res.status, 1, eng.name + ' must reject worktree symlink replacing 100755 file');
+      assert.match(res.stderr, /tracked regular file \(mode 100755\) is replaced by a symbolic link in worktree: tools\/script\.sh/);
+    }
+  }
+});
+
+test('SCAN-S6: scanner preserves valid indexed symlinks (120000) and fails closed if an indexed symlink is replaced in worktree or submodule mode (160000) exists', t => {
+  if (process.platform === 'win32') {
+    t.skip('Indexed symlink and POSIX openat mode tests run on Linux VPS and hosted Ubuntu CI');
+    return;
+  }
+  const pythonBin = 'python3';
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-scan-s6-120000-'));
+  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+
+  const runGit = args => {
+    const res = spawnSync('git', args, { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(res.status, 0, 'git ' + args.join(' ') + ' failed: ' + res.stderr);
+    return res;
+  };
+  runGit(['init', '-q']);
+  runGit(['config', 'user.name', 'USS SCAN-S6 Symlink Test']);
+  runGit(['config', 'user.email', 'uss-s6-sym@example.invalid']);
+  runGit(['config', 'commit.gpgsign', 'false']);
+
+  for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+    fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+  }
+  fs.writeFileSync(path.join(tempDir, '.semgrepignore'), '.git/\nnode_modules/\n');
+  fs.writeFileSync(path.join(tempDir, 'tools/target.txt'), 'clean target\n');
+  fs.symlinkSync('target.txt', path.join(tempDir, 'tools/valid_link.txt'));
+  fs.writeFileSync(path.join(tempDir, 'tests/t.mjs'), 'export const t = true;\n');
+  fs.writeFileSync(path.join(tempDir, '.github/workflows/ci.yml'), 'name: ci\n');
+  fs.writeFileSync(path.join(tempDir, 'templates/t.yml'), 'name: t\n');
+  runGit(['add', '.']);
+  runGit(['commit', '-m', 'indexed 120000 symlink']);
+
+  const modeOut = runGit(['ls-files', '-s', 'tools/valid_link.txt']).stdout;
+  assert.match(modeOut, /^120000 .*tools\/valid_link\.txt$/m);
+
+  const copies = getAllShippedScannerEngines();
+  for (const eng of copies) {
+    const args = eng.file ? [eng.file] : ['-c', eng.code];
+    const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(res.status, 0, eng.name + ' must preserve valid indexed 120000 symlink: ' + res.stderr);
+    assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+  }
+  for (const [guardLabel, guardScript] of [
+    ['SCANNER_CONFIG_GUARD_RUN', SCANNER_CONFIG_GUARD_RUN],
+    ['CONSUMER_CONFIG_GUARD_RUN', CONSUMER_CONFIG_GUARD_RUN]
+  ]) {
+    const liveGuard = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd: tempDir, encoding: 'utf8', input: guardScript });
+    assert.equal(liveGuard.status, 0, guardLabel + ' must pass with valid indexed 120000 symlink: ' + liveGuard.stderr);
+  }
+
+  // Replacing indexed 120000 symlink in worktree with a regular binary file must fail closed
+  fs.rmSync(path.join(tempDir, 'tools/valid_link.txt'));
+  fs.writeFileSync(path.join(tempDir, 'tools/valid_link.txt'), Buffer.from('evil\x00file'));
+  for (const eng of copies) {
+    const args = eng.file ? [eng.file] : ['-c', eng.code];
+    const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(res.status, 1, eng.name + ' must reject indexed 120000 replaced by non-symlink');
+    assert.match(res.stderr, /tracked symbolic link \(mode 120000\) is not a symbolic link in worktree: tools\/valid_link\.txt/);
+  }
+
+  // Unsupported gitlink / submodule mode (160000) must also fail closed
+  fs.rmSync(path.join(tempDir, 'tools/valid_link.txt'));
+  fs.symlinkSync('target.txt', path.join(tempDir, 'tools/valid_link.txt'));
+  fs.mkdirSync(path.join(tempDir, 'submod'));
+  runGit(['update-index', '--add', '--cacheinfo', '160000,1111111111111111111111111111111111111111,submod']);
+  for (const eng of copies) {
+    const args = eng.file ? [eng.file] : ['-c', eng.code];
+    const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(res.status, 1, eng.name + ' must reject unsupported gitlink mode 160000');
+    assert.match(res.stderr, /unsupported git index mode 160000 for tracked path: submod/);
+  }
+});
+
+test('SCAN-S6 & W-03: parity and mutation tests detect weakening across standalone, both workflow copies, and expected consumer guard without modifying live repo', async t => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-parity-matrix-'));
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  fs.mkdirSync(path.join(tempRoot, 'tools'), { recursive: true });
+  fs.mkdirSync(path.join(tempRoot, '.github', 'workflows'), { recursive: true });
+  fs.mkdirSync(path.join(tempRoot, 'templates', 'ci'), { recursive: true });
+
+  const relFiles = [
+    'tools/uss-tracked-binary-scanner.py',
+    '.github/workflows/security-scans.yml',
+    'templates/ci/consumer-security-scans.yml'
+  ];
+  for (const rel of relFiles) {
+    fs.copyFileSync(path.join(ROOT, rel), path.join(tempRoot, rel));
+  }
+
+  // Baseline clean isolated root must produce zero parity errors
+  assert.deepEqual(await collectScannerParityErrors(tempRoot, buildExpectedConsumerGuard()), []);
+
+  // Mutation 1: standalone scanner weakened back to ls-files -z
+  const standaloneFile = path.join(tempRoot, 'tools/uss-tracked-binary-scanner.py');
+  const origStandalone = fs.readFileSync(standaloneFile, 'utf8');
+  fs.writeFileSync(standaloneFile, origStandalone.replace('"ls-files", "-s", "-z"', '"ls-files", "-z"'));
+  let errs = await collectScannerParityErrors(tempRoot, buildExpectedConsumerGuard());
+  assert.ok(errs.length > 0, 'Must detect weakened standalone scanner');
+  fs.writeFileSync(standaloneFile, origStandalone);
+
+  // Mutation 2: first-party workflow copy 1 OR copy 2 mutated independently
+  const firstPartyFile = path.join(tempRoot, '.github/workflows/security-scans.yml');
+  const origFirstParty = fs.readFileSync(firstPartyFile, 'utf8');
+  const firstPartyParts = origFirstParty.split('if index_mode == b"120000":');
+  assert.equal(firstPartyParts.length, 3);
+  fs.writeFileSync(firstPartyFile, firstPartyParts[0] + 'if False:' + firstPartyParts[1] + 'if index_mode == b"120000":' + firstPartyParts[2]);
+  errs = await collectScannerParityErrors(tempRoot, buildExpectedConsumerGuard());
+  assert.ok(errs.some(e => e.includes('security-scans.yml') && e.includes('occurrence 1')), 'Must detect weakened security-scans.yml occurrence 1');
+  fs.writeFileSync(firstPartyFile, firstPartyParts[0] + 'if index_mode == b"120000":' + firstPartyParts[1] + 'if False:' + firstPartyParts[2]);
+  errs = await collectScannerParityErrors(tempRoot, buildExpectedConsumerGuard());
+  assert.ok(errs.some(e => e.includes('security-scans.yml') && e.includes('occurrence 2')), 'Must detect weakened security-scans.yml occurrence 2');
+  fs.writeFileSync(firstPartyFile, origFirstParty);
+
+  // Mutation 3: consumer template Python copy OR bash wrapper line mutated independently
+  const consumerFile = path.join(tempRoot, 'templates/ci/consumer-security-scans.yml');
+  const origConsumer = fs.readFileSync(consumerFile, 'utf8');
+  fs.writeFileSync(consumerFile, origConsumer.replace('if index_mode == b"120000":', 'if False:'));
+  errs = await collectScannerParityErrors(tempRoot, buildExpectedConsumerGuard());
+  assert.ok(errs.some(e => e.includes('consumer-security-scans.yml')), 'Must detect weakened consumer-security-scans.yml Python copy');
+  fs.writeFileSync(consumerFile, origConsumer.replace('nested_scanner_override="$(', 'nested_scanner_override="" #'));
+  errs = await collectScannerParityErrors(tempRoot, buildExpectedConsumerGuard());
+  assert.ok(errs.some(e => e.includes('config guard step')), 'Must detect weakened consumer-security-scans.yml bash guard wrapper');
+  fs.writeFileSync(consumerFile, origConsumer);
+
+  // Mutation 4: expected consumer guard in validate-consumer-workflow.mjs weakened
+  const weakenedExpected = buildExpectedConsumerGuard().replace('"ls-files", "-s", "-z"', '"ls-files", "-z"');
+  errs = await collectScannerParityErrors(tempRoot, weakenedExpected);
+  assert.ok(errs.some(e => e.includes('buildExpectedConsumerGuard()')), 'Must detect weakened buildExpectedConsumerGuard()');
+
+  // Mutation 5: weakening SCAN-S6 across ALL copies simultaneously still caught by SCAN-S6 invariant check
+  const strippedStandalone = origStandalone.replace('"ls-files", "-s", "-z"', '"ls-files", "-z"');
+  const strippedFirstParty = origFirstParty.replaceAll('"ls-files", "-s", "-z"', '"ls-files", "-z"');
+  const strippedConsumer = origConsumer.replaceAll('"ls-files", "-s", "-z"', '"ls-files", "-z"');
+  fs.writeFileSync(standaloneFile, strippedStandalone);
+  fs.writeFileSync(firstPartyFile, strippedFirstParty);
+  fs.writeFileSync(consumerFile, strippedConsumer);
+  errs = await collectScannerParityErrors(tempRoot, weakenedExpected);
+  assert.ok(errs.some(e => e.includes('missing SCAN-S6 index mode verification')), 'Synchronized removal of SCAN-S6 across all copies must still fail parity validator');
+});
+
+test('W-02/W-03 adversarial re-attack: consumer validator rejects shell overrides, container overrides, string concurrency, toJSON(github/inputs), key expressions, invalid CodeQL build-mode, and short crons', () => {
+  const baseText = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  for (const shellOverride of ['bash {0}', 'true {0}', 'sh {0}', 'pwsh']) {
+    const mutated = YAML.parse(baseText);
+    mutated.jobs.semgrep.steps[2].shell = shellOverride;
+    assert.throws(() => validateConsumerWorkflowStructure(mutated), /unapproved shell/);
+  }
+
+  const usesShell = YAML.parse(baseText);
+  usesShell.jobs.secrets.steps[0].shell = 'bash';
+  assert.throws(() => validateConsumerWorkflowStructure(usesShell), /using 'uses' must not specify shell/);
+
+  const containerOptions = YAML.parse(baseText);
+  containerOptions.jobs.semgrep.container.options = '--entrypoint /bin/true';
+  assert.throws(() => validateConsumerWorkflowStructure(containerOptions), /semgrep container: configuration mismatch/);
+
+  const containerEnv = YAML.parse(baseText);
+  containerEnv.jobs.semgrep.container.env = { SEMGREP_RULES: 'p/nonexistent' };
+  assert.throws(() => validateConsumerWorkflowStructure(containerEnv), /semgrep container: configuration mismatch/);
+
+  for (const cancelVal of ['true', '${{ always() }}', 1]) {
+    const conc = YAML.parse(baseText);
+    conc.concurrency = { group: 'ci', 'cancel-in-progress': cancelVal };
+    assert.throws(() => validateConsumerWorkflowStructure(conc), /must not enable concurrency cancel-in-progress/);
+  }
+
+  for (const bareExpr of ['${{ toJSON(github) }}', "${{ format('{0}', github) }}", '${{ toJSON(inputs) }}']) {
+    const langExpr = YAML.parse(baseText);
+    langExpr.jobs.codeql.steps[1].with.languages = bareExpr;
+    assert.throws(() => validateConsumerWorkflowStructure(langExpr), /contains forbidden untrusted GitHub context/);
+  }
+
+  const keyExpr = YAML.parse(baseText);
+  keyExpr.on.workflow_dispatch = { inputs: { '${{ github.actor }}': { default: 'ok' } } };
+  assert.throws(() => validateConsumerWorkflowStructure(keyExpr), /contains forbidden untrusted GitHub context/);
+
+  const badBuildMode = YAML.parse(baseText);
+  badBuildMode.jobs.codeql.steps[1].with['build-mode'] = 'false';
+  assert.throws(() => validateConsumerWorkflowStructure(badBuildMode), /build-mode must be one of none, autobuild, manual/);
+
+  const shortCron = YAML.parse(baseText);
+  shortCron.on.schedule.push({ cron: '0 * *' });
+  assert.throws(() => validateConsumerWorkflowStructure(shortCron), /5-field cron string/);
+
+  const emptyEnvObj = YAML.parse(baseText);
+  emptyEnvObj.env = {};
+  assert.throws(() => validateConsumerWorkflowStructure(emptyEnvObj), /unapproved workflow-level key 'env'|workflow-level env is not permitted/);
+
+  const extraDefaultsKey = YAML.parse(baseText);
+  extraDefaultsKey.defaults = { run: { extra: 'bad' } };
+  assert.throws(() => validateConsumerWorkflowStructure(extraDefaultsKey), /defaults\.run contains unapproved key 'extra'/);
+
+  // Reordered keys inside valid permissions mapping remain accepted
+  const reordered = YAML.parse(baseText);
+  reordered.jobs.secrets.permissions = { 'pull-requests': 'read', contents: 'read' };
+  assert.doesNotThrow(() => validateConsumerWorkflowStructure(reordered));
+});
+
+test('W-02/W-03 adversarial re-attack: first-party validators reject workflow/job env & defaults, guard step overrides, shell overrides, string cancel-in-progress, continue-on-error: false, toJSON(github), and extended shell suppressions', () => {
+  const poisonedWfEnv = YAML.parse(read('security-scans.yml'));
+  poisonedWfEnv.env = { GITLEAKS_CONFIG: '/dev/null', SEMGREP_RULES: 'p/nonexistent', HTTP_PROXY: 'http://127.0.0.1:9' };
+  assert.throws(() => validateSecurityScansWorkflow(poisonedWfEnv), /workflow-level env is not permitted/);
+
+  for (const jobId of ['gitleaks', 'semgrep', 'codeql']) {
+    const poisonedJobEnv = YAML.parse(read('security-scans.yml'));
+    poisonedJobEnv.jobs[jobId].env = { SCAN_OVERRIDE: '1' };
+    assert.throws(() => validateSecurityScansWorkflow(poisonedJobEnv), new RegExp(`job ${jobId} env is not permitted`));
+  }
+
+  const guardStepEnv = YAML.parse(read('security-scans.yml'));
+  guardStepEnv.jobs.gitleaks.steps[1].env = { FOOBAR: '1' };
+  assert.throws(() => validateSecurityScansWorkflow(guardStepEnv), /scanner configuration guard must not define env/);
+
+  const guardStepWith = YAML.parse(read('security-scans.yml'));
+  guardStepWith.jobs.semgrep.steps[1].with = { arg: '1' };
+  assert.throws(() => validateSecurityScansWorkflow(guardStepWith), /scanner configuration guard must not define with/);
+
+  const checkoutShell = YAML.parse(read('security-scans.yml'));
+  checkoutShell.jobs.gitleaks.steps[0].shell = 'bash';
+  assert.throws(() => validateSecurityScansWorkflow(checkoutShell), /using 'uses' must not specify shell/);
+
+  const semgrepShell = YAML.parse(read('security-scans.yml'));
+  semgrepShell.jobs.semgrep.steps[2].shell = 'bash';
+  assert.throws(() => validateSecurityScansWorkflow(semgrepShell), /Semgrep scan step must not override shell/);
+
+  const concStrTrue = YAML.parse(read('security-scans.yml'));
+  concStrTrue.concurrency = { group: 'ci', 'cancel-in-progress': 'true' };
+  assert.throws(() => validateSecurityScansWorkflow(concStrTrue), /must not set concurrency cancel-in-progress/);
+
+  const defaultsOverride = YAML.parse(read('security-scans.yml'));
+  defaultsOverride.defaults = { run: { shell: 'bash --noprofile --norc -eo pipefail {0}' } };
+  assert.throws(() => validateSecurityScansWorkflow(defaultsOverride), /workflow-level defaults is not permitted/);
+
+  const continueFalse = YAML.parse(read('security-scans.yml'));
+  continueFalse.jobs.semgrep['continue-on-error'] = false;
+  assert.throws(() => validateSecurityScansWorkflow(continueFalse), /must not define continue-on-error/);
+
+  const envKeyInjection = YAML.parse(read('security-scans.yml'));
+  envKeyInjection.env = { '${{ github.actor }}': '1' };
+  assert.throws(() => validateSecurityScansWorkflow(envKeyInjection), /contains forbidden untrusted GitHub context/);
+
+  const ussWfEnv = YAML.parse(read('uss-validation.yml'));
+  ussWfEnv.env = { HTTP_PROXY: 'http://127.0.0.1:9' };
+  assert.throws(() => validateUssValidationWorkflow(ussWfEnv), /workflow-level env is not permitted/);
+
+  const ussJobEnv = YAML.parse(read('uss-validation.yml'));
+  ussJobEnv.jobs.validate.env = { USS_OVERRIDE: '1' };
+  assert.throws(() => validateUssValidationWorkflow(ussJobEnv), /validate job env is not permitted/);
+
+  const ussStepShell = YAML.parse(read('uss-validation.yml'));
+  ussStepShell.jobs.validate.steps[9].shell = 'bash';
+  assert.throws(() => validateUssValidationWorkflow(ussStepShell), /step 9 must not override shell/);
+
+  const ussDefaults = YAML.parse(read('uss-validation.yml'));
+  ussDefaults.defaults = { run: { shell: 'bash' } };
+  assert.throws(() => validateUssValidationWorkflow(ussDefaults), /workflow-level defaults is not permitted/);
+
+  for (const badRun of [
+    'set +euo pipefail\nnpm test',
+    'set +ex\nnpm test',
+    'npm test || (true)',
+    'npm test || { true; }',
+    'npm test || command true',
+    'echo "${{ toJSON(github) }}"',
+    'echo "${{ format(\'{0}\', github) }}"',
+    'echo "${{ toJSON(inputs) }}"'
+  ]) {
+    const doc = YAML.parse(read('uss-validation.yml'));
+    doc.jobs.validate.steps[9].run = badRun;
+    assert.throws(
+      () => validateWorkflowSecurity(doc, 'uss-validation.yml'),
+      /suppresses errors with|contains forbidden direct expression interpolation/
+    );
+  }
+});
 
 test('SCAN-LD: scanner and embedded guards do not pass loader or shell startup variables to Git',()=>{
  const expected='not k.upper().startswith(("GIT_", "LD_", "DYLD_"))';

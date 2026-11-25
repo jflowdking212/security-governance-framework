@@ -3,7 +3,75 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {renderSourceMarkdown} from './render-source-markdown.mjs';
 import {findProhibitedGitattributes} from './gitattributes-policy.mjs';
+import {buildExpectedConsumerGuard} from './validate-consumer-workflow.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const existsIn=(base,p)=>fs.access(path.join(base,p)).then(()=>true,()=>false);
+
+export async function collectScannerParityErrors(targetRoot=ROOT,expectedConsumerGuard=buildExpectedConsumerGuard()){
+ const errors=[];
+ const scannerRel='tools/uss-tracked-binary-scanner.py';
+ if(!await existsIn(targetRoot,scannerRel))return errors;
+ const scannerRaw=await fs.readFile(path.join(targetRoot,scannerRel),'utf8');
+ const scannerLines=scannerRaw.split(/\r?\n/);
+ const osIdx=scannerLines.indexOf('import os');
+ const scannerHeader=scannerLines.slice(0,osIdx).join('\n')+'\n';
+ if(osIdx<0||!/^#![/]usr[/]bin[/]env python3\n(?:\n|#[^\n]*\n|\"\"\"(?:(?!\"\"\")[\s\S])*\"\"\"\n)*$/.test(scannerHeader)){
+  errors.push('tools/uss-tracked-binary-scanner.py has executable or unexpected content before import os; only the python3 shebang, comments and a docstring are permitted');
+ }
+ if(osIdx<0){
+  errors.push('tools/uss-tracked-binary-scanner.py missing import os');
+  return errors;
+ }
+ const standaloneEngine=scannerLines.slice(osIdx).join('\n').trim();
+ if(!standaloneEngine.includes('"ls-files", "-s", "-z"')||!standaloneEngine.includes('index_mode == b"120000"')){
+  errors.push('Standalone scanner tools/uss-tracked-binary-scanner.py is missing SCAN-S6 index mode verification');
+ }
+ for(const wfPath of ['.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml']){
+  if(!await existsIn(targetRoot,wfPath)){
+   errors.push('Missing required scanner workflow '+wfPath);
+   continue;
+  }
+  const wfContent=await fs.readFile(path.join(targetRoot,wfPath),'utf8');
+  const matches=[...wfContent.matchAll(/python3 - <<'EOF'\r?\n([\s\S]*?)\r?\n\s*EOF/g)];
+  if(matches.length!==2)errors.push(wfPath+' must contain exactly 2 embedded scanner blocks');
+  else{
+   for(let i=0;i<matches.length;i++){
+    const dedented=matches[i][1].split(/\r?\n/).map(l=>l.startsWith('          ')?l.slice(10):l).join('\n').trim();
+    if(dedented!==standaloneEngine)errors.push('Standalone scanner tools/uss-tracked-binary-scanner.py differs from embedded copy in '+wfPath+' (occurrence '+(i+1)+')');
+   }
+  }
+ }
+ const guardLines=expectedConsumerGuard.split(/\r?\n/);
+ const eof1=guardLines.indexOf("python3 - <<'EOF'");
+ const eof2=guardLines.lastIndexOf('EOF');
+ if(eof1<0||eof2<=eof1){
+  errors.push('tools/validate-consumer-workflow.mjs buildExpectedConsumerGuard() missing python3 heredoc');
+ }else{
+  const expectedEngine=guardLines.slice(eof1+1,eof2).join('\n').trim();
+  if(expectedEngine!==standaloneEngine){
+   errors.push('Standalone scanner tools/uss-tracked-binary-scanner.py differs from buildExpectedConsumerGuard() in tools/validate-consumer-workflow.mjs');
+  }
+ }
+ const consumerWf='templates/ci/consumer-security-scans.yml';
+ if(await existsIn(targetRoot,consumerWf)){
+  const consumerRaw=await fs.readFile(path.join(targetRoot,consumerWf),'utf8').then(s=>s.replace(/\r\n/g,'\n'));
+  const guardMatches=[...consumerRaw.matchAll(/      - name: Reject unreviewed scanner configuration\n        shell: bash\n        run: \|\n([\s\S]*?)(?=\n      - )/g)];
+  if(guardMatches.length!==2){
+   errors.push(consumerWf+' must contain exactly 2 canonical config guard steps');
+  }else{
+   const expectedNormalized=expectedConsumerGuard.replace(/\r\n/g,'\n').trim();
+   for(let i=0;i<guardMatches.length;i++){
+    const dedentedGuard=guardMatches[i][1].split('\n').map(l=>l.startsWith('          ')?l.slice(10):l).join('\n').trim();
+    if(dedentedGuard!==expectedNormalized){
+     errors.push(consumerWf+' config guard step '+(i+1)+' differs from buildExpectedConsumerGuard() in tools/validate-consumer-workflow.mjs');
+    }
+   }
+  }
+ }
+ return errors;
+}
+
+async function main(){
 process.chdir(ROOT);
 const m=JSON.parse(await fs.readFile('manifest.json','utf8')),errors=[];
 const exists=async p=>{try{await fs.access(p);return true}catch{return false}};
@@ -36,31 +104,7 @@ const marker='# EMBEDDED CANONICAL GLOBAL DIRECTIVE — v4',pos=anti.indexOf(mar
 if(pos<0)errors.push('Anti-Gravity embedded canonical marker missing');else{const norm=x=>x.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean).join('\n');if(norm(anti.slice(pos+marker.length))!==norm(global))errors.push('Embedded global directive does not match standalone canonical source')}
 if(m.rules.p0_release!=='BLOCK'||m.rules.p1_release!=='BLOCK'||m.rules.agent_may_waive_p0_p1!==false||m.rules.unknown_is_pass!==false)errors.push('Release policy invariant failed');
 for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md','REVIEW-CLAUDE.md','RELEASE-CHECKLIST.md','CHANGELOG.md','VERSION','SECURITY.md','SECURITY-ROOT.md','CONSUMING.md','LICENSE','CONTRIBUTING.md','.gitignore','.github/PULL_REQUEST_TEMPLATE.md','.github/CODEOWNERS','.security/README.md','tools/checksums.mjs','tests/checksums.test.mjs','tools/uss-tracked-binary-scanner.py','templates/uss-version.example','.gitattributes','tools/gitattributes-policy.mjs','.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml'])if(!await exists(p))errors.push('Missing required project file '+p);
-if(await exists('tools/uss-tracked-binary-scanner.py')){
- const scannerRaw=await fs.readFile('tools/uss-tracked-binary-scanner.py','utf8');
- const scannerLines=scannerRaw.split(/\r?\n/);
- const osIdx=scannerLines.indexOf('import os');
- const scannerHeader=scannerLines.slice(0,osIdx).join('\n')+'\n';
- if(osIdx<0||!/^#![/]usr[/]bin[/]env python3\n(?:\n|#[^\n]*\n|\"\"\"(?:(?!\"\"\")[\s\S])*\"\"\"\n)*$/.test(scannerHeader))errors.push('tools/uss-tracked-binary-scanner.py has executable or unexpected content before import os; only the python3 shebang, comments and a docstring are permitted');
- if(osIdx<0)errors.push('tools/uss-tracked-binary-scanner.py missing import os');
- else{
-  const standaloneEngine=scannerLines.slice(osIdx).join('\n').trim();
-  for(const wfPath of ['.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml']){
-   if(!await exists(wfPath))errors.push('Missing required scanner workflow '+wfPath);
-   else{
-    const wfContent=await fs.readFile(wfPath,'utf8');
-    const matches=[...wfContent.matchAll(/python3 - <<'EOF'\n([\s\S]*?)\n\s*EOF/g)];
-    if(matches.length!==2)errors.push(wfPath+' must contain exactly 2 embedded scanner blocks');
-    else{
-     for(let i=0;i<matches.length;i++){
-      const dedented=matches[i][1].split('\n').map(l=>l.startsWith('          ')?l.slice(10):l).join('\n').trim();
-      if(dedented!==standaloneEngine)errors.push('Standalone scanner tools/uss-tracked-binary-scanner.py differs from embedded copy in '+wfPath+' (occurrence '+(i+1)+')');
-     }
-    }
-   }
-  }
- }
-}
+errors.push(...await collectScannerParityErrors(ROOT));
 const gitattributes=await fs.readFile('.gitattributes','utf8');
 for(const issue of findProhibitedGitattributes(gitattributes))errors.push('.gitattributes contains prohibited attribute '+issue.attribute+' on line '+issue.line);
 const readme=await fs.readFile('README.md','utf8');
@@ -128,3 +172,8 @@ for(const [name,list] of Object.entries(m.bundles))if(JSON.stringify(list)!==JSO
 
 if(errors.length){console.error(errors.join('\n'));process.exit(1)}
 console.log('USS validation passed: '+m.modules.length+' modules, '+m.required_source_sections.length+' source references, dependency graph, archive equality, embedded directive equivalence, release policy, and task indexes.');
+}
+
+if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){
+ main().catch(err=>{console.error(err);process.exit(1);});
+}

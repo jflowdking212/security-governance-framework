@@ -35,7 +35,7 @@ function copyTree() {
     fs.mkdirSync(path.dirname(destination), {recursive: true});
     fs.copyFileSync(path.join(ROOT, file), destination);
   }
-  fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(dir, 'node_modules'));
+  fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(dir, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   for (const generator of ['build-modules', 'build-indexes', 'build-bundles']) {
     const result = run(dir, `tools/${generator}.mjs`);
     assert.equal(result.status, 0, `${generator} failed in scratch copy: ${result.stderr}`);
@@ -94,4 +94,41 @@ for (const workflow of WORKFLOWS) {
       fs.rmSync(dir, {recursive: true, force: true});
     }
   });
+
+  for (const occurrence of [1, 2]) {
+    test(`validate.mjs rejects embedded scanner divergence in ${workflow} (occurrence ${occurrence})`, () => {
+      const dir = copyTree();
+      try {
+        const file = path.join(dir, workflow);
+        const before = fs.readFileSync(file, 'utf8');
+        const parts = before.split('if index_mode == b"120000":');
+        assert.equal(parts.length, 3, `${workflow} must contain 2 embedded SCAN-S6 checks`);
+        const after = occurrence === 1
+          ? parts[0] + 'if False:' + parts[1] + 'if index_mode == b"120000":' + parts[2]
+          : parts[0] + 'if index_mode == b"120000":' + parts[1] + 'if False:' + parts[2];
+        fs.writeFileSync(file, after);
+        const result = validate(dir);
+        assert.notEqual(result.status, 0, `validator accepted mutated ${workflow} occurrence ${occurrence}`);
+        assert.ok((result.stdout + result.stderr).includes(`differs from embedded copy in ${workflow} (occurrence ${occurrence})`));
+      } finally {
+        fs.rmSync(dir, {recursive: true, force: true});
+      }
+    });
+  }
 }
+
+test('validate.mjs rejects divergence in validate-consumer-workflow expected guard', () => {
+  const dir = copyTree();
+  try {
+    const file = path.join(dir, 'tools/validate-consumer-workflow.mjs');
+    const before = fs.readFileSync(file, 'utf8');
+    const after = before.replace('"ls-files", "-s", "-z"', '"ls-files", "-z"');
+    assert.notEqual(after, before);
+    fs.writeFileSync(file, after);
+    const result = validate(dir);
+    assert.notEqual(result.status, 0, 'validator accepted mutated buildExpectedConsumerGuard');
+    assert.ok((result.stdout + result.stderr).includes('differs from buildExpectedConsumerGuard()'));
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});

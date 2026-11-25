@@ -75,8 +75,9 @@ const APPROVED_SHELLS = new Set([
   'bash --noprofile --norc -eo pipefail {0}',
   'bash --noprofile --norc -e -o pipefail {0}'
 ]);
+const APPROVED_BUILD_MODES = new Set(['none', 'autobuild', 'manual']);
 const EXPRESSION_SPAN_REGEX = /\$\{\{([\s\S]*?)\}\}/g;
-const UNTRUSTED_CONTEXT_REGEX = /\b(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|event_path|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
+const UNTRUSTED_CONTEXT_REGEX = /\b(?:github(?:\s*\.\s*(?:event|event_path|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|\s*\[|\s*(?:[,)\]}]|$))|inputs\b)/i;
 
 const ALLOWED_SCANNER_JOB_KEYS = new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'container', 'steps']);
 const ALLOWED_OSV_JOB_KEYS = new Set(['name', 'uses', 'with', 'permissions']);
@@ -108,6 +109,7 @@ function assertNoUntrustedExpressions(value, context, label) {
   }
   if (value && typeof value === 'object') {
     for (const [key, item] of Object.entries(value)) {
+      assertNoUntrustedExpressions(key, `${context} key '${key}'`, label);
       assertNoUntrustedExpressions(item, `${context}.${key}`, label);
     }
   }
@@ -117,6 +119,7 @@ function validateBranchTrigger(config, event, label) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     throw new Error(`${label}: trigger '${event}' must configure branch filters`);
   }
+  assertNoUntrustedExpressions(config, `trigger '${event}'`, label);
   for (const key of Object.keys(config)) {
     if (FORBIDDEN_TRIGGER_FILTER_KEYS.has(key) || key !== 'branches') {
       throw new Error(`${label}: trigger '${event}' declares unapproved filter key '${key}'`);
@@ -163,6 +166,14 @@ function validateMandatoryStepControl(step, index, jobId, label) {
   }
   if (step.uses !== undefined && step.run !== undefined) {
     throw new Error(`${label}: job '${jobId}' step ${index} must not combine both 'uses' and 'run'`);
+  }
+  if (step.uses !== undefined && step.shell !== undefined) {
+    throw new Error(`${label}: job '${jobId}' step ${index} using 'uses' must not specify shell`);
+  }
+  if (step.shell !== undefined) {
+    if (typeof step.shell !== 'string' || !APPROVED_SHELLS.has(step.shell.trim())) {
+      throw new Error(`${label}: job '${jobId}' step ${index} specifies unapproved shell '${step.shell}'`);
+    }
   }
   for (const k of Object.keys(step)) {
     if (!ALLOWED_STEP_KEYS.has(k)) {
@@ -615,7 +626,7 @@ export function buildExpectedConsumerGuard() {
     '',
     'try:',
     '    result = subprocess.run(',
-    '        [trusted_git, "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],',
+    '        [trusted_git, "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-s", "-z"],',
     '        cwd=ROOT,',
     '        stdout=subprocess.PIPE,',
     '        stderr=subprocess.PIPE,',
@@ -640,9 +651,30 @@ export function buildExpectedConsumerGuard() {
     '        print("FAIL CLOSED: repository root is not a directory", file=sys.stderr)',
     '        sys.exit(2)',
     '',
-    '    for rel in result.stdout.split(b"\\0"):',
-    '        if not rel:',
+    '    for record in result.stdout.split(b"\\0"):',
+    '        if not record:',
     '            continue',
+    '',
+    '        meta, sep, rel = record.partition(b"\\t")',
+    '        meta_parts = meta.split(b" ")',
+    '        if sep != b"\\t" or len(meta_parts) != 3 or not rel:',
+    '            print(f"FAIL CLOSED: malformed git ls-files -s record: {record!r}", file=sys.stderr)',
+    '            sys.exit(2)',
+    '',
+    '        index_mode, _obj, stage = meta_parts',
+    '        if stage != b"0":',
+    '            print(',
+    '                f"FAIL CLOSED: unmerged git index stage {stage.decode(\'ascii\', \'replace\')} for tracked path: {os.fsdecode(rel)}",',
+    '                file=sys.stderr,',
+    '            )',
+    '            sys.exit(2)',
+    '',
+    '        if index_mode not in (b"100644", b"100755", b"120000"):',
+    '            print(',
+    '                f"FAIL: unsupported git index mode {index_mode.decode(\'ascii\', \'replace\')} for tracked path: {os.fsdecode(rel)}",',
+    '                file=sys.stderr,',
+    '            )',
+    '            sys.exit(1)',
     '',
     '        parts = rel.split(b"/")',
     '        for comp in parts:',
@@ -674,11 +706,24 @@ export function buildExpectedConsumerGuard() {
     '                print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
     '                sys.exit(2)',
     '',
+    '            if index_mode == b"120000":',
+    '                if stat.S_ISLNK(leaf_stat.st_mode):',
+    '                    continue',
+    '                print(',
+    '                    f"FAIL: tracked symbolic link (mode 120000) is not a symbolic link in worktree: {os.fsdecode(rel)}",',
+    '                    file=sys.stderr,',
+    '                )',
+    '                sys.exit(1)',
+    '',
     '            if stat.S_ISLNK(leaf_stat.st_mode):',
-    '                continue',
+    '                print(',
+    '                    f"FAIL: tracked regular file (mode {index_mode.decode(\'ascii\')}) is replaced by a symbolic link in worktree: {os.fsdecode(rel)}",',
+    '                    file=sys.stderr,',
+    '                )',
+    '                sys.exit(1)',
     '',
     '            if not stat.S_ISREG(leaf_stat.st_mode):',
-    '                print(f"FAIL: tracked path is not a regular file or symlink: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                print(f"FAIL: tracked path is not a regular file: {os.fsdecode(rel)}", file=sys.stderr)',
     '                sys.exit(1)',
     '',
     '            file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
@@ -787,11 +832,23 @@ export async function loadYamlParser() {
   }
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    const sorted = {};
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = canonicalize(value[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
 function assertExactObject(actual, expected, context) {
-  const actualStr = JSON.stringify(actual);
-  const expectedStr = JSON.stringify(expected);
+  const actualStr = JSON.stringify(canonicalize(actual));
+  const expectedStr = JSON.stringify(canonicalize(expected));
   if (actualStr !== expectedStr) {
-    throw new Error(`${context}: configuration mismatch. Expected ${expectedStr}, got ${actualStr}`);
+    throw new Error(`${context}: configuration mismatch. Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   }
 }
 
@@ -848,36 +905,58 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     throw new Error(`${label}: schedule must be a non-empty array`);
   }
   for (const entry of triggers.schedule) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || Object.keys(entry).some(k => k !== 'cron') || typeof entry.cron !== 'string') {
-      throw new Error(`${label}: schedule entries must define only a cron string`);
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || Object.keys(entry).some(k => k !== 'cron') || typeof entry.cron !== 'string' || entry.cron.trim().split(/\s+/).length !== 5) {
+      throw new Error(`${label}: schedule entries must define only a 5-field cron string`);
     }
   }
+  assertNoUntrustedExpressions(triggers.schedule, 'schedule trigger', label);
   if (!triggers.schedule.some(s => s?.cron === '17 5 * * 1')) {
     throw new Error(`${label}: schedule must include weekly full-history scan cron "17 5 * * 1"`);
   }
   assertNoUntrustedExpressions(triggers.workflow_dispatch, 'workflow_dispatch trigger', label);
 
   // 4. Defaults & Concurrency
-  if (parsed.defaults) {
-    assertNoUntrustedExpressions(parsed.defaults, 'defaults', label);
-    if (parsed.defaults.run?.['working-directory']) {
-      throw new Error(`${label}: defaults.run must not override working-directory`);
+  if (parsed.defaults !== undefined) {
+    if (!parsed.defaults || typeof parsed.defaults !== 'object' || Array.isArray(parsed.defaults)) {
+      throw new Error(`${label}: defaults must be an object`);
     }
-    if (parsed.defaults.run?.shell) {
-      if (!APPROVED_SHELLS.has(parsed.defaults.run.shell.trim())) {
-        throw new Error(`${label}: unapproved shell in defaults: '${parsed.defaults.run.shell}'`);
+    assertNoUntrustedExpressions(parsed.defaults, 'defaults', label);
+    for (const key of Object.keys(parsed.defaults)) {
+      if (key !== 'run') {
+        throw new Error(`${label}: defaults contains unapproved key '${key}'`);
+      }
+    }
+    if (parsed.defaults.run !== undefined) {
+      if (!parsed.defaults.run || typeof parsed.defaults.run !== 'object' || Array.isArray(parsed.defaults.run)) {
+        throw new Error(`${label}: defaults.run must be an object`);
+      }
+      if (parsed.defaults.run['working-directory']) {
+        throw new Error(`${label}: defaults.run must not override working-directory`);
+      }
+      for (const runKey of Object.keys(parsed.defaults.run)) {
+        if (runKey !== 'shell') {
+          throw new Error(`${label}: defaults.run contains unapproved key '${runKey}'`);
+        }
+      }
+      if (parsed.defaults.run.shell !== undefined) {
+        if (typeof parsed.defaults.run.shell !== 'string' || !APPROVED_SHELLS.has(parsed.defaults.run.shell.trim())) {
+          throw new Error(`${label}: unapproved shell in defaults: '${parsed.defaults.run.shell}'`);
+        }
       }
     }
   }
-  if (parsed.concurrency) {
+  if (parsed.concurrency !== undefined) {
+    if (!parsed.concurrency || typeof parsed.concurrency !== 'object' || Array.isArray(parsed.concurrency)) {
+      throw new Error(`${label}: concurrency must be an object`);
+    }
     assertNoUntrustedExpressions(parsed.concurrency, 'concurrency', label);
-    if (parsed.concurrency['cancel-in-progress'] === true) {
-      throw new Error(`${label}: must not enable concurrency cancel-in-progress: true`);
+    if (parsed.concurrency['cancel-in-progress'] !== undefined && parsed.concurrency['cancel-in-progress'] !== false) {
+      throw new Error(`${label}: must not enable concurrency cancel-in-progress`);
     }
   }
 
   // 5. Environment allowlist at workflow level: none allowed (F4)
-  if (parsed.env && Object.keys(parsed.env).length > 0) {
+  if (parsed.env !== undefined) {
     throw new Error(`${label}: workflow-level env is not permitted`);
   }
 
@@ -909,7 +988,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   if (secJob['runs-on'] !== 'ubuntu-latest') throw new Error(`${label}: ${secretJobId} job runs-on must be 'ubuntu-latest'`);
   if (!Number.isInteger(secJob['timeout-minutes']) || secJob['timeout-minutes'] <= 0) throw new Error(`${label}: ${secretJobId} job must set positive timeout-minutes`);
   assertExactObject(secJob.permissions, { contents: 'read', 'pull-requests': 'read' }, `${label} ${secretJobId} permissions`);
-  if (secJob.env && Object.keys(secJob.env).length > 0) throw new Error(`${label}: ${secretJobId} job-level env is not permitted`);
+  if (secJob.env !== undefined) throw new Error(`${label}: ${secretJobId} job-level env is not permitted`);
   if (secJob.services) throw new Error(`${label}: ${secretJobId} job must not declare services`);
   if (secJob.container) throw new Error(`${label}: ${secretJobId} job must not declare a container`);
 
@@ -927,7 +1006,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     throw new Error(`${label}: ${secretJobId} checkout step must use pinned action 'actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}', got '${secStep0.uses}'`);
   }
   assertExactObject(secStep0.with, { 'fetch-depth': 0, 'persist-credentials': false }, `${label} ${secretJobId} checkout inputs`);
-  if (secStep0.env) throw new Error(`${label}: ${secretJobId} checkout step must not define env`);
+  if (secStep0.env !== undefined) throw new Error(`${label}: ${secretJobId} checkout step must not define env`);
 
   // Step 1: Config guard
   const secStep1 = secSteps[1];
@@ -938,7 +1017,8 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   if (secStep1.run?.trim() !== buildExpectedConsumerGuard().trim()) {
     throw new Error(`${label}: ${secretJobId} config guard must execute the exact canonical fail-closed guard script`);
   }
-  if (secStep1.env) throw new Error(`${label}: ${secretJobId} config guard step must not define env`);
+  if (secStep1.with !== undefined) throw new Error(`${label}: ${secretJobId} config guard step must not define with inputs`);
+  if (secStep1.env !== undefined) throw new Error(`${label}: ${secretJobId} config guard step must not define env`);
 
   // Step 2: Gitleaks scan
   const secStep2 = secSteps[2];
@@ -950,7 +1030,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     GITLEAKS_ENABLE_COMMENTS: 'false',
     GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
   }, `${label} ${secretJobId} scan env`);
-  if (secStep2.with) throw new Error(`${label}: ${secretJobId} scan step must not define inputs`);
+  if (secStep2.with !== undefined) throw new Error(`${label}: ${secretJobId} scan step must not define inputs`);
 
   // 8. Validate Semgrep job (F2, F3, F4, F6)
   const semJob = jobs.semgrep;
@@ -963,11 +1043,14 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   if (semJob['runs-on'] !== 'ubuntu-latest') throw new Error(`${label}: semgrep job runs-on must be 'ubuntu-latest'`);
   if (!Number.isInteger(semJob['timeout-minutes']) || semJob['timeout-minutes'] <= 0) throw new Error(`${label}: semgrep job must set positive timeout-minutes`);
   if (semJob.permissions !== undefined) throw new Error(`${label}: semgrep job must inherit read-only workflow permissions`);
-  if (semJob.env && Object.keys(semJob.env).length > 0) throw new Error(`${label}: semgrep job-level env is not permitted`);
+  if (semJob.env !== undefined) throw new Error(`${label}: semgrep job-level env is not permitted`);
   if (semJob.services) throw new Error(`${label}: semgrep job must not declare services`);
   if (!APPROVED_CONTAINER_IMAGES.has(semJob.container?.image)) {
     throw new Error(`${label}: semgrep container image must be exactly 'semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493'`);
   }
+  assertExactObject(semJob.container, {
+    image: 'semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493'
+  }, `${label} semgrep container`);
 
   const semSteps = semJob.steps || [];
   if (semSteps.length !== 3) {
@@ -983,7 +1066,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     throw new Error(`${label}: semgrep checkout step must use pinned action 'actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}', got '${semStep0.uses}'`);
   }
   assertExactObject(semStep0.with, { 'persist-credentials': false }, `${label} semgrep checkout inputs`);
-  if (semStep0.env) throw new Error(`${label}: semgrep checkout step must not define env`);
+  if (semStep0.env !== undefined) throw new Error(`${label}: semgrep checkout step must not define env`);
 
   // Step 1: Config guard
   const semStep1 = semSteps[1];
@@ -994,7 +1077,8 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   if (semStep1.run?.trim() !== buildExpectedConsumerGuard().trim()) {
     throw new Error(`${label}: semgrep config guard must execute the exact canonical fail-closed guard script`);
   }
-  if (semStep1.env) throw new Error(`${label}: semgrep config guard step must not define env`);
+  if (semStep1.with !== undefined) throw new Error(`${label}: semgrep config guard step must not define with inputs`);
+  if (semStep1.env !== undefined) throw new Error(`${label}: semgrep config guard step must not define env`);
 
   // Step 2: Semgrep scan execution contract (F3)
   const semStep2 = semSteps[2];
@@ -1003,7 +1087,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     throw new Error(`${label}: semgrep scan command violates strict execution contract; expected '${expectedSemgrepCommand}', got '${semStep2.run?.trim()}'`);
   }
   assertExactObject(semStep2.env, { SEMGREP_SEND_METRICS: 'off' }, `${label} semgrep scan env`);
-  if (semStep2.with) throw new Error(`${label}: semgrep scan step must not define inputs`);
+  if (semStep2.with !== undefined) throw new Error(`${label}: semgrep scan step must not define inputs`);
 
   // 9. Validate CodeQL job (F2, F4, F6)
   const codeJob = jobs.codeql;
@@ -1020,7 +1104,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     contents: 'read',
     'security-events': 'write'
   }, `${label} codeql permissions`);
-  if (codeJob.env && Object.keys(codeJob.env).length > 0) throw new Error(`${label}: codeql job-level env is not permitted`);
+  if (codeJob.env !== undefined) throw new Error(`${label}: codeql job-level env is not permitted`);
   if (codeJob.services) throw new Error(`${label}: codeql job must not declare services`);
   if (codeJob.container) throw new Error(`${label}: codeql job must not declare a container`);
 
@@ -1038,7 +1122,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     throw new Error(`${label}: codeql checkout step must use pinned action 'actions/checkout@${APPROVED_ACTIONS.get('actions/checkout')}', got '${codeStep0.uses}'`);
   }
   assertExactObject(codeStep0.with, { 'persist-credentials': false }, `${label} codeql checkout inputs`);
-  if (codeStep0.env) throw new Error(`${label}: codeql checkout step must not define env`);
+  if (codeStep0.env !== undefined) throw new Error(`${label}: codeql checkout step must not define env`);
 
   // Step 1: CodeQL Init
   const codeStep1 = codeSteps[1];
@@ -1056,18 +1140,23 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   if (typeof codeStep1.with.languages !== 'string' || !codeStep1.with.languages.trim()) {
     throw new Error(`${label}: codeql init step must specify languages string`);
   }
-  if (codeStep1.with['build-mode'] !== undefined && (typeof codeStep1.with['build-mode'] !== 'string' || !codeStep1.with['build-mode'].trim())) {
-    throw new Error(`${label}: codeql init step build-mode must be a non-empty string`);
+  if (codeStep1.with['build-mode'] !== undefined) {
+    if (typeof codeStep1.with['build-mode'] !== 'string' || !codeStep1.with['build-mode'].trim()) {
+      throw new Error(`${label}: codeql init step build-mode must be a non-empty string`);
+    }
+    if (!APPROVED_BUILD_MODES.has(codeStep1.with['build-mode'].trim())) {
+      throw new Error(`${label}: codeql init step build-mode must be one of none, autobuild, manual, got '${codeStep1.with['build-mode']}'`);
+    }
   }
-  if (codeStep1.env) throw new Error(`${label}: codeql init step must not define env`);
+  if (codeStep1.env !== undefined) throw new Error(`${label}: codeql init step must not define env`);
 
   // Step 2: CodeQL Analyze
   const codeStep2 = codeSteps[2];
   if (codeStep2.uses !== `github/codeql-action/analyze@${APPROVED_ACTIONS.get('github/codeql-action/analyze')}`) {
     throw new Error(`${label}: codeql analyze step must use pinned action 'github/codeql-action/analyze@${APPROVED_ACTIONS.get('github/codeql-action/analyze')}', got '${codeStep2.uses}'`);
   }
-  if (codeStep2.with) throw new Error(`${label}: codeql analyze step must not define inputs`);
-  if (codeStep2.env) throw new Error(`${label}: codeql analyze step must not define env`);
+  if (codeStep2.with !== undefined) throw new Error(`${label}: codeql analyze step must not define inputs`);
+  if (codeStep2.env !== undefined) throw new Error(`${label}: codeql analyze step must not define env`);
 
   // 10. Validate OSV job (F2, F4, F6)
   const osvJob = jobs.osv;
