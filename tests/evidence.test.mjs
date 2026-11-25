@@ -370,6 +370,11 @@ test('evidence references reject IP literals, private hostnames, single-label ho
   'tests/TODO.md#L1',
   'tests/evidence.test.mjs#TBD'
  ]){
-  expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
+  try {
+   expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
+  } catch(error) {
+   error.message=reference+': '+error.message;
+   throw error;
+  }
  }
 });
