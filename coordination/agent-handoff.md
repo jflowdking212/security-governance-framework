@@ -1345,7 +1345,7 @@ The latest A2-03 branch snapshot inspected contains owner-issued commits through
 **Date:** 2026-11-25  
 **Owner:** ChatGPT  
 **Branch:** `chatgpt/uss-integrated-scratch-candidate`  
-**Integrated code/test SHA:** `c289a81aace996b967c468eaff34159a07b85c26`  
+**Integrated code/test SHA:** `ac4bee5eef7ab0639f3bf3f095ce61a5a68d9057`  
 **Base implementation:** Gemini verified SHA `6d33dfa4cc855b39a03016ae1661a4e7cf48e877`
 
 ### Integrated workstreams
@@ -1358,9 +1358,9 @@ The latest A2-03 branch snapshot inspected contains owner-issued commits through
 
 ### Candidate hosted validation
 
-Exact code/test SHA `c289a81aace996b967c468eaff34159a07b85c26`:
-- USS validation run `45545256488`: SUCCESS.
-- Full suite: **289 passed, 0 failed, 0 skipped**.
+Exact code/test SHA `ac4bee5eef7ab0639f3bf3f095ce61a5a68d9057`:
+- USS validation run `45545830826`: SUCCESS.
+- Full suite: **290 passed, 0 failed, 0 skipped**.
 - All three generators completed; USS repository validation passed (22 modules, 52 source references).
 - W-04 hostile PATH/GIT_* test passed.
 - W04-F1 Git and filesystem non-Linux diagnostics passed.
@@ -1368,10 +1368,11 @@ Exact code/test SHA `c289a81aace996b967c468eaff34159a07b85c26`:
 - W04-F3 hardlink-preservation test passed.
 - A2-03 descriptor-root/race tests passed.
 - A2-06 unsigned-64 run-ID boundary test passed.
+- Additional A2-06 URL/reference tests reject IPv4/IPv6 literals, local/private host suffixes, single-label hosts, raw whitespace/control characters, placeholder URL path/fragment segments and placeholder filename stems. An initial regression exposed the `TODO.md` stem case; the validator was corrected and the full suite passed.
 - W-A/B/C gitattributes and scanner-header mutation tests passed.
 - Generated module/index/bundle drift gate passed.
 
-Hosted security scan run `45545256855` for the same SHA: **SUCCESS across all four jobs**.
+Hosted security scan run `45545831621` for the same SHA: **SUCCESS across all four jobs**.
   - Gitleaks 8.24.3: one pushed commit scanned, 587 bytes, no leaks found.
   - Semgrep: 479 rules, 32 targets, approximately 100% parsed lines, zero findings.
   - CodeQL 2.27.5: 23/23 JavaScript files and 2/2 GitHub Actions files scanned; job succeeded.
@@ -1385,7 +1386,7 @@ The separate W-04 branch code/test SHA `d2ac9a4371e68abce4bfa9699aa674b85af0bcdf
 ### Open items and limitations
 
 - Candidate remains a **scratch branch**, not a final squash and not a release candidate.
-- Claude must independently audit the exact integrated code/test SHA, including the A2-03 ancestor-swap harness and W-04 adversarial tests.
+- Claude must independently audit exact integrated code/test SHA `ac4bee5eef7ab0639f3bf3f095ce61a5a68d9057`, including the A2-03 ancestor-swap harness, W-04 adversarial tests and expanded evidence-reference probes. The audit prompt is `coordination/prompts/CLAUDE-FINAL-INTEGRATION-AUDIT.md`.
 - A2-11 (eight stack profiles) and A2-12 (M21) remain NOT RE-VERIFIED against current primary sources in this cycle.
 - SCAN-S6 (indexed regular file replaced by worktree symlink) remains OPEN pending Gemini reproduction/remediation.
 - W-02/W-03 full adversarial re-attack remains pending.
@@ -1395,7 +1396,7 @@ The separate W-04 branch code/test SHA `d2ac9a4371e68abce4bfa9699aa674b85af0bcdf
 
 ### Next gates
 
-1. Complete hosted security scans on the exact integrated SHA.
+1. Hosted validation and all four security scan jobs have succeeded on exact integrated SHA `ac4bee5eef7ab0639f3bf3f095ce61a5a68d9057`.
 2. Gemini closes/reports SCAN-S6 and W-02/W-03 in its own branch.
 3. Claude independently audits this exact integrated candidate and re-verifies A2-11/A2-12 against primary sources.
 4. Reconcile all results and build the mandatory clean squash, preserving no prohibited directive in release history.
