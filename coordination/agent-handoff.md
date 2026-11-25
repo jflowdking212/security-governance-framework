@@ -1876,3 +1876,51 @@ ChatGPT implemented the first W-04 hardening pass on `chatgpt/checksum-root-syml
 3. Claude executes A2-06/A2-11/A2-12 implementation and review, returning each completed finding as soon as ready.
 4. ChatGPT reviews all three handbacks, reconciles them into one candidate without overwriting agent commits, then requests Claude's separate independent audit of the exact final combined SHA.
 5. Release gates, owner signing and production approval remain separate final steps. No merge, tag, signing, publication or deployment is authorised by this work split.
+
+
+---
+
+## 23. ChatGPT W04-F1 and W04-F3 corrections
+
+**Date:** 2026-11-25  
+**Owner:** ChatGPT  
+**Branch:** `chatgpt/w04-f1-f3-checksum-hardening`  
+**Base:** `a5b12f8302da1525c6625db8c9df33dfd0e53783` (W-04 checksum-root line)
+
+### Findings addressed
+
+**W04-F1 — controlled unsupported-platform failure (P2):**
+- Trusted Git resolution is now lazy and only occurs when Git mode invokes Git.
+- Non-Linux Git mode prints an explicit fail-closed diagnostic and exits without an uncaught stack trace or PATH fallback.
+- Filesystem mode on an unsupported platform reaches the guarded root-open operation and reports the existing race-resistant traversal limitation through the controlled error handler.
+- Regression tests simulate a non-Linux platform for both Git mode and filesystem mode and assert status 1, clear diagnostics, and no stack trace.
+
+**W04-F3 — hardlinked manifest clobber (P3):**
+- Manifest creation now writes to a random, exclusive, no-follow temporary file under the already-open root directory descriptor.
+- It fsyncs the new file, atomically renames it over `SHA256SUMS`, then fsyncs the directory.
+- A regression test creates an external hardlink to an old manifest inode and proves that regenerating `SHA256SUMS` does not modify the external link.
+
+### Commits
+
+- `cc06eed3644e70952f36829d135095a305ae705e` — atomic manifest replacement and initial unsupported-platform guard.
+- `43693608f8ab700985920449422d281ccf70cb0a` — regression tests for W04-F1 and W04-F3.
+- `03c174a472c2b79f3ad83d36033462951dfa2f4b` — defer trusted Git resolution until Git mode is used; no import-time resolver exception.
+- `74a38b8177e1bed07e3766997b1b02cb30585191` — correct platform-shim regression test escaping.
+
+### Verification
+
+- Hosted USS validation run `45540099348` on exact code/test SHA `74a38b8177e1bed07e3766997b1b02cb30585191`: **SUCCESS**.
+- Full test suite: **188 passed, 0 failed, 0 skipped**.
+- All three generators completed; repository validation passed.
+- W04-F1 Git-mode simulation passed.
+- W04-F1 filesystem-mode simulation passed.
+- W04-F3 hardlink-preservation test passed.
+- Hosted USS security scans run `45540099744` for the same SHA were still in progress when this entry was written; re-fetch before claiming scan completion.
+
+### Still open
+
+- **W04-F2 (P3):** trusted Git resolver ownership/permission checks still need dedicated regression tests for group/world-writable candidates and foreign ownership.
+- Claude's integration review found that A2-03 and W-04 checksum implementations are competing rewrites. This branch is a focused W-04 correction branch, not the integrated candidate.
+- A2-03 handle-relative root integration, one canonical run-ID implementation, and reconciliation of the handoff ledger remain integration work.
+- No hosted CI is claimed for the combined release candidate.
+- No merge, signing, tag, release or deployment was performed.
