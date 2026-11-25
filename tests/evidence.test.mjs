@@ -364,7 +364,7 @@ test('evidence references reject IP literals, private hostnames, single-label ho
   'https://github.com/TBD',
   'https://github.com/owner/repo#TBD',
   'https://github.com/owner/TODO/commit/abc',
-  'https://github.com/owner/repo/actions/runs/123\\n',
+  'https://github.com/owner/repo/actions/runs/123'+String.fromCharCode(10),
   'https://github.com/owner/repo/actions/runs/123 with-space',
   'TBD#TBD',
   'tests/TODO.md#L1',
