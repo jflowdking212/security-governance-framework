@@ -101,3 +101,9 @@ test('Go profile reflects the two newest supported release lines as of 2026-11-2
  assert.match(profile,/1\.26 and 1\.27 are the supported release lines/);
  assert.doesNotMatch(profile,/1\.25-1\.27 are the supported release lines/);
 });
+
+
+test('M21 records a dated browser-specific LNA matrix without asserting cross-browser parity',()=>{
+ const m21=read('modules/m21-cors-browser-boundary.md');
+ for(const term of ['Browser implementation matrix (reviewed 2026-11-25)','Firefox 153','Edge 143','WebKit Bugzilla','not proof of a shipped Safari release','Cross-browser verification rule'])assert.ok(m21.includes(term),'M21 missing '+term);
+});

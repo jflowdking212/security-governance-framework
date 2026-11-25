@@ -231,8 +231,27 @@ A CORS allowlist is a browser response-sharing control. The real security bounda
 
 - **Local Network Access (LNA)** is the current permission-based browser proposal for restricting website access to local-network and loopback destinations. The WICG LNA specification is a **Draft Community Group Report dated 7 August 2026**, not a W3C Recommendation. Treat its requirements as a developing specification and distinguish them from each browser's shipped implementation.
 - **Private Network Access (PNA 1.0)** refers to the earlier special-preflight approach using `Access-Control-Request-Private-Network` and `Access-Control-Allow-Private-Network`. Chrome put that rollout on hold and subsequently moved to the permission-based LNA approach. New implementations MUST NOT rely on those legacy headers as the browser's access-control mechanism. Existing devices may retain legacy header handling for compatibility, but it is not a substitute for current browser permission controls or server-side security.
-- **Chromium implementation is version-specific.** Chrome 142 introduced the permission-gated LNA restriction; Chrome 145 split the permission into `local-network` and `loopback-network`; Chrome 147 release material describes expansion to WebSocket and WebTransport connections. Do not assume that every browser, version, API or request type implements the same restrictions. Verify the supported browser/version matrix for the consuming application.
+- **Chromium implementation is version-specific.** Chrome documentation announced the permission prompt rollout in Chrome 142; Chrome 145 split the permission into `local-network` and `loopback-network`; Chrome 147 release material describes expansion to WebSocket and WebTransport connections. Do not assume that every browser, version, API or request type implements the same restrictions. Verify the supported browser/version matrix for the consuming application.
 - The current WICG draft notes that Chromium's implemented checks cover public-to-local and public-to-loopback requests, and that cross-origin local-to-local checks are not currently enforced. Do not claim complete protection for every private-network communication path.
+
+**Browser implementation matrix (reviewed 2026-11-25):**
+
+| Browser | Evidence and rollout | Scope and limitations |
+|---|---|---|
+| Chrome | Permission prompt rollout announced for Chrome 142; granular local and loopback permissions in 145; WebSocket and WebTransport coverage described in 147 release material. | Fetch, subresources and subframe navigation are documented; WebSocket and WebTransport are version-specific. Do not infer WebRTC or main-frame navigation coverage. |
+| Microsoft Edge | Microsoft Learn says restrictions ship by default from Edge 143. | Subresources, Fetch and subframe navigation are in scope. WebSocket, WebTransport and WebRTC are listed as planned in the March 2026 guidance. Main-frame navigation is not in scope in that guidance. Re-check current Edge documentation and deployed build because the documentation metadata and rollout dates can differ. |
+| Firefox | Mozilla says LNA protections are enabled by default for Desktop users from Firefox 153. The enterprise LocalNetworkAccess policy is documented separately. | The reviewed Mozilla pages do not specify a complete request-type matrix. The policy reference lists Firefox 145, ESR 145 and Enterprise 149 compatibility. Do not infer mobile or API coverage from the desktop statement. |
+| Safari / WebKit | WebKit bug 250607 remains the top-level LNA implementation tracker. Bug 324190 records permission decisions and Permissions API support landed on WebKit main in September 2026. | These engineering changes do not by themselves prove that a particular Safari release ships user-facing LNA prompts or enforcement. Verify the exact Safari/WebKit build and platform before making a support claim. |
+
+**Cross-browser verification rule:** Treat Chromium, Edge, Firefox and Safari/WebKit as separate implementations. Record browser product, exact version, operating system, request API, source and destination address spaces, permission state, enterprise policy and observed outcome. If a vendor source does not state a request type or platform, record it as unverified rather than assuming parity.
+
+**Additional vendor sources checked 2026-11-25:**
+
+- Mozilla Support, [Control personal device and local network permissions in Firefox](https://support.mozilla.org/en-US/kb/control-personal-device-local-network-permissions-firefox), including the Firefox 153 Desktop default-on statement.
+- Mozilla Enterprise, [LocalNetworkAccess policy reference](https://firefox-admin-docs.mozilla.org/reference/policies/localnetworkaccess/), including policy compatibility and affected preferences.
+- Microsoft Learn, [Adapting your website for new Local Network Access restrictions in Microsoft Edge](https://learn.microsoft.com/en-us/deployedge/ms-edge-local-network-access), last updated 9 March 2026.
+- WebKit Bugzilla, [Bug 250607: Implement Local Network Access](https://bugs.webkit.org/show_bug.cgi?id=250607), the top-level implementation tracker.
+- WebKit Bugzilla, [Bug 324190: Record Local Network Access permission decisions](https://bugs.webkit.org/show_bug.cgi?id=324190), resolved to a WebKit mainline commit in September 2026. This is not proof of a shipped Safari release.
 
 **LNA implementation requirements:**
 
