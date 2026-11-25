@@ -67,19 +67,75 @@ export const SENSITIVE_EXECUTION_VARS = new Set([
 ]);
 
 const ALLOWED_WORKFLOW_KEYS = new Set(['name', 'on', 'true', 'permissions', 'jobs', 'defaults', 'concurrency']);
+const APPROVED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_dispatch']);
+const FORBIDDEN_TRIGGER_FILTER_KEYS = new Set(['branches-ignore', 'tags', 'tags-ignore', 'paths', 'paths-ignore', 'types']);
 const APPROVED_JOB_IDS = new Set(['secrets', 'gitleaks', 'semgrep', 'codeql', 'osv']);
 const APPROVED_SHELLS = new Set([
   'bash',
   'bash --noprofile --norc -eo pipefail {0}',
   'bash --noprofile --norc -e -o pipefail {0}'
 ]);
-const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
+const EXPRESSION_SPAN_REGEX = /\$\{\{([\s\S]*?)\}\}/g;
+const UNTRUSTED_CONTEXT_REGEX = /\b(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|event_path|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
 
 const ALLOWED_SCANNER_JOB_KEYS = new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'container', 'steps']);
 const ALLOWED_OSV_JOB_KEYS = new Set(['name', 'uses', 'with', 'permissions']);
 const ALLOWED_STEP_KEYS = new Set(['name', 'uses', 'with', 'run', 'shell', 'env']);
 
+function hasUntrustedExpression(text) {
+  EXPRESSION_SPAN_REGEX.lastIndex = 0;
+  let match;
+  while ((match = EXPRESSION_SPAN_REGEX.exec(text)) !== null) {
+    if (UNTRUSTED_CONTEXT_REGEX.test(match[1])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertNoUntrustedExpressions(value, context, label) {
+  if (typeof value === 'string') {
+    if (hasUntrustedExpression(value)) {
+      throw new Error(`${label}: ${context} contains forbidden untrusted GitHub context: ${value}`);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      assertNoUntrustedExpressions(value[i], `${context}[${i}]`, label);
+    }
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      assertNoUntrustedExpressions(item, `${context}.${key}`, label);
+    }
+  }
+}
+
+function validateBranchTrigger(config, event, label) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error(`${label}: trigger '${event}' must configure branch filters`);
+  }
+  for (const key of Object.keys(config)) {
+    if (FORBIDDEN_TRIGGER_FILTER_KEYS.has(key) || key !== 'branches') {
+      throw new Error(`${label}: trigger '${event}' declares unapproved filter key '${key}'`);
+    }
+  }
+  if (!Array.isArray(config.branches) || config.branches.length === 0) {
+    throw new Error(`${label}: trigger '${event}' must declare a non-empty branches allowlist`);
+  }
+  for (const pattern of config.branches) {
+    if (typeof pattern !== 'string' || !pattern.trim() || pattern.trim().startsWith('!')) {
+      throw new Error(`${label}: trigger '${event}' branches pattern '${pattern}' must be a non-negated branch pattern`);
+    }
+  }
+}
+
 function validateMandatoryJobControl(job, jobId, label) {
+  if (!job || typeof job !== 'object' || Array.isArray(job)) {
+    throw new Error(`${label}: job '${jobId}' must be an object`);
+  }
   if (job.if !== undefined) {
     throw new Error(`${label}: mandatory job '${jobId}' declares unapproved condition '${job.if}'; mandatory security jobs must not be conditional`);
   }
@@ -92,20 +148,31 @@ function validateMandatoryJobControl(job, jobId, label) {
   if (job.strategy !== undefined) {
     throw new Error(`${label}: mandatory job '${jobId}' must not define strategy matrix`);
   }
+  assertNoUntrustedExpressions(job.name, `job '${jobId}' name`, label);
 }
 
 function validateMandatoryStepControl(step, index, jobId, label) {
+  if (!step || typeof step !== 'object' || Array.isArray(step)) {
+    throw new Error(`${label}: job '${jobId}' step ${index} must be an object`);
+  }
   if (step.if !== undefined) {
     throw new Error(`${label}: mandatory step ${index} in job '${jobId}' declares unapproved condition '${step.if}'; mandatory security steps must not be conditional`);
   }
   if (step['continue-on-error'] !== undefined) {
     throw new Error(`${label}: mandatory step ${index} in job '${jobId}' must not define continue-on-error`);
   }
+  if (step.uses !== undefined && step.run !== undefined) {
+    throw new Error(`${label}: job '${jobId}' step ${index} must not combine both 'uses' and 'run'`);
+  }
   for (const k of Object.keys(step)) {
     if (!ALLOWED_STEP_KEYS.has(k)) {
       throw new Error(`${label}: job '${jobId}' step ${index} contains unapproved key '${k}'`);
     }
   }
+  assertNoUntrustedExpressions(step.name, `job '${jobId}' step ${index} name`, label);
+  assertNoUntrustedExpressions(step.with, `job '${jobId}' step ${index} with`, label);
+  assertNoUntrustedExpressions(step.env, `job '${jobId}' step ${index} env`, label);
+  assertNoUntrustedExpressions(step.run, `job '${jobId}' step ${index} run`, label);
 }
 
 export function buildExpectedConsumerGuard() {
@@ -118,7 +185,7 @@ export function buildExpectedConsumerGuard() {
     'done < <(env)',
     'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
     'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do',
-    '  if [ -e "$file" ]; then',
+    '  if [ -e "$file" ] || [ -L "$file" ]; then',
     '    printf \'Unreviewed scanner override is not permitted: %s\\n\' "$file" >&2',
     '    exit 1',
     '  fi',
@@ -126,6 +193,11 @@ export function buildExpectedConsumerGuard() {
     'nested_osv_config="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o \\( -name \'osv-scanner.toml\' -o -name \'.osv-scanner.toml\' \\) -print)"',
     'if [ -n "$nested_osv_config" ]; then',
     '  printf \'Unreviewed OSV configuration is not permitted: %s\\n\' "$nested_osv_config" >&2',
+    '  exit 1',
+    'fi',
+    'nested_scanner_override="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o \\( -name \'.gitleaks.toml\' -o -name \'.gitleaksignore\' -o -name \'gitleaks.toml\' -o -name \'gitleaks.yaml\' -o -name \'gitleaks.yml\' -o -name \'.semgrep.yml\' -o -name \'.semgrep.yaml\' -o -name \'semgrep.yml\' -o -name \'semgrep.yaml\' -o -name \'codeql-config.yml\' -o -name \'codeql-config.yaml\' -o -name \'.allowed-binaries\' \\) -print)"',
+    'if [ -n "$nested_scanner_override" ]; then',
+    '  printf \'Unreviewed scanner override is not permitted: %s\\n\' "$nested_scanner_override" >&2',
     '  exit 1',
     'fi',
     'if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E \'[g]itleaks[[:space:]]*:[[:space:]]*allow\' -- . >&2; then',
@@ -151,13 +223,17 @@ export function buildExpectedConsumerGuard() {
     '    printf \'Symlinked .gitattributes is not permitted: %s\\n\' "$attr_file" >&2',
     '    exit 1',
     '  fi',
-    '  if grep -v \'^[[:space:]]*#\' "$attr_file" | grep -n -E \'(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)\' >&2; then',
+    '  if grep -v \'^[[:space:]]*#\' "$attr_file" | grep -n -E \'(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)\' >&2; then',
     '    printf \'Prohibited .gitattributes configuration is not permitted: %s\\n\' "$attr_file" >&2',
     '    exit 1',
     '  fi',
     'done < <(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.gitattributes\' -print)',
+    'if [ -L .git/info/attributes ]; then',
+    '  printf \'%s\\n\' \'Symlinked .git/info/attributes is not permitted\' >&2',
+    '  exit 1',
+    'fi',
     'if [ -e .git/info/attributes ]; then',
-    '  if grep -v \'^[[:space:]]*#\' .git/info/attributes | grep -n -E \'(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)\' >&2; then',
+    '  if grep -v \'^[[:space:]]*#\' .git/info/attributes | grep -n -E \'(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)\' >&2; then',
     '    printf \'%s\\n\' \'Prohibited .git/info/attributes configuration is not permitted\' >&2',
     '    exit 1',
     '  fi',
@@ -647,13 +723,22 @@ export function buildExpectedConsumerGuard() {
     '  printf \'%s\\n\' \'A symlinked .semgrepignore is not permitted\' >&2',
     '  exit 1',
     'fi',
+    'if [ -e .semgrepignore ] && [ ! -f .semgrepignore ]; then',
+    '  printf \'%s\\n\' \'.semgrepignore must be a regular file\' >&2',
+    '  exit 1',
+    'fi',
     'if [ -f .semgrepignore ]; then',
-    '  actual="$(awk \'NF && $1 !~ /^#/ { print $1 }\' .semgrepignore | sort)"',
+    '  actual="$(awk \'NF && $0 !~ /^[[:space:]]*#/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print }\' .semgrepignore | sort)"',
     '  expected="$(printf \'.git/\\nnode_modules/\\n\' | sort)"',
     '  if [ "$actual" != "$expected" ]; then',
     '    printf \'%s\\n\' \'.semgrepignore may exclude only .git/ and node_modules/\' >&2',
     '    exit 1',
     '  fi',
+    'fi',
+    'symlinked_gitignore="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.gitignore\' -type l -print)"',
+    'if [ -n "$symlinked_gitignore" ]; then',
+    '  printf \'Symlinked .gitignore is not permitted: %s\\n\' "$symlinked_gitignore" >&2',
+    '  exit 1',
     'fi',
     'target_count=0',
     'while IFS= read -r -d \'\' file; do',
@@ -721,24 +806,21 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
       throw new Error(`${label}: unapproved workflow-level key '${key}'`);
     }
   }
+  assertNoUntrustedExpressions(parsed.name, 'workflow name', label);
 
   // 2. Workflow-level permissions
   if (!parsed.permissions) {
     throw new Error(`${label}: must declare workflow-level permissions`);
   }
   if (typeof parsed.permissions === 'string') {
-    if (parsed.permissions !== 'read-all') {
-      throw new Error(`${label}: string permissions must be 'read-all', got '${parsed.permissions}'`);
-    }
-  } else if (typeof parsed.permissions === 'object') {
-    if (parsed.permissions.contents !== 'read') {
-      throw new Error(`${label}: workflow-level permissions must be contents: read`);
-    }
+    throw new Error(`${label}: workflow-level permissions must be { contents: 'read' }, got string '${parsed.permissions}'`);
+  } else if (typeof parsed.permissions === 'object' && !Array.isArray(parsed.permissions)) {
     for (const [scope, perm] of Object.entries(parsed.permissions)) {
       if (perm === 'write' || perm === 'write-all') {
         throw new Error(`${label}: workflow-level permissions must not grant write access to ${scope}`);
       }
     }
+    assertExactObject(parsed.permissions, { contents: 'read' }, `${label} workflow permissions`);
   } else {
     throw new Error(`${label}: invalid permissions type`);
   }
@@ -748,19 +830,36 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   if (!rawTriggers) {
     throw new Error(`${label}: must define trigger conditions`);
   }
-  const triggers = typeof rawTriggers === 'object' && !Array.isArray(rawTriggers) ? rawTriggers : {};
+  if (typeof rawTriggers !== 'object' || Array.isArray(rawTriggers)) {
+    throw new Error(`${label}: triggers must be a mapping specifying approved push, pull_request, and schedule events`);
+  }
+  const triggers = rawTriggers;
+  for (const triggerName of Object.keys(triggers)) {
+    if (!APPROVED_TRIGGERS.has(triggerName)) {
+      throw new Error(`${label}: uses unapproved trigger '${triggerName}'`);
+    }
+  }
   if (!triggers.push) throw new Error(`${label}: must define push trigger`);
   if (!triggers.pull_request) throw new Error(`${label}: must define pull_request trigger`);
+  validateBranchTrigger(triggers.push, 'push', label);
+  validateBranchTrigger(triggers.pull_request, 'pull_request', label);
   if (!triggers.schedule) throw new Error(`${label}: must define schedule trigger for periodic full-history scan`);
   if (!Array.isArray(triggers.schedule) || triggers.schedule.length === 0) {
     throw new Error(`${label}: schedule must be a non-empty array`);
   }
+  for (const entry of triggers.schedule) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || Object.keys(entry).some(k => k !== 'cron') || typeof entry.cron !== 'string') {
+      throw new Error(`${label}: schedule entries must define only a cron string`);
+    }
+  }
   if (!triggers.schedule.some(s => s?.cron === '17 5 * * 1')) {
     throw new Error(`${label}: schedule must include weekly full-history scan cron "17 5 * * 1"`);
   }
+  assertNoUntrustedExpressions(triggers.workflow_dispatch, 'workflow_dispatch trigger', label);
 
   // 4. Defaults & Concurrency
   if (parsed.defaults) {
+    assertNoUntrustedExpressions(parsed.defaults, 'defaults', label);
     if (parsed.defaults.run?.['working-directory']) {
       throw new Error(`${label}: defaults.run must not override working-directory`);
     }
@@ -771,6 +870,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
     }
   }
   if (parsed.concurrency) {
+    assertNoUntrustedExpressions(parsed.concurrency, 'concurrency', label);
     if (parsed.concurrency['cancel-in-progress'] === true) {
       throw new Error(`${label}: must not enable concurrency cancel-in-progress: true`);
     }
@@ -945,7 +1045,7 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   if (codeStep1.uses !== `github/codeql-action/init@${APPROVED_ACTIONS.get('github/codeql-action/init')}`) {
     throw new Error(`${label}: codeql init step must use pinned action 'github/codeql-action/init@${APPROVED_ACTIONS.get('github/codeql-action/init')}', got '${codeStep1.uses}'`);
   }
-  if (!codeStep1.with || typeof codeStep1.with !== 'object') {
+  if (!codeStep1.with || typeof codeStep1.with !== 'object' || Array.isArray(codeStep1.with)) {
     throw new Error(`${label}: codeql init step must configure inputs`);
   }
   for (const k of Object.keys(codeStep1.with)) {
@@ -955,6 +1055,9 @@ export function validateConsumerWorkflowStructure(parsed, label = 'consumer-secu
   }
   if (typeof codeStep1.with.languages !== 'string' || !codeStep1.with.languages.trim()) {
     throw new Error(`${label}: codeql init step must specify languages string`);
+  }
+  if (codeStep1.with['build-mode'] !== undefined && (typeof codeStep1.with['build-mode'] !== 'string' || !codeStep1.with['build-mode'].trim())) {
+    throw new Error(`${label}: codeql init step build-mode must be a non-empty string`);
   }
   if (codeStep1.env) throw new Error(`${label}: codeql init step must not define env`);
 

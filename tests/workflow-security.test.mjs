@@ -18,12 +18,13 @@ const FORBIDDEN_ERROR_SUPPRESSIONS = [
   /\|\|\s*(?:echo|printf|cat)\b/,
   /\|\|\s*\/(?:usr\/)?bin\/true\b/,
   /\|\|\s*:/,
+  /\|\|\s*return\b/,
   /;\s*true\b/,
   /;\s*exit\s+0\b/,
   /;\s*(?:echo|printf)\b/,
   /;\s*:/,
   /\bset\s+\+e\b/,
-  /\bset\s+\+o\s+(?:errexit|e)\b/,
+  /\bset\s+\+o\s+(?:errexit|e|pipefail)\b/,
   /\btrap\s+[^;\n]*\s+ERR\b/i,
   /--suppress-errors\b/,
   /--no-error\b/,
@@ -31,10 +32,23 @@ const FORBIDDEN_ERROR_SUPPRESSIONS = [
 ];
 
 const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_dispatch']);
+const FORBIDDEN_TRIGGER_FILTER_KEYS = new Set(['branches-ignore', 'tags', 'tags-ignore', 'paths', 'paths-ignore', 'types']);
 
-// Matches direct untrusted GitHub context or input interpolation in run: scripts.
-// Covers dot notation, bracket notation, and nested paths.
-const UNTRUSTED_EXPRESSION_REGEX = /\$\{\{\s*(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
+// Matches any GitHub Actions expression span containing untrusted context or input references,
+// including dot/bracket notation and expressions wrapped inside helper functions like format() or toJSON().
+const EXPRESSION_SPAN_REGEX = /\$\{\{([\s\S]*?)\}\}/g;
+const UNTRUSTED_CONTEXT_REGEX = /\b(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|event_path|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
+
+function hasUntrustedExpression(text) {
+  EXPRESSION_SPAN_REGEX.lastIndex = 0;
+  let match;
+  while ((match = EXPRESSION_SPAN_REGEX.exec(text)) !== null) {
+    if (UNTRUSTED_CONTEXT_REGEX.test(match[1])) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function buildScannerConfigGuard(targetSpec, emptyMessage) {
   return [
@@ -46,7 +60,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     'done < <(env)',
     'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
     'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do',
-    '  if [ -e "$file" ]; then',
+    '  if [ -e "$file" ] || [ -L "$file" ]; then',
     '    printf \'Unreviewed scanner override is not permitted: %s\\n\' "$file" >&2',
     '    exit 1',
     '  fi',
@@ -54,6 +68,11 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     'nested_osv_config="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o \\( -name \'osv-scanner.toml\' -o -name \'.osv-scanner.toml\' \\) -print)"',
     'if [ -n "$nested_osv_config" ]; then',
     '  printf \'Unreviewed OSV configuration is not permitted: %s\\n\' "$nested_osv_config" >&2',
+    '  exit 1',
+    'fi',
+    'nested_scanner_override="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o \\( -name \'.gitleaks.toml\' -o -name \'.gitleaksignore\' -o -name \'gitleaks.toml\' -o -name \'gitleaks.yaml\' -o -name \'gitleaks.yml\' -o -name \'.semgrep.yml\' -o -name \'.semgrep.yaml\' -o -name \'semgrep.yml\' -o -name \'semgrep.yaml\' -o -name \'codeql-config.yml\' -o -name \'codeql-config.yaml\' -o -name \'.allowed-binaries\' \\) -print)"',
+    'if [ -n "$nested_scanner_override" ]; then',
+    '  printf \'Unreviewed scanner override is not permitted: %s\\n\' "$nested_scanner_override" >&2',
     '  exit 1',
     'fi',
     'if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E \'[g]itleaks[[:space:]]*:[[:space:]]*allow\' -- . >&2; then',
@@ -79,13 +98,17 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '    printf \'Symlinked .gitattributes is not permitted: %s\\n\' "$attr_file" >&2',
     '    exit 1',
     '  fi',
-    '  if grep -v \'^[[:space:]]*#\' "$attr_file" | grep -n -E \'(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)\' >&2; then',
+    '  if grep -v \'^[[:space:]]*#\' "$attr_file" | grep -n -E \'(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)\' >&2; then',
     '    printf \'Prohibited .gitattributes configuration is not permitted: %s\\n\' "$attr_file" >&2',
     '    exit 1',
     '  fi',
     'done < <(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.gitattributes\' -print)',
+    'if [ -L .git/info/attributes ]; then',
+    '  printf \'%s\\n\' \'Symlinked .git/info/attributes is not permitted\' >&2',
+    '  exit 1',
+    'fi',
     'if [ -e .git/info/attributes ]; then',
-    '  if grep -v \'^[[:space:]]*#\' .git/info/attributes | grep -n -E \'(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)\' >&2; then',
+    '  if grep -v \'^[[:space:]]*#\' .git/info/attributes | grep -n -E \'(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)\' >&2; then',
     '    printf \'%s\\n\' \'Prohibited .git/info/attributes configuration is not permitted\' >&2',
     '    exit 1',
     '  fi',
@@ -575,13 +598,22 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '  printf \'%s\\n\' \'A symlinked .semgrepignore is not permitted\' >&2',
     '  exit 1',
     'fi',
+    'if [ -e .semgrepignore ] && [ ! -f .semgrepignore ]; then',
+    '  printf \'%s\\n\' \'.semgrepignore must be a regular file\' >&2',
+    '  exit 1',
+    'fi',
     'if [ -f .semgrepignore ]; then',
-    '  actual="$(awk \'NF && $1 !~ /^#/ { print $1 }\' .semgrepignore | sort)"',
+    '  actual="$(awk \'NF && $0 !~ /^[[:space:]]*#/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print }\' .semgrepignore | sort)"',
     '  expected="$(printf \'.git/\\nnode_modules/\\n\' | sort)"',
     '  if [ "$actual" != "$expected" ]; then',
     '    printf \'%s\\n\' \'.semgrepignore may exclude only .git/ and node_modules/\' >&2',
     '    exit 1',
     '  fi',
+    'fi',
+    'symlinked_gitignore="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.gitignore\' -type l -print)"',
+    'if [ -n "$symlinked_gitignore" ]; then',
+    '  printf \'Symlinked .gitignore is not permitted: %s\\n\' "$symlinked_gitignore" >&2',
+    '  exit 1',
     'fi',
     'target_count=0',
     'while IFS= read -r -d \'\' file; do',
@@ -654,7 +686,7 @@ function assertJobPermissions(jobId, job, label) {
   if (!job.permissions) return;
   if (typeof job.permissions === 'string') {
     assert.notEqual(job.permissions, 'write-all', `${label} job ${jobId} must not use write-all permissions`);
-    assert.equal(job.permissions, 'read-all', `${label} job ${jobId} string permissions must be read-all`);
+    assert.fail(`${label} job ${jobId} permissions must be an explicit mapping, not string ${job.permissions}`);
   } else if (typeof job.permissions === 'object') {
     for (const [scope, perm] of Object.entries(job.permissions)) {
       if (perm === 'write' || perm === 'write-all') {
@@ -696,7 +728,7 @@ function assertPinnedActions(parsed, label) {
  */
 function assertNoUntrustedExpressionsInValue(value, context) {
   if (typeof value === 'string') {
-    assert.ok(!UNTRUSTED_EXPRESSION_REGEX.test(value), context + ' contains forbidden untrusted GitHub context: ' + value);
+    assert.ok(!hasUntrustedExpression(value), context + ' contains forbidden untrusted GitHub context: ' + value);
     return;
   }
   if (Array.isArray(value)) {
@@ -792,7 +824,17 @@ function assertBranchCoverage(parsed, label, requiredPullRequestBranches) {
   for (const event of ['push', 'pull_request']) {
     const config = triggers[event];
     assert.ok(config && typeof config === 'object' && !Array.isArray(config), label + ' must configure ' + event + ' branch filters');
-    assert.ok(Array.isArray(config.branches), label + ' ' + event + ' must declare an explicit branches allowlist');
+    for (const key of Object.keys(config)) {
+      if (FORBIDDEN_TRIGGER_FILTER_KEYS.has(key) || key !== 'branches') {
+        assert.fail(label + ' ' + event + " declares unapproved filter key '" + key + "'");
+      }
+    }
+    assert.ok(Array.isArray(config.branches) && config.branches.length > 0, label + ' ' + event + ' must declare an explicit non-empty branches allowlist');
+    for (const pattern of config.branches) {
+      if (typeof pattern !== 'string' || !pattern.trim() || pattern.trim().startsWith('!')) {
+        assert.fail(label + ' ' + event + " branch pattern '" + pattern + "' must be a non-negated branch pattern");
+      }
+    }
     const required = event === 'push' ? ['**'] : requiredPullRequestBranches;
     for (const branchPattern of required) {
       assert.ok(config.branches.includes(branchPattern), label + ' ' + event + ' branch filter is missing required pattern ' + branchPattern);
@@ -814,15 +856,55 @@ function assertNoMandatoryJobConditions(jobId, job, label) {
   }
 }
 
+function findNamedEntriesRecursive(root, names) {
+  const hits = [];
+  function scan(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === '.git' || entry.name === 'node_modules') continue;
+        if (names.has(entry.name)) hits.push(path.relative(root, fullPath));
+        scan(fullPath);
+      } else if (names.has(entry.name)) {
+        hits.push(path.relative(root, fullPath));
+      }
+    }
+  }
+  scan(root);
+  return hits;
+}
+
 function assertNoGitleaksOverrideFiles(root = ROOT) {
   for (const file of ['.gitleaks.toml', '.gitleaksignore', 'gitleaks.toml', 'gitleaks.yaml', 'gitleaks.yml']) {
-    assert.ok(!fs.existsSync(path.join(root, file)), 'Unreviewed Gitleaks configuration/ignore file is not permitted: ' + file);
+    let exists = false;
+    try {
+      fs.lstatSync(path.join(root, file));
+      exists = true;
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+    assert.ok(!exists, 'Unreviewed Gitleaks configuration/ignore file is not permitted: ' + file);
   }
+  const nested = findNamedEntriesRecursive(root, new Set(['.gitleaks.toml', '.gitleaksignore', 'gitleaks.toml', 'gitleaks.yaml', 'gitleaks.yml']));
+  assert.deepEqual(nested, [], 'Unreviewed Gitleaks configuration/ignore file is not permitted: ' + nested.join(', '));
 }
 
 function assertSemgrepIgnoreAllowlist(root = ROOT) {
   const ignorePath = path.join(root, '.semgrepignore');
-  assert.ok(fs.existsSync(ignorePath), 'First-party repository must include its reviewed .semgrepignore');
+  let stat;
+  try {
+    stat = fs.lstatSync(ignorePath);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      assert.fail('First-party repository must include its reviewed .semgrepignore');
+    }
+    throw err;
+  }
+  assert.ok(!stat.isSymbolicLink(), 'Symlinked .semgrepignore is not permitted');
+  assert.ok(stat.isFile(), '.semgrepignore must be a regular file');
+  const nested = findNamedEntriesRecursive(root, new Set(['.semgrepignore'])).filter(rel => rel !== '.semgrepignore');
+  assert.deepEqual(nested, [], 'Nested .semgrepignore is not permitted: ' + nested.join(', '));
   const patterns = fs.readFileSync(ignorePath, 'utf8')
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -833,14 +915,32 @@ function assertSemgrepIgnoreAllowlist(root = ROOT) {
 
 function assertNoCodeQLConfigOverrides(root = ROOT) {
   for (const file of ['codeql-config.yml', 'codeql-config.yaml', '.github/codeql/codeql-config.yml', '.github/codeql/codeql-config.yaml']) {
-    assert.ok(!fs.existsSync(path.join(root, file)), 'Unreviewed CodeQL configuration override is not permitted: ' + file);
+    let exists = false;
+    try {
+      fs.lstatSync(path.join(root, file));
+      exists = true;
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+    assert.ok(!exists, 'Unreviewed CodeQL configuration override is not permitted: ' + file);
   }
+  const nested = findNamedEntriesRecursive(root, new Set(['codeql-config.yml', 'codeql-config.yaml']));
+  assert.deepEqual(nested, [], 'Unreviewed CodeQL configuration override is not permitted: ' + nested.join(', '));
 }
 
 function assertNoSemgrepConfigOverrides(root = ROOT) {
   for (const file of ['.semgrep.yml', '.semgrep.yaml', 'semgrep.yml', 'semgrep.yaml']) {
-    assert.ok(!fs.existsSync(path.join(root, file)), 'Unreviewed Semgrep configuration override is not permitted: ' + file);
+    let exists = false;
+    try {
+      fs.lstatSync(path.join(root, file));
+      exists = true;
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+    assert.ok(!exists, 'Unreviewed Semgrep configuration override is not permitted: ' + file);
   }
+  const nested = findNamedEntriesRecursive(root, new Set(['.semgrep.yml', '.semgrep.yaml', 'semgrep.yml', 'semgrep.yaml']));
+  assert.deepEqual(nested, [], 'Unreviewed Semgrep configuration override is not permitted: ' + nested.join(', '));
 }
 
 function assertNoOsvConfigOverrides(root = ROOT) {
@@ -865,7 +965,7 @@ function hasProhibitedGitAttributes(content) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    if (/(?:^|\s)[-!]?(?:diff|binary|filter|merge)(?:[\s=]|$)/.test(trimmed)) {
+    if (/(?:^|\s)(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)(?:[\s=]|$)/.test(trimmed)) {
       return true;
     }
   }
@@ -893,6 +993,13 @@ function assertNoProhibitedGitAttributes(root = ROOT) {
   }
   scan(root);
   const infoAttr = path.join(root, '.git', 'info', 'attributes');
+  try {
+    if (fs.lstatSync(infoAttr).isSymbolicLink()) {
+      assert.fail('Symlinked .git/info/attributes is not permitted');
+    }
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
   if (fs.existsSync(infoAttr)) {
     const content = fs.readFileSync(infoAttr, 'utf8');
     if (hasProhibitedGitAttributes(content)) {
@@ -945,7 +1052,8 @@ function assertNoGitleaksSuppressionDirectives(root = ROOT) {
 
 const ALLOWED_WORKFLOW_KEYS = new Set(['name', 'on', 'true', 'permissions', 'jobs', 'defaults', 'concurrency', 'env']);
 const ALLOWED_JOB_KEYS = new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'if', 'needs', 'strategy', 'continue-on-error', 'env', 'with', 'defaults', 'steps', 'container', 'uses']);
-const ALLOWED_STEP_KEYS = new Set(['name', 'uses', 'with', 'run', 'env', 'shell', 'if', 'continue-on-error', 'timeout-minutes', 'id']);
+const ALLOWED_OSV_JOB_KEYS = new Set(['name', 'uses', 'with', 'permissions']);
+const ALLOWED_STEP_KEYS = new Set(['name', 'uses', 'with', 'run', 'env', 'shell', 'if', 'continue-on-error', 'id']);
 
 /**
  * Validates structural security invariants across GitHub Actions workflows.
@@ -955,6 +1063,10 @@ function validateWorkflowSecurity(parsed, label) {
     assert.ok(ALLOWED_WORKFLOW_KEYS.has(key), label + " contains unapproved workflow-level key '" + key + "'");
   }
 
+  assertNoUntrustedExpressionsInValue(parsed.name, label + ' name');
+  assertNoUntrustedExpressionsInValue(parsed.defaults, label + ' defaults');
+  assertNoUntrustedExpressionsInValue(parsed.concurrency, label + ' concurrency');
+
   if (parsed.concurrency) {
     assert.notEqual(parsed.concurrency['cancel-in-progress'], true, label + ' must not set concurrency cancel-in-progress: true');
   }
@@ -962,14 +1074,14 @@ function validateWorkflowSecurity(parsed, label) {
   assert.ok(parsed.permissions !== undefined && parsed.permissions !== null, label + ' must declare workflow-level permissions');
   if (typeof parsed.permissions === 'string') {
     assert.notEqual(parsed.permissions, 'write-all', label + ' must not use write-all permissions');
-    assert.equal(parsed.permissions, 'read-all', label + ' string permissions must be read-all');
+    assert.fail(label + ' workflow-level permissions must be an explicit mapping, not string ' + parsed.permissions);
   } else if (typeof parsed.permissions === 'object' && !Array.isArray(parsed.permissions)) {
     for (const [scope, perm] of Object.entries(parsed.permissions)) {
       assert.notEqual(perm, 'write', label + ' workflow-level permissions must not grant write access to ' + scope);
       assert.notEqual(perm, 'write-all', label + ' workflow-level permissions must not grant write access to ' + scope);
     }
   } else {
-    assert.fail(label + ' workflow-level permissions must be a string or object');
+    assert.fail(label + ' workflow-level permissions must be an explicit mapping');
   }
 
   const rawTriggers = parsed.on ?? parsed['true'];
@@ -981,6 +1093,19 @@ function validateWorkflowSecurity(parsed, label) {
   assert.ok(triggerKeys.length > 0, label + ' must define at least one trigger');
   for (const trigger of triggerKeys) {
     assert.ok(ALLOWED_TRIGGERS.has(trigger), label + " uses unapproved trigger '" + trigger + "'");
+  }
+  assert.ok(typeof rawTriggers === 'object' && !Array.isArray(rawTriggers), label + ' triggers must be an explicit mapping');
+  if (rawTriggers.workflow_dispatch !== undefined) {
+    assertNoUntrustedExpressionsInValue(rawTriggers.workflow_dispatch, label + ' trigger workflow_dispatch');
+  }
+  if (rawTriggers.schedule !== undefined) {
+    assert.ok(Array.isArray(rawTriggers.schedule) && rawTriggers.schedule.length > 0, label + ' schedule must be a non-empty array');
+    for (const entry of rawTriggers.schedule) {
+      assert.ok(
+        entry && typeof entry === 'object' && !Array.isArray(entry) && Object.keys(entry).every(k => k === 'cron') && typeof entry.cron === 'string',
+        label + ' schedule entries must define only a cron string'
+      );
+    }
   }
 
   assertSafeEnv(parsed.env, label + ' workflow');
@@ -1001,6 +1126,8 @@ function validateWorkflowSecurity(parsed, label) {
       assert.ok(ALLOWED_JOB_KEYS.has(key), label + ' job ' + jobId + " contains unapproved key '" + key + "'");
     }
 
+    assertNoUntrustedExpressionsInValue(job.name, label + ' job ' + jobId + ' name');
+    assertNoUntrustedExpressionsInValue(job.if, label + ' job ' + jobId + ' if');
     assertJobPermissions(jobId, job, label);
     assertNotConstantFalse(job.if, label + ' job ' + jobId);
     assert.ok(!job['continue-on-error'], label + ' job ' + jobId + ' must not have continue-on-error: true');
@@ -1024,9 +1151,14 @@ function validateWorkflowSecurity(parsed, label) {
     const steps = job.steps || [];
     for (const [i, step] of steps.entries()) {
       assert.equal(step['working-directory'], undefined, label + ' job ' + jobId + ' step ' + i + ' must not override working-directory');
+      if (step.uses !== undefined && step.run !== undefined) {
+        assert.fail(label + ' job ' + jobId + ' step ' + i + " must not combine both 'uses' and 'run'");
+      }
       for (const k of Object.keys(step)) {
         assert.ok(ALLOWED_STEP_KEYS.has(k), label + ' job ' + jobId + ' step ' + i + " contains unapproved key '" + k + "'");
       }
+      assertNoUntrustedExpressionsInValue(step.name, label + ' job ' + jobId + ' step ' + i + ' name');
+      assertNoUntrustedExpressionsInValue(step.if, label + ' job ' + jobId + ' step ' + i + ' if');
       assertNotConstantFalse(step.if, label + ' job ' + jobId + ' step ' + i + ' (' + (step.name || 'unnamed') + ')');
       assert.ok(!step['continue-on-error'], label + ' job ' + jobId + ' step ' + i + ' must not have continue-on-error: true');
       assertSafeEnv(step.env, label + ' job ' + jobId + ' step ' + i);
@@ -1040,7 +1172,7 @@ function validateWorkflowSecurity(parsed, label) {
       }
 
       if (step.run) {
-        assert.ok(!UNTRUSTED_EXPRESSION_REGEX.test(step.run), label + ' job ' + jobId + ' step ' + i + ' contains forbidden direct expression interpolation: ' + step.run);
+        assert.ok(!hasUntrustedExpression(step.run), label + ' job ' + jobId + ' step ' + i + ' contains forbidden direct expression interpolation: ' + step.run);
         if (/\bNODE_OPTIONS\s*=/i.test(step.run)) {
           assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not set NODE_OPTIONS: ' + step.run);
         }
@@ -1086,6 +1218,7 @@ function validateUssValidationWorkflow(parsed) {
 
   const job = parsed.jobs?.validate;
   assert.ok(job, 'uss-validation.yml must contain validate job');
+  assert.equal(job.permissions, undefined, 'uss-validation.yml validate job must inherit read-only workflow permissions');
   assertNoMandatoryJobConditions('validate', job, 'uss-validation.yml');
   const steps = job.steps || [];
   const stepMatchers = [
@@ -1115,6 +1248,9 @@ function validateUssValidationWorkflow(parsed) {
     assert.ok(stepMatchers[idx](steps[idx]), 'uss-validation.yml step ' + idx + ' does not match required step sequence: ' + (steps[idx].name || steps[idx].run || steps[idx].uses));
     assert.equal(steps[idx].if, undefined, 'uss-validation.yml mandatory step ' + idx + ' must not be conditional');
     if (idx >= 2) {
+      assert.equal(steps[idx].uses, undefined, 'uss-validation.yml step ' + idx + ' must not define uses');
+      assert.equal(steps[idx].with, undefined, 'uss-validation.yml step ' + idx + ' must not define with');
+      assert.equal(steps[idx].env, undefined, 'uss-validation.yml step ' + idx + ' must not define env');
       const normalizedRun = (steps[idx].run || '').replace(/\r\n/g, '\n').trim();
       assert.equal(normalizedRun, EXPECTED_USS_COMMANDS[idx - 2], 'uss-validation.yml step ' + idx + ' does not match exact approved execution contract');
       if (/(?:^|\s)\|(?:\s|$)/.test(steps[idx].run)) {
@@ -1123,6 +1259,12 @@ function validateUssValidationWorkflow(parsed) {
     }
   }
 
+  assert.equal(steps[0].uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', 'uss-validation.yml checkout must use the approved pinned action');
+  assertExactObject(steps[0].with, { 'persist-credentials': false }, 'uss-validation.yml checkout inputs');
+  assert.equal(steps[0].env, undefined, 'uss-validation.yml checkout step must not define env');
+
+  assert.equal(steps[1].uses, 'actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38', 'uss-validation.yml setup-node must use the approved pinned action');
+
   const moduleDriftStep = steps[4];
   assert.ok(!moduleDriftStep.run.includes('|| true'), 'Module drift gate must not suppress errors');
   const indexDriftStep = steps[5];
@@ -1130,6 +1272,8 @@ function validateUssValidationWorkflow(parsed) {
   assert.ok(!indexDriftStep.run.includes('|| true'), 'Index drift gate must not suppress errors');
 
   assert.equal(String(steps[1].with?.['node-version']), '20', 'uss-validation.yml must enforce Node.js version 20');
+  assertExactObject(steps[1].with, { 'node-version': 20 }, 'uss-validation.yml setup-node inputs');
+  assert.equal(steps[1].env, undefined, 'uss-validation.yml setup-node step must not define env');
   assert.ok(!steps[9].run.includes('|| true'), 'Test step must not suppress errors');
   assert.ok(!steps[8].run.includes('|| true'), 'Evidence validation step must not suppress errors');
   assert.ok(!steps[8].run.includes('--help'), 'Evidence validation must not be replaced with --help');
@@ -1177,6 +1321,7 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   const gitleaksCheckout = gitleaksSteps[0];
   assert.equal(gitleaksCheckout.uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', label + ' Gitleaks checkout must use the approved pinned action');
   assertExactObject(gitleaksCheckout.with, { 'fetch-depth': 0, 'persist-credentials': false }, label + ' Gitleaks checkout inputs');
+  assert.equal(gitleaksCheckout.env, undefined, label + ' Gitleaks checkout must not define env');
   assertScannerConfigGuard(gitleaksSteps[1], label + ' Gitleaks', consumerTemplate);
   const gitleaksAction = gitleaksSteps[2];
   assert.equal(gitleaksAction.uses, 'gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e', label + ' Gitleaks must use the approved pinned action');
@@ -1198,8 +1343,14 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   }, label + ' Semgrep container');
   const semgrepSteps = semgrepJob.steps || [];
   assert.equal(semgrepSteps.length, 3, label + ' Semgrep job must contain exactly checkout, config guard and scan steps');
+  const semgrepCheckout = semgrepSteps[0];
+  assert.equal(semgrepCheckout.uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', label + ' Semgrep checkout must use the approved pinned action');
+  assertExactObject(semgrepCheckout.with, { 'persist-credentials': false }, label + ' Semgrep checkout inputs');
+  assert.equal(semgrepCheckout.env, undefined, label + ' Semgrep checkout must not define env');
   assertScannerConfigGuard(semgrepSteps[1], label + ' Semgrep', consumerTemplate);
   const semgrepStep = semgrepSteps[2];
+  assert.equal(semgrepStep.uses, undefined, label + ' Semgrep scan step must not define uses');
+  assert.equal(semgrepStep.with, undefined, label + ' Semgrep scan step must not define with');
   assert.ok(semgrepStep.run && semgrepStep.run.includes('semgrep scan'), label + ' Semgrep job must execute a scan');
   assert.ok(semgrepStep.run.includes('--error'), 'Semgrep scan must fail on findings with --error');
   assert.ok(semgrepStep.run.includes('--strict'), 'Semgrep scan must fail on findings with --strict');
@@ -1229,15 +1380,24 @@ function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', con
   }, label + ' CodeQL permissions');
   const codeqlSteps = codeqlJob.steps || [];
   assert.equal(codeqlSteps.length, 3, label + ' CodeQL must contain checkout, init and analyze steps');
+  const codeqlCheckout = codeqlSteps[0];
+  assert.equal(codeqlCheckout.uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', label + ' CodeQL checkout must use the approved pinned action');
+  assertExactObject(codeqlCheckout.with, { 'persist-credentials': false }, label + ' CodeQL checkout inputs');
+  assert.equal(codeqlCheckout.env, undefined, label + ' CodeQL checkout must not define env');
   const codeqlInit = codeqlSteps[1];
   assert.equal(codeqlInit.uses, 'github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066', label + ' CodeQL init action must remain pinned');
   assertExactObject(codeqlInit.with, { languages: 'javascript-typescript, actions', 'build-mode': 'none' }, label + ' CodeQL init inputs');
+  assert.equal(codeqlInit.env, undefined, label + ' CodeQL init must not define env');
   const codeqlAnalyze = codeqlSteps[2];
   assert.equal(codeqlAnalyze.uses, 'github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066', label + ' CodeQL analyze action must remain pinned');
   assert.equal(codeqlAnalyze.with, undefined, label + ' CodeQL analyze must not receive unapproved inputs');
+  assert.equal(codeqlAnalyze.env, undefined, label + ' CodeQL analyze must not define env');
   if (!consumerTemplate) assertNoCodeQLConfigOverrides(ROOT);
 
   const osvJob = jobs.osv;
+  for (const key of Object.keys(osvJob)) {
+    assert.ok(ALLOWED_OSV_JOB_KEYS.has(key), label + " OSV reusable job contains unapproved key '" + key + "'");
+  }
   assert.equal(osvJob.uses, 'google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@d3c1414ded37de590f207572e37a7d180f1d0ef7', label + ' OSV must use the reviewed immutable upstream SHA');
   assert.strictEqual(osvJob.with?.['fail-on-vuln'], true, label + ' OSV scanner must set fail-on-vuln: true');
   assertExactObject(osvJob.with, { 'fail-on-vuln': true, 'upload-sarif': true }, label + ' OSV reusable-workflow inputs');
@@ -4052,6 +4212,274 @@ test('finding W-03: validator enforcement cannot be bypassed by changing only th
   } finally {
     // Restore pristine content
     fs.writeFileSync(standalonePath, original);
+  }
+});
+
+// Additional A2-02 & A2-07 Adversarial Coverage Matrix Regression Tests
+
+test('A2-02: consumer validator rejects unapproved triggers, string permissions, filter bypasses, negated branches, dual uses+run, and invalid schedule/build-mode', () => {
+  const baseText = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  const unapprovedPrTarget = YAML.parse(baseText);
+  unapprovedPrTarget.on.pull_request_target = { branches: ['**'] };
+  assert.throws(() => validateConsumerWorkflowStructure(unapprovedPrTarget), /uses unapproved trigger 'pull_request_target'/);
+
+  const unapprovedWorkflowRun = YAML.parse(baseText);
+  unapprovedWorkflowRun.on.workflow_run = { workflows: ['CI'], types: ['completed'] };
+  assert.throws(() => validateConsumerWorkflowStructure(unapprovedWorkflowRun), /uses unapproved trigger 'workflow_run'/);
+
+  for (const [filterKey, filterVal] of [
+    ['paths-ignore', ['**']],
+    ['branches-ignore', ['release/*']],
+    ['paths', ['docs/**']],
+    ['types', ['closed']],
+    ['tags-ignore', ['*']]
+  ]) {
+    const mutated = YAML.parse(baseText);
+    mutated.on.pull_request[filterKey] = filterVal;
+    assert.throws(() => validateConsumerWorkflowStructure(mutated), new RegExp(`declares unapproved filter key '${filterKey}'`));
+  }
+
+  const negatedBranch = YAML.parse(baseText);
+  negatedBranch.on.pull_request.branches = ['**', '!main'];
+  assert.throws(() => validateConsumerWorkflowStructure(negatedBranch), /must be a non-negated branch pattern/);
+
+  const emptyBranches = YAML.parse(baseText);
+  emptyBranches.on.push.branches = [];
+  assert.throws(() => validateConsumerWorkflowStructure(emptyBranches), /must declare a non-empty branches allowlist/);
+
+  const stringPerms = YAML.parse(baseText);
+  stringPerms.permissions = 'read-all';
+  assert.throws(() => validateConsumerWorkflowStructure(stringPerms), /workflow-level permissions must be \{ contents: 'read' \}/);
+
+  const extraReadPerms = YAML.parse(baseText);
+  extraReadPerms.permissions = { contents: 'read', issues: 'read' };
+  assert.throws(() => validateConsumerWorkflowStructure(extraReadPerms), /workflow permissions: configuration mismatch/);
+
+  const dualUsesRun = YAML.parse(baseText);
+  dualUsesRun.jobs.secrets.steps[0].run = 'echo hijacked';
+  assert.throws(() => validateConsumerWorkflowStructure(dualUsesRun), /must not combine both 'uses' and 'run'/);
+
+  const badSchedule = YAML.parse(baseText);
+  badSchedule.on.schedule = [{ cron: '17 5 * * 1' }, { invalid: true }];
+  assert.throws(() => validateConsumerWorkflowStructure(badSchedule), /schedule entries must define only a cron string/);
+
+  const emptyBuildMode = YAML.parse(baseText);
+  emptyBuildMode.jobs.codeql.steps[1].with['build-mode'] = '   ';
+  assert.throws(() => validateConsumerWorkflowStructure(emptyBuildMode), /build-mode must be a non-empty string/);
+
+  const osvRunsOn = YAML.parse(baseText);
+  osvRunsOn.jobs.osv['runs-on'] = 'ubuntu-latest';
+  assert.throws(() => validateConsumerWorkflowStructure(osvRunsOn), /must not override 'runs-on'|contains unapproved key 'runs-on'/);
+
+  const fetchDepth = YAML.parse(baseText);
+  fetchDepth.jobs.secrets.steps[0].with['fetch-depth'] = 1;
+  assert.throws(() => validateConsumerWorkflowStructure(fetchDepth), /configuration mismatch/);
+});
+
+test('A2-02: consumer and first-party validators reject function-wrapped untrusted expressions across workflow fields', () => {
+  const consumerText = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  const consumerWrappedLang = YAML.parse(consumerText);
+  consumerWrappedLang.jobs.codeql.steps[1].with.languages = "${{ format('{0}', github.event.inputs.lang) }}";
+  assert.throws(() => validateConsumerWorkflowStructure(consumerWrappedLang), /contains forbidden untrusted GitHub context/);
+
+  const consumerWrappedStepName = YAML.parse(consumerText);
+  consumerWrappedStepName.jobs.semgrep.steps[2].name = "${{ toJSON(github.head_ref) }}";
+  assert.throws(() => validateConsumerWorkflowStructure(consumerWrappedStepName), /contains forbidden untrusted GitHub context/);
+
+  const consumerDispatchDefault = YAML.parse(consumerText);
+  consumerDispatchDefault.on.workflow_dispatch = { inputs: { target: { default: '${{ github.actor }}' } } };
+  assert.throws(() => validateConsumerWorkflowStructure(consumerDispatchDefault), /contains forbidden untrusted GitHub context/);
+
+  const consumerWorkflowName = YAML.parse(consumerText);
+  consumerWorkflowName.name = 'Scan ${{ github.ref }}';
+  assert.throws(() => validateConsumerWorkflowStructure(consumerWorkflowName), /contains forbidden untrusted GitHub context/);
+
+  const firstPartyWrappedRun = YAML.parse(read('uss-validation.yml'));
+  firstPartyWrappedRun.jobs.validate.steps[2].run = 'echo "${{ format(\'{0}\', github.event.issue.title) }}"';
+  assert.throws(() => validateUssValidationWorkflow(firstPartyWrappedRun), /contains forbidden direct expression interpolation/);
+
+  const firstPartyWrappedEnv = YAML.parse(read('security-scans.yml'));
+  firstPartyWrappedEnv.jobs.semgrep.env = { REF: '${{ toJSON(github.head_ref) }}' };
+  assert.throws(() => validateSecurityScansWorkflow(firstPartyWrappedEnv), /contains forbidden untrusted GitHub context/);
+
+  const firstPartyJobName = YAML.parse(read('security-scans.yml'));
+  firstPartyJobName.jobs.semgrep.name = 'Semgrep ${{ github.triggering_actor }}';
+  assert.throws(() => validateSecurityScansWorkflow(firstPartyJobName), /contains forbidden untrusted GitHub context/);
+});
+
+test('A2-02: first-party workflow validators reject trigger filter bypasses, negated branches, checkout hijacks, step timeout-minutes, security-events broadening, and additional error suppressions', () => {
+  const pathsIgnore = YAML.parse(read('security-scans.yml'));
+  pathsIgnore.on.pull_request['paths-ignore'] = ['**'];
+  assert.throws(() => validateSecurityScansWorkflow(pathsIgnore), /declares unapproved filter key 'paths-ignore'/);
+
+  const negated = YAML.parse(read('security-scans.yml'));
+  negated.on.pull_request.branches = ['main', 'integration/uss-pr3-pr8-hardening', '!main'];
+  assert.throws(() => validateSecurityScansWorkflow(negated), /must be a non-negated branch pattern/);
+
+  const stringPerms = YAML.parse(read('uss-validation.yml'));
+  stringPerms.permissions = 'read-all';
+  assert.throws(() => validateUssValidationWorkflow(stringPerms), /must be an explicit mapping/);
+
+  const semgrepFakeCheckout = YAML.parse(read('security-scans.yml'));
+  semgrepFakeCheckout.jobs.semgrep.steps[0] = { name: 'Fake checkout', run: 'echo skipped' };
+  assert.throws(() => validateSecurityScansWorkflow(semgrepFakeCheckout), /Semgrep checkout must use the approved pinned action/);
+
+  const codeqlSparseCheckout = YAML.parse(read('security-scans.yml'));
+  codeqlSparseCheckout.jobs.codeql.steps[0].with['sparse-checkout'] = 'README.md';
+  assert.throws(() => validateSecurityScansWorkflow(codeqlSparseCheckout), /CodeQL checkout inputs must match the exact approved configuration/);
+
+  const ussHijackCheckout = YAML.parse(read('uss-validation.yml'));
+  ussHijackCheckout.jobs.validate.steps[0].uses = 'actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38';
+  assert.throws(() => validateUssValidationWorkflow(ussHijackCheckout), /step 0 does not match required step sequence/);
+
+  const ussCheckoutEnv = YAML.parse(read('uss-validation.yml'));
+  ussCheckoutEnv.jobs.validate.steps[0].env = { SAFE_VAR: '1' };
+  assert.throws(() => validateUssValidationWorkflow(ussCheckoutEnv), /checkout step must not define env/);
+
+  const dualUsesRun = YAML.parse(read('uss-validation.yml'));
+  dualUsesRun.jobs.validate.steps[0].run = 'echo hijacked';
+  assert.throws(() => validateUssValidationWorkflow(dualUsesRun), /must not combine both 'uses' and 'run'/);
+
+  const stepTimeout = YAML.parse(read('security-scans.yml'));
+  stepTimeout.jobs.semgrep.steps[2]['timeout-minutes'] = 1;
+  assert.throws(() => validateSecurityScansWorkflow(stepTimeout), /contains unapproved key 'timeout-minutes'/);
+
+  const gitleaksSecEventsWrite = YAML.parse(read('security-scans.yml'));
+  gitleaksSecEventsWrite.jobs.gitleaks.permissions['security-events'] = 'write';
+  assert.throws(() => validateSecurityScansWorkflow(gitleaksSecEventsWrite), /granted unapproved write permission to security-events/);
+
+  const validateSecEventsWrite = YAML.parse(read('uss-validation.yml'));
+  validateSecEventsWrite.jobs.validate.permissions = { 'security-events': 'write' };
+  assert.throws(() => validateUssValidationWorkflow(validateSecEventsWrite), /granted unapproved write permission to security-events/);
+
+  for (const suffix of [' || return 0', '; set +o pipefail']) {
+    const parsed = YAML.parse(read('security-scans.yml'));
+    parsed.jobs.semgrep.steps[2].run = suffix.includes('set') ? 'set +o pipefail\n' + parsed.jobs.semgrep.steps[2].run : parsed.jobs.semgrep.steps[2].run + suffix;
+    assert.throws(() => validateSecurityScansWorkflow(parsed), /suppresses errors with/);
+  }
+});
+
+test('A2-07: helper assertions reject multi-token/non-file .semgrepignore, -text gitattributes, and nested overrides', t => {
+  const tmpUnit = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-a207-unit-'));
+  t.after(() => fs.rmSync(tmpUnit, { recursive: true, force: true }));
+
+  fs.mkdirSync(path.join(tmpUnit, 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(tmpUnit, '.gitattributes'), '*.js -text\n');
+  assert.throws(() => assertNoProhibitedGitAttributes(tmpUnit), /Prohibited \.gitattributes configuration is not permitted/);
+  fs.rmSync(path.join(tmpUnit, '.gitattributes'));
+
+  fs.writeFileSync(path.join(tmpUnit, 'nested', '.gitleaksignore'), 'deadbeef\n');
+  assert.throws(() => assertNoGitleaksOverrideFiles(tmpUnit), /Unreviewed Gitleaks configuration\/ignore file is not permitted/);
+  fs.rmSync(path.join(tmpUnit, 'nested', '.gitleaksignore'));
+
+  fs.writeFileSync(path.join(tmpUnit, 'nested', '.semgrep.yml'), 'rules: []\n');
+  assert.throws(() => assertNoSemgrepConfigOverrides(tmpUnit), /Unreviewed Semgrep configuration override is not permitted/);
+  fs.rmSync(path.join(tmpUnit, 'nested', '.semgrep.yml'));
+
+  fs.writeFileSync(path.join(tmpUnit, 'nested', 'codeql-config.yml'), 'paths-ignore: []\n');
+  assert.throws(() => assertNoCodeQLConfigOverrides(tmpUnit), /Unreviewed CodeQL configuration override is not permitted/);
+  fs.rmSync(path.join(tmpUnit, 'nested', 'codeql-config.yml'));
+
+  fs.writeFileSync(path.join(tmpUnit, '.semgrepignore'), '.git/ nested/\nnode_modules/\n');
+  assert.throws(() => assertSemgrepIgnoreAllowlist(tmpUnit), /\.semgrepignore may exclude only/);
+  fs.rmSync(path.join(tmpUnit, '.semgrepignore'));
+
+  fs.mkdirSync(path.join(tmpUnit, '.semgrepignore'));
+  assert.throws(() => assertSemgrepIgnoreAllowlist(tmpUnit), /\.semgrepignore must be a regular file/);
+  fs.rmSync(path.join(tmpUnit, '.semgrepignore'), { recursive: true, force: true });
+});
+
+test('A2-07: live POSIX scanner guards reject .semgrepignore multi-token/non-file bypasses, -text gitattributes, nested overrides, and symlinked ignores', t => {
+  if (process.platform === 'win32') {
+    t.skip('Live bash guard fixture assertions run on POSIX/Linux VPS and hosted Ubuntu CI');
+    return;
+  }
+
+  for (const [guardLabel, guardScript] of [
+    ['SCANNER_CONFIG_GUARD_RUN', SCANNER_CONFIG_GUARD_RUN],
+    ['CONSUMER_CONFIG_GUARD_RUN', CONSUMER_CONFIG_GUARD_RUN]
+  ]) {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-a207-bash-'));
+    t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+
+    const runGit = args => {
+      const res = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(res.status, 0, `${guardLabel} git ${args.join(' ')} failed: ${res.stderr}`);
+      return res;
+    };
+
+    runGit(['init', '-q']);
+    runGit(['config', 'user.name', 'USS A2-07 Test']);
+    runGit(['config', 'user.email', 'uss-a207@example.invalid']);
+    runGit(['config', 'commit.gpgsign', 'false']);
+    for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+      fs.mkdirSync(path.join(cwd, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(cwd, '.semgrepignore'), '.git/\nnode_modules/\n');
+    fs.writeFileSync(path.join(cwd, 'tools/app.js'), 'export const x = 1;\n');
+    fs.writeFileSync(path.join(cwd, 'tests/app.test.mjs'), 'export const ok = true;\n');
+    fs.writeFileSync(path.join(cwd, '.github/workflows/ci.yml'), 'name: ci\n');
+    fs.writeFileSync(path.join(cwd, 'templates/t.yml'), 'name: t\n');
+    runGit(['add', '.semgrepignore', 'tools/app.js', 'tests/app.test.mjs', '.github/workflows/ci.yml', 'templates/t.yml']);
+    runGit(['commit', '-m', 'clean fixture']);
+
+    const runGuard = () => spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: guardScript });
+
+    const clean = runGuard();
+    assert.equal(clean.status, 0, `${guardLabel} clean fixture must pass: ${clean.stderr}`);
+
+    // 1. Multi-token .semgrepignore bypass
+    fs.writeFileSync(path.join(cwd, '.semgrepignore'), '.git/ tools/\nnode_modules/\n');
+    const multiToken = runGuard();
+    assert.notEqual(multiToken.status, 0, `${guardLabel} must reject multi-token .semgrepignore`);
+    assert.match(multiToken.stderr, /\.semgrepignore may exclude only/);
+
+    // 2. Directory .semgrepignore bypass
+    fs.rmSync(path.join(cwd, '.semgrepignore'));
+    fs.mkdirSync(path.join(cwd, '.semgrepignore'));
+    const dirIgnore = runGuard();
+    assert.notEqual(dirIgnore.status, 0, `${guardLabel} must reject directory .semgrepignore`);
+    assert.match(dirIgnore.stderr, /\.semgrepignore must be a regular file/);
+    fs.rmSync(path.join(cwd, '.semgrepignore'), { recursive: true, force: true });
+    fs.writeFileSync(path.join(cwd, '.semgrepignore'), '.git/\nnode_modules/\n');
+
+    // 3. -text gitattributes bypass
+    fs.writeFileSync(path.join(cwd, '.gitattributes'), '*.js -text\n');
+    const dashText = runGuard();
+    assert.notEqual(dashText.status, 0, `${guardLabel} must reject -text in .gitattributes`);
+    assert.match(dashText.stderr, /Prohibited \.gitattributes configuration/);
+    fs.rmSync(path.join(cwd, '.gitattributes'));
+
+    // 4. Nested scanner override files
+    for (const rel of ['tools/.semgrep.yml', 'tools/.gitleaksignore', 'tools/codeql-config.yml', 'tools/.allowed-binaries']) {
+      fs.writeFileSync(path.join(cwd, rel), 'override\n');
+      const nested = runGuard();
+      assert.notEqual(nested.status, 0, `${guardLabel} must reject nested override ${rel}`);
+      assert.match(nested.stderr, /Unreviewed scanner override is not permitted/);
+      fs.rmSync(path.join(cwd, rel));
+    }
+
+    // 5. Dangling symlink scanner override + symlinked .gitignore + symlinked .git/info/attributes
+    fs.symlinkSync('/nonexistent-target', path.join(cwd, '.gitleaks.toml'));
+    const dangling = runGuard();
+    assert.notEqual(dangling.status, 0, `${guardLabel} must reject symlinked scanner override`);
+    assert.match(dangling.stderr, /Unreviewed scanner override is not permitted/);
+    fs.rmSync(path.join(cwd, '.gitleaks.toml'));
+
+    fs.symlinkSync('/nonexistent-gitignore', path.join(cwd, 'tools', '.gitignore'));
+    const symGitignore = runGuard();
+    assert.notEqual(symGitignore.status, 0, `${guardLabel} must reject symlinked .gitignore`);
+    assert.match(symGitignore.stderr, /Symlinked \.gitignore is not permitted/);
+    fs.rmSync(path.join(cwd, 'tools', '.gitignore'));
+
+    fs.mkdirSync(path.join(cwd, '.git', 'info'), { recursive: true });
+    fs.symlinkSync('/nonexistent-attrs', path.join(cwd, '.git', 'info', 'attributes'));
+    const symInfoAttrs = runGuard();
+    assert.notEqual(symInfoAttrs.status, 0, `${guardLabel} must reject symlinked .git/info/attributes`);
+    assert.match(symInfoAttrs.stderr, /Symlinked \.git\/info\/attributes is not permitted/);
+    fs.rmSync(path.join(cwd, '.git', 'info', 'attributes'));
   }
 });
 

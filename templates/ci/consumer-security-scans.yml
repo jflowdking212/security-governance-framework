@@ -36,7 +36,7 @@ jobs:
           done < <(env)
           git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
           for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do
-            if [ -e "$file" ]; then
+            if [ -e "$file" ] || [ -L "$file" ]; then
               printf 'Unreviewed scanner override is not permitted: %s\n' "$file" >&2
               exit 1
             fi
@@ -44,6 +44,11 @@ jobs:
           nested_osv_config="$(find . -path './.git' -prune -o -path './node_modules' -prune -o \( -name 'osv-scanner.toml' -o -name '.osv-scanner.toml' \) -print)"
           if [ -n "$nested_osv_config" ]; then
             printf 'Unreviewed OSV configuration is not permitted: %s\n' "$nested_osv_config" >&2
+            exit 1
+          fi
+          nested_scanner_override="$(find . -path './.git' -prune -o -path './node_modules' -prune -o \( -name '.gitleaks.toml' -o -name '.gitleaksignore' -o -name 'gitleaks.toml' -o -name 'gitleaks.yaml' -o -name 'gitleaks.yml' -o -name '.semgrep.yml' -o -name '.semgrep.yaml' -o -name 'semgrep.yml' -o -name 'semgrep.yaml' -o -name 'codeql-config.yml' -o -name 'codeql-config.yaml' -o -name '.allowed-binaries' \) -print)"
+          if [ -n "$nested_scanner_override" ]; then
+            printf 'Unreviewed scanner override is not permitted: %s\n' "$nested_scanner_override" >&2
             exit 1
           fi
           if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E '[g]itleaks[[:space:]]*:[[:space:]]*allow' -- . >&2; then
@@ -69,13 +74,17 @@ jobs:
               printf 'Symlinked .gitattributes is not permitted: %s\n' "$attr_file" >&2
               exit 1
             fi
-            if grep -v '^[[:space:]]*#' "$attr_file" | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then
+            if grep -v '^[[:space:]]*#' "$attr_file" | grep -n -E '(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)' >&2; then
               printf 'Prohibited .gitattributes configuration is not permitted: %s\n' "$attr_file" >&2
               exit 1
             fi
           done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)
+          if [ -L .git/info/attributes ]; then
+            printf '%s\n' 'Symlinked .git/info/attributes is not permitted' >&2
+            exit 1
+          fi
           if [ -e .git/info/attributes ]; then
-            if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then
+            if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)' >&2; then
               printf '%s\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2
               exit 1
             fi
@@ -565,13 +574,22 @@ jobs:
             printf '%s\n' 'A symlinked .semgrepignore is not permitted' >&2
             exit 1
           fi
+          if [ -e .semgrepignore ] && [ ! -f .semgrepignore ]; then
+            printf '%s\n' '.semgrepignore must be a regular file' >&2
+            exit 1
+          fi
           if [ -f .semgrepignore ]; then
-            actual="$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)"
+            actual="$(awk 'NF && $0 !~ /^[[:space:]]*#/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print }' .semgrepignore | sort)"
             expected="$(printf '.git/\nnode_modules/\n' | sort)"
             if [ "$actual" != "$expected" ]; then
               printf '%s\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2
               exit 1
             fi
+          fi
+          symlinked_gitignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitignore' -type l -print)"
+          if [ -n "$symlinked_gitignore" ]; then
+            printf 'Symlinked .gitignore is not permitted: %s\n' "$symlinked_gitignore" >&2
+            exit 1
           fi
           target_count=0
           while IFS= read -r -d '' file; do
@@ -617,7 +635,7 @@ jobs:
           done < <(env)
           git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null
           for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do
-            if [ -e "$file" ]; then
+            if [ -e "$file" ] || [ -L "$file" ]; then
               printf 'Unreviewed scanner override is not permitted: %s\n' "$file" >&2
               exit 1
             fi
@@ -625,6 +643,11 @@ jobs:
           nested_osv_config="$(find . -path './.git' -prune -o -path './node_modules' -prune -o \( -name 'osv-scanner.toml' -o -name '.osv-scanner.toml' \) -print)"
           if [ -n "$nested_osv_config" ]; then
             printf 'Unreviewed OSV configuration is not permitted: %s\n' "$nested_osv_config" >&2
+            exit 1
+          fi
+          nested_scanner_override="$(find . -path './.git' -prune -o -path './node_modules' -prune -o \( -name '.gitleaks.toml' -o -name '.gitleaksignore' -o -name 'gitleaks.toml' -o -name 'gitleaks.yaml' -o -name 'gitleaks.yml' -o -name '.semgrep.yml' -o -name '.semgrep.yaml' -o -name 'semgrep.yml' -o -name 'semgrep.yaml' -o -name 'codeql-config.yml' -o -name 'codeql-config.yaml' -o -name '.allowed-binaries' \) -print)"
+          if [ -n "$nested_scanner_override" ]; then
+            printf 'Unreviewed scanner override is not permitted: %s\n' "$nested_scanner_override" >&2
             exit 1
           fi
           if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E '[g]itleaks[[:space:]]*:[[:space:]]*allow' -- . >&2; then
@@ -650,13 +673,17 @@ jobs:
               printf 'Symlinked .gitattributes is not permitted: %s\n' "$attr_file" >&2
               exit 1
             fi
-            if grep -v '^[[:space:]]*#' "$attr_file" | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then
+            if grep -v '^[[:space:]]*#' "$attr_file" | grep -n -E '(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)' >&2; then
               printf 'Prohibited .gitattributes configuration is not permitted: %s\n' "$attr_file" >&2
               exit 1
             fi
           done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitattributes' -print)
+          if [ -L .git/info/attributes ]; then
+            printf '%s\n' 'Symlinked .git/info/attributes is not permitted' >&2
+            exit 1
+          fi
           if [ -e .git/info/attributes ]; then
-            if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])[-!]?(diff|binary|filter|merge)([[:space:]=]|$)' >&2; then
+            if grep -v '^[[:space:]]*#' .git/info/attributes | grep -n -E '(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)' >&2; then
               printf '%s\n' 'Prohibited .git/info/attributes configuration is not permitted' >&2
               exit 1
             fi
@@ -1146,13 +1173,22 @@ jobs:
             printf '%s\n' 'A symlinked .semgrepignore is not permitted' >&2
             exit 1
           fi
+          if [ -e .semgrepignore ] && [ ! -f .semgrepignore ]; then
+            printf '%s\n' '.semgrepignore must be a regular file' >&2
+            exit 1
+          fi
           if [ -f .semgrepignore ]; then
-            actual="$(awk 'NF && $1 !~ /^#/ { print $1 }' .semgrepignore | sort)"
+            actual="$(awk 'NF && $0 !~ /^[[:space:]]*#/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print }' .semgrepignore | sort)"
             expected="$(printf '.git/\nnode_modules/\n' | sort)"
             if [ "$actual" != "$expected" ]; then
               printf '%s\n' '.semgrepignore may exclude only .git/ and node_modules/' >&2
               exit 1
             fi
+          fi
+          symlinked_gitignore="$(find . -path './.git' -prune -o -path './node_modules' -prune -o -name '.gitignore' -type l -print)"
+          if [ -n "$symlinked_gitignore" ]; then
+            printf 'Symlinked .gitignore is not permitted: %s\n' "$symlinked_gitignore" >&2
+            exit 1
           fi
           target_count=0
           while IFS= read -r -d '' file; do
