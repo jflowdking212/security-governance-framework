@@ -378,3 +378,38 @@ test('evidence references reject IP literals, private hostnames, single-label ho
   }
  }
 });
+
+test('A2-06 identity normalisation rejects whitespace and non-canonical GitHub subjects',()=>{
+ for(const [reviewer,approver] of [
+  ['github:123456','github:0123456'],
+  ['google:1234','google: 1234'],
+  ['google:1234','google:1234'.replace(':',':\\t')],
+  ['okta:subject-1','okta:\\tsubject-1']
+ ]){
+  expectInvalid(r=>{
+   r.project.reviewer_identity=reviewer;
+   r.findings=[{id:'F-034',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:approver,rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
+  },/stable issuer-scoped identity/);
+ }
+ const valid=withReport(r=>{
+  markAllPass(r);
+  r.project.reviewer_identity='GitHub:123456';
+  r.controls[0].status='FAIL';r.controls[0].evidence=[];r.controls[0].finding_ids=['F-035'];
+  r.findings=[{id:'F-035',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'github:789012',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
+ });
+ try{const result=run(valid.file);assert.equal(result.status,0,result.stderr);}finally{valid.cleanup();}
+});
+
+test('A2-06 production-release assessment requires and enforces the expected commit without --release',()=>{
+ const fixture=withReport(r=>{markAllPass(r);r.assessment_type='production-release';});
+ try{
+  const missing=run(fixture.file);
+  assert.equal(missing.status,2);
+  assert.match(missing.stderr,/production-release requires --expected-commit/);
+  const mismatch=run(fixture.file,['--expected-commit','b'.repeat(40)]);
+  assert.equal(mismatch.status,2);
+  assert.match(mismatch.stderr,/exactly match the audited commit/);
+  const match=run(fixture.file,['--expected-commit','a'.repeat(40)]);
+  assert.equal(match.status,0,match.stderr);
+ }finally{fixture.cleanup();}
+});

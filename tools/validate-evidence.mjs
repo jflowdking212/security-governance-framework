@@ -35,7 +35,8 @@ function stableIdentityKey(value){
  const provider=identity.slice(0,separator);
  const subject=identity.slice(separator+1);
  if(!/^[a-z][a-z0-9+.-]*$/i.test(provider)||!subject.trim())return null;
- if(provider.toLowerCase()==='github'&&!/^\d+$/.test(subject))return null;
+ if(/[\s\u0000-\u001f\u007f]/.test(subject))return null;
+ if(provider.toLowerCase()==='github'&&!/^[1-9]\d*$/.test(subject))return null;
  // Provider names are case-insensitive; the issuer-scoped subject is preserved exactly.
  return provider.toLowerCase()+':'+subject;
 }
@@ -241,6 +242,10 @@ else{
 }
 const assessmentType=assessment?.assessment_type;
 if(!['routine','full-audit','production-release'].includes(assessmentType))addError('assessment_type must be routine, full-audit or production-release.');
+if(assessmentType==='production-release'){
+ release=true;
+ if(!expectedCommit)addError('assessment_type production-release requires --expected-commit <40-character audited commit SHA>.');
+}
 
 const scope=assessment?.scope;
 const scopeIds=Array.isArray(scope?.control_ids)?scope.control_ids:[];
