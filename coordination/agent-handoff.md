@@ -1401,3 +1401,50 @@ The separate W-04 branch code/test SHA `d2ac9a4371e68abce4bfa9699aa674b85af0bcdf
 3. Claude independently audits this exact integrated candidate and re-verifies A2-11/A2-12 against primary sources.
 4. Reconcile all results and build the mandatory clean squash, preserving no prohibited directive in release history.
 5. Run all validation and hosted CI again on the exact squash SHA; only then request owner-controlled release decisions.
+
+
+---
+
+## 25. ChatGPT supervisory review: Gemini SCAN-S6 and W-02/W-03 addendum
+
+**Date:** 2026-11-25  
+**Gemini branch:** `gemini/d01-d02-f5-f6-remediation`  
+**Gemini result SHA:** `6d31a650fc6409d49887a67abfae60942371dd7a`  
+**Starting SHA:** `6d33dfa4cc855b39a03016ae1661a4e7cf48e877`
+
+### GitHub state independently checked
+
+- Gemini branch currently points to the reported result SHA `6d31a650fc6409d49887a67abfae60942371dd7a`.
+- The result is exactly one commit ahead of its stated starting SHA; six changed files match the report: standalone scanner, first-party security workflow, consumer workflow template, consumer validator, USS validator and workflow-security tests.
+- `main` remains `a616ade2963bc69dd2140a65016d0756c13399d8`.
+- PR #9 remains open and unmerged.
+- Hosted USS validation run `45550915706` completed successfully on the exact Gemini result SHA: 256 tests passed, 0 failed, 0 skipped; validator reported 22 modules and 52 source references.
+- Hosted security scan run `45550915878` completed successfully on the exact same SHA, all four jobs successful:
+  - Gitleaks: one commit scanned, no leaks found.
+  - Semgrep: 479 rules, 28 targets, approximately 100% parsed lines, zero findings.
+  - CodeQL: 19/19 JavaScript files and 2/2 GitHub Actions files scanned; job succeeded.
+  - OSV: one package scanned, no issues found.
+
+### Static source review
+
+The reported SCAN-S6 implementation is present in all six changed files. The standalone scanner and embedded copies use `git ls-files -s -z`, reject non-stage-zero entries, reject index modes outside `100644`, `100755`, and `120000`, compare worktree leaf type without following symlinks, and use descriptor-relative parent traversal with `O_NOFOLLOW`. Valid indexed symlinks are preserved; a regular-file index entry replaced by a worktree symlink fails closed; gitlink mode `160000` is rejected. The parity validator compares standalone, first-party embedded copies, consumer embedded copies and the generated consumer guard, and the tests include isolated mutation cases.
+
+The W-02/W-03 validator and test diffs contain the reported controls for shell allowlists, exact container configuration, concurrency booleans, untrusted `github`/`inputs` expression detection including object keys, cron shape, environment/defaults restrictions, action-step key restrictions and expanded shell error-suppression checks. Dedicated adversarial tests are present for the listed consumer and first-party bypass classes.
+
+### Disposition and verification boundary
+
+**Provisional supervisory disposition: ACCEPTED FOR INTEGRATION REVIEW, NOT RELEASE APPROVED.** GitHub branch identity, changed-file scope, source presence, and hosted validation/security results are independently confirmed. The report's Windows and VPS executions remain Gemini-reported evidence; ChatGPT did not execute those commands in this review.
+
+The USS trust-bootstrap requirement has not been satisfied for a fresh independent local execution: the expected signing-key fingerprint and independently verified signed release manifest were not established in this session. Accordingly, no repository code was executed locally and no new CI was triggered by ChatGPT. This is an explicit verification limitation, not a finding that Gemini's hosted runs failed.
+
+### Integration impact
+
+The existing ChatGPT scratch candidate is based on the earlier Gemini SHA `6d33dfa4cc855b39a03016ae1661a4e7cf48e877`; it does **not** yet contain Gemini's SCAN-S6/W-02/W-03 addendum commit. The new Gemini diff overlaps the candidate's workflow, scanner, consumer-validator and USS-validator files. Reconciliation must therefore be a controlled three-way integration, preserving ChatGPT's A2-03/W-04/W-A/B/C/A2-06 work and Gemini's new files/tests. Do not represent the old scratch SHA as containing this addendum.
+
+### Next gates
+
+1. Obtain/verify the independently trusted signing-key fingerprint and signed manifest before fresh local execution of repository tools.
+2. Reconcile Gemini's six-file patch into a new isolated integration candidate without changing `main` or PR #9.
+3. Preserve and re-run the integrated A2-03, W-04, W-A/B/C and A2-06 tests alongside the new SCAN-S6/W-02/W-03 suite once trust bootstrap is satisfied.
+4. Have Claude independently audit the resulting exact integrated SHA, not the stale pre-addendum candidate.
+5. Keep clean squash, owner signing, merge and release decisions behind the existing owner approval gate.
