@@ -17,43 +17,43 @@ Before stating that a system is production-ready, verify or explicitly mark unkn
 
 
 
-\- authentication and authorization;
+- authentication and authorization;
 
-\- tenant isolation;
+- tenant isolation;
 
-\- secrets management, exposure scanning, rotation/revocation readiness, and environment separation;
+- secrets management, exposure scanning, rotation/revocation readiness, and environment separation;
 
-\- centralized secret-management requirement/maturity decision where applicable;
+- centralized secret-management requirement/maturity decision where applicable;
 
-\- development/test/staging/production isolation, including databases, credentials, payment/test state, storage/queues/caches where applicable;
+- development/test/staging/production isolation, including databases, credentials, payment/test state, storage/queues/caches where applicable;
 
-\- centralized error handling and verified unhappy-path behavior;
+- centralized error handling and verified unhappy-path behavior;
 
-\- sensitive-action audit trail coverage, integrity/access controls, retention, and redaction;
+- sensitive-action audit trail coverage, integrity/access controls, retention, and redaction;
 
-\- encryption in transit;
+- encryption in transit;
 
-\- encryption at rest where applicable;
+- encryption at rest where applicable;
 
-\- dependency/security scanning;
+- dependency/security scanning;
 
-\- backups and restore verification;
+- backups and restore verification;
 
-\- incident response;
+- incident response;
 
-\- monitoring/alerting;
+- monitoring/alerting;
 
-\- data storage location/residency;
+- data storage location/residency;
 
-\- infrastructure/network controls;
+- infrastructure/network controls;
 
-\- deployment/rollback;
+- deployment/rollback;
 
-\- external integrations/webhooks;
+- external integrations/webhooks;
 
-\- financial integrity if applicable;
+- financial integrity if applicable;
 
-\- AI/LLM data handling if applicable.
+- AI/LLM data handling if applicable.
 
 
 
@@ -61,7 +61,7 @@ Where evidence is unavailable, say:
 
 
 
-\> **\*\*Not verified from the available repository/configuration.\*\***
+> **Not verified from the available repository/configuration.**
 
 
 
@@ -69,7 +69,7 @@ Never transform absence of evidence into evidence of security.
 
 
 
-\---
+---
 
 **## 9. Enterprise Security Evidence Pack**
 
@@ -79,7 +79,7 @@ For serious production/enterprise products, maintain an evidence directory such 
 
 
 
-\`\`\`text
+```text
 
 docs/security/
 
@@ -123,7 +123,7 @@ docs/security/
 
 └── SECURITY_ASSURANCE_REPORT.md
 
-\`\`\`
+```
 
 
 
@@ -139,19 +139,19 @@ Examples:
 
 
 
-\- “Do you encrypt data at rest?” → cite the verified provider/configuration/control.
+- “Do you encrypt data at rest?” → cite the verified provider/configuration/control.
 
-\- “When was your last vulnerability scan?” → cite dated scan evidence.
+- “When was your last vulnerability scan?” → cite dated scan evidence.
 
-\- “Do you have an incident response plan?” → cite the maintained plan.
+- “Do you have an incident response plan?” → cite the maintained plan.
 
-\- “Where is customer data stored?” → cite provider/region/data-residency documentation.
+- “Where is customer data stored?” → cite provider/region/data-residency documentation.
 
-\- “When was your last penetration test?” → cite the actual external test date/provider/scope; never substitute an AI review.
+- “When was your last penetration test?” → cite the actual external test date/provider/scope; never substitute an AI review.
 
 
 
-\---
+---
 
 **## 12. Required Final Security Reporting Contract**
 
@@ -161,7 +161,7 @@ When completing a production-sensitive engineering task, report concise evidence
 
 
 
-\`\`\`text
+```text
 
 Requirement:
 
@@ -209,7 +209,7 @@ Rollback considerations:
 
 Residual risk:
 
-\`\`\`
+```
 
 
 
@@ -217,7 +217,7 @@ For a broader audit, use:
 
 
 
-\`\`\`text
+```text
 
 Layer:
 
@@ -235,7 +235,7 @@ Verification performed:
 
 Residual risk:
 
-\`\`\`
+```
 
 
 
@@ -243,4 +243,4 @@ Never report a check as passed unless it was actually executed or supported by a
 
 
 
-\---
+---

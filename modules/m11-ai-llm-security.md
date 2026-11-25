@@ -17,7 +17,7 @@ For financial or security-sensitive systems, AI MUST interpret verified facts ra
 
 
 
-\---
+---
 
 # AI AGENT TAX SAFETY RULE
 

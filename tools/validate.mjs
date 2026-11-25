@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {renderSourceMarkdown} from './render-source-markdown.mjs';
+import {findProhibitedGitattributes} from './gitattributes-policy.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(ROOT);
 const m=JSON.parse(await fs.readFile('manifest.json','utf8')),errors=[];
@@ -14,6 +16,16 @@ function visit(id,trail=[]){if(state.get(id)==='done')return;if(state.get(id)===
 for(const id of ids)visit(id);
 for(const [task,mods] of Object.entries(m.tasks)){for(const id of mods)if(!idSet.has(id))errors.push('Task '+task+' references unknown module '+id)}
 for(const [bundle,mods] of Object.entries(m.bundles)){for(const id of mods)if(!idSet.has(id))errors.push('Bundle '+bundle+' references unknown module '+id)}
+const suppIds=(m.supplements||[]).map(x=>x.id),suppIdSet=new Set(suppIds);
+if(suppIdSet.size!==suppIds.length)errors.push('Duplicate supplement IDs');
+for(const s of (m.supplements||[])){
+ if(!await exists(s.path))errors.push('Missing supplement '+s.path);
+ for(const d of (s.related_modules||[]))if(!idSet.has(d))errors.push('Unknown related module '+d+' in supplement '+s.id);
+}
+for(const [task,sids] of Object.entries(m.task_supplements||{})){
+ if(!m.tasks[task])errors.push('task_supplements references unknown task '+task);
+ for(const sid of sids)if(!suppIdSet.has(sid))errors.push('Task '+task+' references unknown supplement '+sid);
+}
 const moduleText=(await Promise.all(m.modules.map(x=>fs.readFile(x.path,'utf8')))).join('\n');
 for(const ref of m.required_source_sections)if(!moduleText.includes(ref))errors.push('Required source section absent from module metadata: '+ref);
 const matrix=await fs.readFile('source/traceability-matrix.csv','utf8');
@@ -23,7 +35,34 @@ const global=await fs.readFile(m.sources.global.archive,'utf8'),anti=await fs.re
 const marker='# EMBEDDED CANONICAL GLOBAL DIRECTIVE — v4',pos=anti.indexOf(marker);
 if(pos<0)errors.push('Anti-Gravity embedded canonical marker missing');else{const norm=x=>x.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean).join('\n');if(norm(anti.slice(pos+marker.length))!==norm(global))errors.push('Embedded global directive does not match standalone canonical source')}
 if(m.rules.p0_release!=='BLOCK'||m.rules.p1_release!=='BLOCK'||m.rules.agent_may_waive_p0_p1!==false||m.rules.unknown_is_pass!==false)errors.push('Release policy invariant failed');
-for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md','REVIEW-CLAUDE.md','RELEASE-CHECKLIST.md','CHANGELOG.md','VERSION','SECURITY.md','CONTRIBUTING.md','.gitignore','.github/PULL_REQUEST_TEMPLATE.md'])if(!await exists(p))errors.push('Missing required project file '+p);
+for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md','REVIEW-CLAUDE.md','RELEASE-CHECKLIST.md','CHANGELOG.md','VERSION','SECURITY.md','SECURITY-ROOT.md','CONSUMING.md','LICENSE','CONTRIBUTING.md','.gitignore','.github/PULL_REQUEST_TEMPLATE.md','.github/CODEOWNERS','.security/README.md','tools/checksums.mjs','tests/checksums.test.mjs','tools/uss-tracked-binary-scanner.py','templates/uss-version.example','.gitattributes','tools/gitattributes-policy.mjs','.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml'])if(!await exists(p))errors.push('Missing required project file '+p);
+if(await exists('tools/uss-tracked-binary-scanner.py')){
+ const scannerRaw=await fs.readFile('tools/uss-tracked-binary-scanner.py','utf8');
+ const scannerLines=scannerRaw.split(/\r?\n/);
+ const osIdx=scannerLines.indexOf('import os');
+ const scannerHeader=scannerLines.slice(0,osIdx).join('\n')+'\n';
+ if(osIdx<0||!/^#![/]usr[/]bin[/]env python3\n(?:\n|#[^\n]*\n|\"\"\"(?:(?!\"\"\")[\s\S])*\"\"\"\n)*$/.test(scannerHeader))errors.push('tools/uss-tracked-binary-scanner.py has executable or unexpected content before import os; only the python3 shebang, comments and a docstring are permitted');
+ if(osIdx<0)errors.push('tools/uss-tracked-binary-scanner.py missing import os');
+ else{
+  const standaloneEngine=scannerLines.slice(osIdx).join('\n').trim();
+  for(const wfPath of ['.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml']){
+   if(!await exists(wfPath))errors.push('Missing required scanner workflow '+wfPath);
+   else{
+    const wfContent=await fs.readFile(wfPath,'utf8');
+    const matches=[...wfContent.matchAll(/python3 - <<'EOF'\n([\s\S]*?)\n\s*EOF/g)];
+    if(matches.length!==2)errors.push(wfPath+' must contain exactly 2 embedded scanner blocks');
+    else{
+     for(let i=0;i<matches.length;i++){
+      const dedented=matches[i][1].split('\n').map(l=>l.startsWith('          ')?l.slice(10):l).join('\n').trim();
+      if(dedented!==standaloneEngine)errors.push('Standalone scanner tools/uss-tracked-binary-scanner.py differs from embedded copy in '+wfPath+' (occurrence '+(i+1)+')');
+     }
+    }
+   }
+  }
+ }
+}
+const gitattributes=await fs.readFile('.gitattributes','utf8');
+for(const issue of findProhibitedGitattributes(gitattributes))errors.push('.gitattributes contains prohibited attribute '+issue.attribute+' on line '+issue.line);
 const readme=await fs.readFile('README.md','utf8');
 const readmeLinks=[...readme.matchAll(/\]\(([^)]+)\)/g)].map(x=>x[1]).filter(x=>!/^https?:|^mailto:|^#/.test(x)).map(x=>decodeURIComponent(x.split('#')[0])).filter(Boolean);
 for(const link of new Set(readmeLinks))if(!await exists(link))errors.push('README links to missing local path '+link);
@@ -45,17 +84,17 @@ const norm1=x=>x.replace(/\s+/g,' ').trim();
 const allModules=norm1(moduleText);
 const titleOnly=new Set(['**# GLOBAL DIRECTIVE: APPLICATION SECURITY & PENETRATION AUDITING PROTOCOL**','**## 1. Defensive Architecture & Hardening Standards**','# GLOBAL PAYMENT WEBHOOK SECURITY & REVENUE TAX COMPLIANCE DIRECTIVE'].map(norm1));
 for(const [label,text] of [['global',global],['payment',await fs.readFile(m.sources.payment.archive,'utf8')]]){
- text.split(/\r?\n/).forEach((line,i)=>{const t=norm1(line);if(t.length<4||titleOnly.has(t))return;if(!allModules.includes(t))errors.push('Source line not present in any module ('+label+':'+(i+1)+'): '+t.slice(0,100))});
+ text.split(/\r?\n/).forEach((line,i)=>{const t=norm1(renderSourceMarkdown(line));if(t.length<4||titleOnly.has(t))return;if(!allModules.includes(t))errors.push('Source line not present in any module ('+label+':'+(i+1)+'): '+t.slice(0,100))});
 }
-const contract=anti.slice(anti.indexOf('## Anti-Gravity Execution Contract'),pos).split(/\r?\n/);
+const contract=renderSourceMarkdown(anti.slice(anti.indexOf('## Anti-Gravity Execution Contract'),pos)).split(/\r?\n/);
 const m22=norm1(await fs.readFile(map.get('M22').path,'utf8'));
 for(const line of contract){const t=norm1(line);if(t.length>3&&!m22.includes(t))errors.push('Execution contract line missing from M22: '+t.slice(0,100))}
 const read=async id=>fs.readFile(map.get(id).path,'utf8');
 const count=(text,re)=>(text.match(re)||[]).length;
 const expectCount=(label,actual,want)=>{if(actual!==want)errors.push(label+': expected '+want+' found '+actual)};
-expectCount('M13 self-audit vectors',count(await read('M13'),/^\d+\\\. \*\*/gm),16);
+expectCount('M13 self-audit vectors',count(await read('M13'),/^\d+\. \*\*/gm),16);
 expectCount('M14 assurance layers',count(await read('M14'),/^\*\*### Layer \d+ /gm),13);
-expectCount('M01 decision principles',count(await read('M01'),/^\d+\\\. \*\*\\\*\\\*/gm),21);
+expectCount('M01 decision principles',count(await read('M01'),/^\d+\. \*\*/gm),21);
 expectCount('M06 payment controls A1-A16',count(await read('M06'),/^## A\d+\./gm),16);
 expectCount('M07 tax controls B1-B12',count(await read('M07'),/^## B\d+\./gm),12);
 expectCount('M22 execution contract items',count(await read('M22'),/^\d+\. /gm),15);

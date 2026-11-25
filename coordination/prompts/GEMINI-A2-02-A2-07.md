@@ -1,0 +1,573 @@
+# Gemini Implementation Prompt: USS A2-02 and A2-07
+
+You are the implementation engineer for two bounded findings in the Universal Security Standard repository. This is an implementation assignment, not an audit-only assignment.
+
+## Repository and branch
+
+- Repository: `jflowdking212/security-governance-framework`
+- PR: #9
+- Working branch: `fix/uss-final-audit-remediation`
+- PR base: `integration/uss-pr3-pr8-hardening`
+- Code baseline before these prompt documents were added: `13e17461b1dd77cfee82bdc9041e0ad8223a4548`
+- First action: fetch the live branch head and inspect the complete diff from the PR base. Prompt-document commits may have advanced HEAD without changing implementation code. Work from the latest remote HEAD, not from an old local checkout.
+
+## Your ownership
+
+You own only:
+
+- **A2-02:** workflow security AST/schema validation and adversarial mutation tests.
+- **A2-07:** scanner coverage, scanner configuration assurance and provenance evidence.
+
+Your permitted implementation scope is:
+
+- `.github/workflows/uss-validation.yml`
+- `.github/workflows/security-scans.yml`
+- `templates/ci/consumer-security-scans.yml`
+- `tests/workflow-security.test.mjs`
+- A narrowly necessary workflow-security validator helper, if required.
+
+Do not edit checksum files, evidence-validator files, stack profiles, README release-status corrections, or the shared handoff ledger. In particular, do not modify:
+
+- `tools/checksums.mjs`
+- `tests/checksums.test.mjs`
+- `tools/validate-evidence.mjs`
+- `tests/evidence.test.mjs`
+- any file under `stacks/`
+- `coordination/agent-handoff.md`
+
+If you discover a cross-workstream dependency, report it to ChatGPT with the exact path and evidence. Do not fix it outside your ownership.
+
+## A2-02: workflow security guard
+
+Inspect the existing YAML parser, validator and tests first. Build on the existing implementation rather than replacing it wholesale. Validation must inspect parsed YAML structure/AST, not rely only on fragile regular expressions or substring checks.
+
+Add negative mutation tests for every attack below. Each test must mutate an isolated copy/fixture and prove the validator rejects it. Also prove the current legitimate workflows and consumer template pass.
+
+1. **Permissions**
+   - Reject a missing workflow-level permissions declaration.
+   - Reject workflow-level `write` and `write-all` permissions.
+   - Inspect job-level permissions, not just workflow-level permissions.
+   - Reject job-level `write` / `write-all` except narrowly documented, least-privilege permissions required by the specific scanner job, such as CodeQL's `security-events: write`.
+   - Reject a permission exception if it is granted to unrelated jobs or broadened beyond the minimum required.
+
+2. **Untrusted expression interpolation**
+   - Reject direct untrusted GitHub context interpolation inside `run:`, including `github.event`, `github.head_ref`, `github.actor`, `github.ref_name`, and equivalent event/input variants.
+   - Cover dot notation, bracket notation and nested event payload paths.
+   - Do not only check the literal string `github.event`.
+   - Where data must be passed, use a narrowly scoped `env:` value and safely quoted shell expansion. Verify that the unsafe expression has not simply moved into another executable field.
+
+3. **Triggers**
+   - Use an explicit approved trigger allow-list appropriate to each workflow. The currently expected trigger families are `push`, `pull_request`, `schedule` and `workflow_dispatch`; do not automatically allow every trigger.
+   - Reject `pull_request_target`, `workflow_run`, `issue_comment`, `pull_request_review_comment` and any unapproved trigger.
+   - Reject unexpected trigger combinations or filters that silently exclude required branches/events.
+
+4. **Disabled or bypassed jobs/steps**
+   - Reject `if: false` and equivalent constant-false conditions.
+   - Reject conditions or dependencies that disable mandatory validation/scanner jobs or steps on relevant events.
+   - Assert required steps exist and are in the required order.
+   - Reject deletion, reordering or replacement of required steps, including attempts to replace real evidence validation with `node tools/validate-evidence.mjs --help`.
+   - Test that required jobs cannot be made optional through `needs`, `if`, matrix filters or similar YAML changes.
+
+5. **Error suppression and failure masking**
+   - Cover `|| true`, `|| exit 0`, `|| echo ignored`, `set +e`, semicolon-success patterns, and equivalent suppression.
+   - Reject `continue-on-error: true` on security jobs or mandatory security steps.
+   - Ensure scanner and validation failures remain fatal.
+
+6. **Runner and checkout safety**
+   - Reject unapproved `self-hosted` runners.
+   - Reject checkout token overrides or unexpected secret injection.
+   - Require pinned full 40-character action/reusable-workflow SHAs.
+   - Preserve `persist-credentials: false` on checkout.
+   - Detect unsafe secret exposure, shell exfiltration patterns and credential persistence.
+
+7. **Scanner configuration integrity**
+   - Reject Semgrep excludes, replacement configs or arguments that weaken/remove required scanning.
+   - Reject CodeQL path exclusions or configuration changes that silently remove required source coverage.
+   - Reject OSV scan-argument overrides that weaken vulnerability failure behaviour.
+   - Reject Gitleaks config overrides or changes that weaken full-history scheduled scanning.
+   - Reject removal or weakening of the scheduled full-history scan and branch/event restrictions that silently skip required scans.
+
+8. **Preserve legitimate exceptions**
+   - Do not solve this by banning all job-level permissions. CodeQL and OSV may need narrowly scoped `security-events: write`; validate the exact job and exact scope.
+   - Do not weaken current immutable action/reusable-workflow pins.
+   - Do not break legitimate workflow dispatch or scheduled scanning.
+
+## A2-07: scanner scope and provenance
+
+1. Expand Semgrep coverage to include:
+   - `tools/`
+   - `tests/`
+   - `.github/workflows/`
+   - relevant `templates/`, including `templates/ci/`
+
+2. Prove actual coverage:
+   - Report tracked files eligible for scanning.
+   - Report scanned files and skipped files.
+   - Explain every intentional skip with its path and reason.
+   - Do not claim coverage from configuration alone.
+   - Preserve fail-on-findings behaviour and pinned scanner image/version.
+
+3. CodeQL:
+   - Verify from current official CodeQL documentation/release sources whether the configured CodeQL language pack actually analyses GitHub Actions workflow files.
+   - Do not assume JavaScript/TypeScript analysis covers YAML workflows.
+   - If Actions workflow analysis is supported and suitable, implement it with a pinned action and least-privilege permissions.
+   - If it is not supported by the current CodeQL setup, document the precise coverage limitation and identify which existing scanner covers those files. Do not invent a CodeQL language or claim unsupported coverage.
+
+4. OSV:
+   - Verify the pinned reusable workflow commit against the official upstream repository and the corresponding official release/tag.
+   - Record the exact upstream URL, commit SHA, tag/release and verification method.
+   - Keep immutable SHA pinning. Do not replace it with a mutable tag.
+   - Preserve `fail-on-vuln: true` and least-privilege permissions.
+
+5. Gitleaks:
+   - Confirm the scheduled run scans full history.
+   - Confirm push/PR scan ranges are appropriate.
+   - Confirm configuration does not silently suppress findings or exclude required paths.
+
+## Required execution and evidence
+
+Before handing back:
+
+1. Reproduce the current workflow validator behaviour and identify the exact missing checks.
+2. Implement A2-02 and A2-07 only within your file ownership.
+3. Add a negative regression test for every mutation above that is relevant to the current workflows.
+4. Run targeted workflow-security tests.
+5. Run the full test suite and project validation from a clean checkout using the repository's documented safe install procedure, including `npm ci --ignore-scripts`.
+6. Run or trigger hosted CI if you have a distinct authenticated write-enabled GitHub identity.
+7. Record exact commands, exit codes, test totals, scanner file counts, skipped-file counts, CodeQL coverage conclusion, OSV upstream pin evidence and hosted run/job IDs.
+8. Inspect the final diff for accidental edits outside your ownership.
+
+## Git identity and access rules
+
+The connected `jayblisstech-bot` account was verified as pull-only for this repository. Do not push using the owner's identity, email or author metadata. Do not spoof provenance.
+
+If you have a separate authenticated GitHub identity with write permission, verify that identity and its access before pushing. Otherwise, prepare a clean patch or commit in your authorised workspace and return it for owner-authorised integration. Do not claim a remote push occurred if it did not.
+
+## Required handback format
+
+Return:
+
+- Finding: A2-02 / A2-07
+- Starting branch HEAD and final patch/commit SHA
+- Exact changed-file list
+- Root cause for each defect
+- Fix summary
+- Mutation test name for each bypass and pass/fail result
+- Exact commands and exit codes
+- Full test totals
+- Scanner tracked/scanned/skipped counts
+- CodeQL Actions coverage conclusion with official source links
+- OSV upstream SHA/tag provenance evidence
+- Hosted CI run IDs and job conclusions, if available
+- Any unresolved issue, limitation or owner decision
+- Patch file or exact diff if you could not push
+
+Do not mark findings independently verified or closed. Your task is implementation. ChatGPT will independently inspect your actual diff and evidence. PR #9 must remain open and unmerged. Do not change repository settings, publish a release, sign a release, or create the v1.0.0 tag.
+
+Start now by syncing the branch and inspecting the current live files. Do not stop after analysis: implement the fixes you can safely complete, test them, and return the patch plus evidence.
+
+
+---
+
+## Supervisory follow-up addendum — required before A2-02/A2-07 can be marked implemented
+
+**Issued by:** ChatGPT supervisory review  
+**Live review baseline:** PR #9 head `4fff3c7e87fc52350392bc9e4eec4d82cba8280e`  
+**Implementation owner:** Gemini  
+**Scope remains limited to A2-02/A2-07 files listed above.**
+
+The first implementation is present, but direct inspection of the live files shows that the validator still does not enforce several controls already required by this prompt. Do not report A2-02/A2-07 complete until each item below has a dedicated negative mutation test that fails against the vulnerable mutation and passes against the legitimate baseline.
+
+### Confirmed gaps from live-source inspection
+
+1. `validateWorkflowSecurity()` scans untrusted expressions in `step.run` only. It does not inspect workflow-level, job-level or step-level `env` values. An attacker can move an unsafe expression out of `run:` and into an environment variable consumed by a shell command.
+2. Runner validation accepts arrays containing `ubuntu-latest` plus arbitrary extra labels, and does not reject object-form or expression-based selectors. Require the exact approved runner representation for these workflows. Reject arrays, objects, expressions, dynamic selectors and all self-hosted combinations unless an explicitly approved exact form is documented.
+3. The OSV check validates `uses` prefix and `fail-on-vuln: true`, but does not reject unsafe reusable-workflow input overrides such as `scan-args`, `runs-on`, `ref`, or other unapproved inputs. Enforce an explicit input allowlist for the pinned upstream workflow and test every prohibited override.
+4. The Semgrep check does not enforce the exact approved rule configuration. It checks for `--error` and target paths, but a different or additional `--config` can be substituted. Enforce the approved config, required arguments and scope, rejecting duplicate/config-file overrides, excludes, rule exclusions and environment-based weakening.
+5. Gitleaks checks the action and comments setting, but do not protect configuration/ignore/allowlist overrides or all artifact-output settings. Add an explicit safe environment/configuration allowlist and mutation tests.
+6. The consumer template receives only generic workflow validation plus a weak Semgrep substring check. It does not receive the same scanner-specific Gitleaks, Semgrep, CodeQL and OSV invariants as the repository workflow. Add template-specific scanner validation and negative mutations for each scanner.
+7. Trigger validation checks only trigger names. It does not validate branch/event filters. The current security workflow restricts `pull_request` to `main`, while PR #9 targets `integration/uss-pr3-pr8-hardening`. Confirm and enforce the intended PR coverage for both the active integration target and main. Reject narrowing push scans to main-only or otherwise silently skipping required branch/event coverage.
+8. Add adversarial mutations for error masking beyond the existing patterns, including shell no-op fallbacks and alternative errexit disabling where applicable. Keep tests tied to parsed YAML fields, not only regexes over a single command string.
+
+### Required acceptance tests
+
+- Inject `github.event`, `github.actor`, `github.head_ref`, `github.ref_name`, `github.base_ref` and `inputs.*` into workflow/job/step `env`; each unsafe case must be rejected.
+- Replace `runs-on` with an array containing `ubuntu-latest` plus another label, an object mapping, and an expression/dynamic value; each must be rejected.
+- Add OSV `scan-args`, `runs-on`, `ref` and unknown `with` keys; each must be rejected.
+- Replace or supplement Semgrep `p/default` with a custom config, add duplicate `--config`, `--exclude`, `--exclude-rule`, or weakening environment values; each must be rejected.
+- Add Gitleaks config/ignore/allowlist overrides and re-enable artifact upload or comments; each must be rejected.
+- Delete each required scanner from the consumer template, weaken each scanner's required configuration, and inject prohibited inputs; each mutation must be rejected.
+- Narrow push branches to `main` only and remove the active integration PR target from the PR filter; each must be rejected.
+- Prove the untouched repository workflows and consumer template still pass.
+
+### Delivery requirements
+
+1. Fetch the current live branch head before editing. The baseline above may have advanced; use the latest SHA and state it in the handback.
+2. Reproduce each gap first, then implement the validator and tests.
+3. Keep edits strictly within A2-02/A2-07 ownership. Do not edit checksum, evidence, stack-profile or shared handoff files.
+4. Run targeted workflow tests, the complete test suite, repository validation, and scanner coverage checks.
+5. Return exact changed paths, base/final SHA or patch hash, all mutation test names/results, exact commands/exit codes, test totals, scanner counts and hosted CI run/job IDs.
+6. Do not claim independent closure. ChatGPT will inspect the actual diff and reproduce the attacks; Claude will independently audit the exact integrated SHA.
+7. Keep PR #9 open and unmerged. No release, tag, signing ceremony or ruleset changes.
+
+**Priority:** Complete this follow-up before spending time on cosmetic refactoring. The required result is a fail-closed workflow-security guard that detects configuration bypasses in both first-party workflows and the consumer template.
+
+
+---
+
+## Supervisory implementation update: ChatGPT has continued without waiting for Gemini
+
+**Current direction:** Do not duplicate or overwrite the owner-issued implementation now present on the PR branch. ChatGPT has taken over the follow-up work and has added further controls.
+
+### Additional implemented controls to inspect independently
+
+1. First-party and consumer Gitleaks/Semgrep jobs now execute a fail-closed scanner-configuration guard before scanning.
+2. The guard rejects Gitleaks config/ignore files, Semgrep config files, CodeQL config files, nested .semgrepignore files and symlinked root .semgrepignore.
+3. It permits only the harmless root .semgrepignore entries .git/ and node_modules/.
+4. It uses git check-ignore --no-index to detect tracked files hidden by .gitignore within the actual Semgrep scan scope. The consumer template checks all tracked files because it scans the whole repository.
+5. Semgrep runs with both --error and --strict; the validator rejects --suppress-errors.
+6. CodeQL now explicitly includes the actions language alongside javascript-typescript. Verify the live job log extracts and analyzes the first-party workflow files and consumer template.
+7. The consumer template receives the same scanner-specific checks as the first-party workflow, including exact Gitleaks, Semgrep, CodeQL and OSV configuration.
+
+### Your next task is an independent review, not a duplicate implementation
+
+Fetch the latest PR head and inspect the actual live files and CI. Reproduce the adversarial cases, especially nested ignore files, .gitignore-hidden tracked targets, Gitleaks config/ignore files, Semgrep CLI error suppression, CodeQL Actions language, unsafe OSV inputs and dynamic runners.
+
+Return only evidence-backed findings with exact file/line, severity, reproduction, and exact tested SHA. If you find a defect, propose a minimal patch in your own authorized workspace. Do not modify the shared handoff ledger. Do not claim independent closure from a green CI run alone. PR #9 remains open and unmerged.
+
+
+---
+
+## Urgent supervisory follow-up — repair scanner topology and failing tests before further hardening
+
+**Issued:** 2026-11-20  
+**Live PR HEAD at review:** `f57d6ce600538736925b4af62321a715db49d16c`  
+**Failed validation:** run `44737872939`, job `136293734824`  
+**Failed security scan:** run `44737873441`, job `136293737777`
+
+### Confirmed live failures
+
+The current hosted validation run executed 177 tests: **154 passed, 23 failed**. The failures are concentrated in the workflow-security tests.
+
+The current `.github/workflows/security-scans.yml` contains only these job IDs:
+
+- `gitleaks`
+- `codeql`
+- `osv`
+
+There is no separate `semgrep` job, even though `validateSecurityScansWorkflow()` and its mutation tests require `jobs.semgrep`. As a result, the baseline security-workflow test fails with `security-scans.yml must contain semgrep job`, and multiple mutation tests then throw TypeErrors while trying to mutate the missing job.
+
+More seriously, the current `gitleaks` job is not running Gitleaks. Its third step runs:
+
+```sh
+semgrep scan --config p/default --error --strict --metrics=off --verbose tools/ tests/ .github/workflows/ templates/
+```
+
+The job log confirms this command exits **127 (command not found)** on `ubuntu-latest`. There is no `gitleaks/gitleaks-action` invocation in the current first-party workflow. The consumer template has the same topology problem: its `secrets` job runs Semgrep directly on `ubuntu-latest`, and no separate Semgrep job/container is declared.
+
+Therefore, the current hosted scan run does **not** prove Gitleaks or Semgrep coverage.
+
+### Required correction
+
+1. Restore two distinct scanner jobs in both first-party workflow and consumer template:
+   - Gitleaks job: pinned checkout, exact scanner-config guard, then the pinned `gitleaks/gitleaks-action` SHA with the reviewed least-privilege environment. Keep full-history checkout where required and preserve the scheduled full-history behaviour.
+   - Semgrep job: a separate job with the immutable pinned Semgrep container image digest, checkout, exact scanner-config guard and the exact approved `semgrep scan --config p/default --error --strict ...` command and target scope.
+2. Keep CodeQL and OSV as separate jobs with their current pinned actions/reusable workflow and least-privilege permissions.
+3. The first-party workflow and consumer template must both actually execute all four scanners: Gitleaks, Semgrep, CodeQL and OSV. Do not rename a Semgrep job to Gitleaks or treat a successful job name as proof of scanner execution.
+4. Align the validator with the intended actual job IDs and topology. Do not weaken scanner requirements to make the current workflow pass.
+5. Repair mutation tests so each fixture mutates an existing, explicit job/step. A missing job must fail with a clear assertion, not throw a TypeError before the intended assertion. Add explicit negative tests proving:
+   - removal/renaming of the Gitleaks job or action is rejected;
+   - removal/renaming of the Semgrep job or container is rejected;
+   - Semgrep cannot be run on a bare Ubuntu runner without the pinned container or another explicitly pinned, verified installation method;
+   - the consumer template independently enforces the same two scanner jobs.
+6. Keep the scanner configuration guard, exact Semgrep config/scope, Gitleaks config restrictions, branch coverage, action pins, and error-fatal behaviour intact.
+7. Do not suppress, skip or mark the current 23 failing tests as expected. Fix the underlying topology and fixtures.
+
+### Acceptance evidence
+
+On the exact resulting PR HEAD, provide:
+
+- targeted workflow-security tests: all pass;
+- complete `node --test tests/*.test.mjs`: all pass, with exact total;
+- `node tools/validate.mjs` and generated-file drift checks: pass;
+- fresh hosted USS validation: success;
+- fresh hosted security scans with **four distinct successful scanner jobs**: Gitleaks, Semgrep, CodeQL and OSV;
+- Semgrep tracked/scanned/skipped counts and findings;
+- Gitleaks job log showing the pinned Gitleaks action actually ran, not merely a job named “Secret scan”;
+- exact commit SHA, changed files, commands, exit codes and run/job IDs.
+
+The prior run IDs above are failure evidence, not acceptance evidence. Fetch the current remote branch head before editing, work from that exact head, and report any intervening changes. Keep all changes within A2-02/A2-07 ownership. Do not edit checksum/evidence-validator/stack files or the shared handoff ledger. PR #9 remains open and unmerged; no release or signing actions.
+
+
+### Semgrep CLI flag clarification
+The current Semgrep container uses semgrep scan, not semgrep ci. For this command, --strict is the supported scan-specific flag that makes structured scan errors fatal; --no-suppress-errors is a semgrep ci option and must not be passed to semgrep scan. Keep --error for findings and --strict for scan errors. Verify this against the pinned Semgrep 1.186.0 CLI and current CI logs.
+
+
+---
+
+## Resolution of the urgent workflow-topology note
+
+The topology concern recorded against the older snapshot `f57d6ce` is resolved in the current branch. That snapshot was damaged by an incorrect file-block replacement. The workflows were restored from the known-good `39d72f6f` revision and the guard was then inserted separately into the correct Gitleaks and Semgrep jobs.
+
+Current intended topology:
+- First-party security workflow: four distinct jobs named `gitleaks`, `semgrep`, `codeql`, and `osv`.
+- Consumer template: four distinct jobs named `secrets`, `semgrep`, `codeql`, and `osv`.
+- Gitleaks uses its pinned action; Semgrep uses the pinned container; CodeQL uses JavaScript/TypeScript plus Actions; OSV uses the pinned reusable workflow.
+
+Two subsequent Semgrep execution issues were also corrected:
+1. The scanner container initially rejected Git operations because the checked-out repository was owned by a different host/container user. The guard now uses the exact workspace path as a per-command Git safe.directory and disables core.fsmonitor.
+2. The Semgrep 1.186.0 image does not support `--no-suppress-errors` on `semgrep scan`. The supported scan-specific `--strict` option is now used alongside `--error`; the validator rejects `--no-error`, `--no-strict` and `--suppress-errors` mutations.
+
+At commit `b0bf7bdf`, USS validation passed 177/177 tests, including the runtime guard integration test. That result predates the final Semgrep CLI correction. The latest validation and scanner runs after the correction are pending and must be checked before reporting the current head as green. Do not reuse the older topology-failure note as the current branch status.
+
+
+---
+
+## Final adversarial coverage review after scanner topology repair
+
+**Issued:** 2026-11-20  
+**Latest PR HEAD to synchronise from:** `570b36185c1e4e2e50a8c4a6898e07c429c1c3b4`  
+**Previous scanner-repair head with successful hosted checks:** `ee0f93590610dea443a42c8243b125f8129e7dab`
+
+The scanner topology regression has been corrected in the branch. At `ee0f935`, the hosted validation suite passed **177/177 tests**, and the four distinct scanner jobs completed successfully:
+
+- Gitleaks: pinned action actually ran; 30 commits scanned; no leaks found.
+- Semgrep: 26 tracked files scanned, 237 rules run, 0 findings, 0 skipped targets reported, approximately 100% parsed lines.
+- CodeQL: successful analysis, including GitHub Actions workflow files.
+- OSV: successful scan and SARIF upload.
+
+Do not repeat the earlier claim that Gitleaks/Semgrep are absent. The new task is to establish whether the remaining A2-02/A2-07 mutation and provenance requirements are actually complete.
+
+### Required work
+
+1. Synchronise to the latest remote head before inspection. Note that ChatGPT has since made owner-issued documentation-only updates to M21 and the Node.js, FastAPI and Laravel stack profiles. Do not overwrite or revert them.
+2. Build a requirement-to-test matrix from the full A2-02/A2-07 assignment and original Claude A2-02/A2-07 findings. For each requirement, identify the exact validator function and negative test that rejects the mutation.
+3. Recheck actual parsed YAML validation for:
+   - workflow and job permissions, including exact exceptions for CodeQL/OSV;
+   - all unapproved triggers and branch/event narrowing;
+   - direct untrusted expressions in dot and bracket notation, plus expression movement into workflow/job/step `env` and action `with`;
+   - dynamic runner selectors, arrays and object selectors;
+   - disabled/conditional mandatory jobs and steps, optional dependencies and `continue-on-error`;
+   - missing, reordered or replaced validation/scanner steps;
+   - shell error suppression, command substitution and unsafe credential exposure;
+   - checkout credential persistence and mutable action pins;
+   - Gitleaks config/ignore overrides and complete-history scheduled scanning;
+   - Semgrep config replacement, duplicate config, ignore/exclude weakening, image digest and exact scan targets;
+   - CodeQL path/config overrides and the actual Actions workflow coverage;
+   - OSV `runs-on`, `ref`, `scan-args`, inputs and permissions;
+   - consumer template independently enforcing the same scanner controls.
+4. Specifically test the scanner configuration guard against symlinked config/ignore files, nested ignore files, tracked scan targets excluded by `.gitignore`, and malicious Git configuration. Do not rely on a job name or YAML shape alone as proof that the executable scanner ran.
+5. Verify the OSV reusable-workflow SHA against the official upstream repository and immutable release/tag provenance. Record the URL, tag and commit relationship. Verify Gitleaks full-history behaviour for the scheduled trigger and commit-range behaviour for push/PR.
+6. Add only missing negative mutation tests or narrow validator fixes. Do not weaken existing checks, change scanner versions/pins, or edit files outside A2-02/A2-07 ownership.
+7. Run targeted tests, all repository tests, project validation and generated-file drift checks on the exact latest source. Obtain fresh hosted CI on the resulting head and record run/job IDs and logs.
+
+### Required handback
+
+Return a complete matrix with PASS / GAP / NOT VERIFIED for every requirement, exact test names, source line/function references, changed files, final SHA, commands and exit codes. Report Semgrep scanned/skipped/partial-parse counts and the Gitleaks scanned commit count. If no additional code change is necessary, say so explicitly and provide the evidence. Do not edit the shared handoff ledger. Do not merge, sign, tag or publish a release.
+
+
+---
+
+## Urgent F5-R1 follow-up: embedded scanner guards still vulnerable
+
+**Issued by:** ChatGPT supervisory engineer  
+**Live source baseline:** Gemini branch handoff commit `18dafdf526fa8d79e778cd9ee55d543a14a52a34`  
+**Finding:** F5-R1 remains OPEN.
+
+A fresh inspection of the exact live source shows that the standalone `tools/uss-tracked-binary-scanner.py` uses component-by-component `dir_fd` traversal with `O_DIRECTORY | O_NOFOLLOW`, but the duplicated Python scanner in both `.github/workflows/security-scans.yml` and `templates/ci/consumer-security-scans.yml` still uses path-based `os.lstat(target_path)` followed by `os.open(target_path, O_NOFOLLOW)`. `O_NOFOLLOW` protects only the leaf, not parent components. The canonical embedded guard in `tools/validate-consumer-workflow.mjs` also retains this vulnerable code. Existing F5 tests exercise the standalone scanner and clean/malicious NUL files, but do not reproduce the parent-directory symlink redirection against all three embedded copies.
+
+### Required implementation (Gemini A2-02/A2-07 ownership)
+
+1. Port the secure directory-descriptor traversal into both workflow guard scripts and the canonical consumer guard generator. Keep implementation behaviour aligned across all copies.
+2. Make unsupported platforms fail closed by default. Do not retain a path-based fallback that can report a successful scan while parent-component race resistance is unavailable. The approved GitHub Actions runner is Linux; Windows local tests must assert the documented fail-closed result.
+3. Add a shared regression fixture that stages a tracked NUL-containing file such as `dir/file.txt`, replaces `dir` with a symlink to an external directory containing a clean `file.txt`, and proves each scanner/guard rejects or fails closed. Confirm independently that `git show :dir/file.txt` still contains the NUL byte.
+4. Exercise the standalone scanner, the exact embedded script from the first-party workflow, the exact embedded script from the consumer template, and the canonical guard generated by `tools/validate-consumer-workflow.mjs`.
+5. Add a positive nested regular-file test and explicit unsupported-platform test.
+6. Add validator mutations proving that removal or weakening of the component-wise traversal is rejected in both workflows and the consumer template.
+7. Run targeted workflow tests, full `npm test`, `node tools/validate.mjs`, evidence validation, all generator drift checks, Semgrep, Gitleaks and OSV. Provide exact commands, exit codes, test totals and scanner coverage. Hosted CI must be reported only if actual run and job IDs exist.
+8. Do not edit `tools/checksums.mjs`, `tests/checksums.test.mjs`, evidence-validator files, stack profiles or the shared handoff ledger. Return your exact patch/commit and raw evidence to ChatGPT. The connected bot account is read-only; do not push as the owner or spoof identity.
+
+### Acceptance boundary
+
+F5-R1 remains OPEN until the four implementations (standalone, first-party workflow, consumer template, canonical validator generator) use equivalent secure traversal, the adversarial parent-symlink regression passes against every copy, unsupported platforms fail closed, and ChatGPT independently verifies the exact resulting diff. Do not merge PR #9, modify main, sign, tag, publish or deploy.
+
+
+---
+
+## ChatGPT supervisory follow-up: A2-03 descriptor-relative traversal cross-review
+
+**Issued:** 2026-11-23  
+**Owner-issued ChatGPT branch:** `chatgpt/checksum-root-symlink-hardening`  
+**Exact code/test/documentation commits to inspect:**  
+- `744f6547a93193547a8419ababba33d31d0213e6` — descriptor-relative nested traversal and file-descriptor reads in `tools/checksums.mjs`.  
+- `4f8e073955c84df2a81e06a57370bc0136720a26` — descriptor-pinned manifest read/write and removal of unsupported Dirent identity assumptions.  
+- `31ba60efe8b914a5de3df67a28dbcb6b19fc8b8f` — filesystem-mode nested-parent symlink regression in `tests/checksums.test.mjs`.  
+- `dc457176d2dba6c08bb5c194d9288ba5c0a5ffba` — A2-09 consumer documentation update.
+
+### Required Gemini actions (read-only review; do not edit checksum-owned files)
+
+1. Fetch the exact branch head and verify it contains the four commits above. Report the exact full branch HEAD SHA and changed-file list.
+2. Inspect `tools/checksums.mjs` for descriptor-relative traversal in `assertNoNestedGit`, `walkFiles`, `openRegularFile`, `sha256ForPath`, and manifest IO. Specifically test symlink replacement, directory replacement, file replacement, special files, descriptor cleanup, and error paths.
+3. Run `node --test tests/checksums.test.mjs` and `npm test` on Linux VPS and Windows PC against the exact latest ChatGPT branch head. Return raw output summaries, exit codes, skipped counts and test totals. Do not infer or claim a pass from source inspection.
+4. Run `node tools/validate.mjs`, `node --test tests/evidence.test.mjs`, all module/index/bundle generation and drift checks. Report exact commands and outputs.
+5. Do not change `tools/checksums.mjs`, `tools/secure-root.mjs`, `tests/checksums.test.mjs`, `CONSUMING.md`, evidence-validator files, or the shared handoff ledger. Return findings to ChatGPT only.
+6. Continue Gemini-owned F5 work independently: verify the exact four scanner implementations, run the full scanner/workflow regression matrix, and report whether the branch has the latest embedded-guard parity and fail-closed platform handling. Do not merge, sign, tag or deploy.
+
+**Important:** The connected GitHub account is read-only for agent identities. Do not push as the owner or spoof commit author metadata. This is a read-only cross-review and test assignment, not permission to modify the ChatGPT-owned workstream.
+
+
+### A2-03 follow-up correction to include in cross-review
+
+After the initial cross-review assignment, ChatGPT made one further owner-issued correction:
+
+- `f3b7e2ae77f547d810f75086b326086c610e4745` — manifest creation now opens the target with `O_NOFOLLOW | O_NONBLOCK`, verifies via `fstat` that it is a regular file, and only then truncates it. This avoids following a manifest symlink and avoids blocking on a substituted FIFO before type validation.
+
+Please include this exact commit in your review and tests. The exact ChatGPT code/test/documentation diff since base `2a0604d3b4b59b8f69cafc3f72657a875b845fcc` currently covers `tools/checksums.mjs`, `tests/checksums.test.mjs`, and `CONSUMING.md`, plus the shared handoff ledger. Do not report A2-03 verified until the exact branch head is tested on both platforms and the full validation matrix is complete.
+
+
+---
+
+## VPS migration directive: make the VPS the authoritative USS execution host
+
+**Issued:** 2026-11-23  
+**Priority:** Immediate  
+**Execution host:** Owner-authorised Linux VPS (not the local PC)  
+**Scope:** USS A2-03 cross-review, Gemini-owned F5 work, validation and coordination.
+
+The owner has directed that USS work move back from the local PC to the VPS so work can continue without depending on the local PC being powered on. Treat the VPS as the primary execution environment from this directive onward, subject to the preflight gates below. The local PC is no longer the authoritative workspace. It may be used only as a secondary independent Windows compatibility test host when explicitly required.
+
+### A. Do not start from an existing potentially stale worktree
+
+Before any code inspection, test, build, generation, or implementation:
+
+1. Connect to the authorised VPS and identify the actual USS repository clone/worktrees and the existing automation/supervision service. Do not assume a remembered path, branch, service name, or process is correct.
+2. Locate and read the canonical `automation.md` (case-insensitive filename search and `git ls-files` search). Also read `AGENTS.md`, `KERNEL.md`, and any referenced USS automation/runbook instructions. If `automation.md` exists only as an untracked local file, preserve it and report its path/hash; do not overwrite it. If it cannot be found on the VPS or in the authoritative repository, stop only the automation activation step and report the exact search evidence. Continue safe read-only repository discovery.
+3. Check disk space, memory, CPU, Node.js, npm, Python, Git, file ownership, clock/timezone, network connectivity to the configured origin, and VPS process/service health. Do not install or upgrade packages globally or alter system security settings without owner approval.
+4. Record the VPS hostname, UTC timestamp, repository path, tool versions, current worktree status, current branch, and exact HEAD SHA. Do not disclose secrets, environment values, tokens or private key material in reports.
+5. Fetch the authoritative origin: `git fetch origin --prune`. Then capture exact remote refs and commit SHAs with `git ls-remote origin` for:
+   - `refs/heads/main`
+   - `refs/heads/chatgpt/checksum-root-symlink-hardening`
+   - `refs/heads/gemini/d01-d02-f5-f6-remediation`
+6. Compare each local ref with its origin ref. Do not trust branch names alone. Verify the current ChatGPT A2-03 checkpoint includes commit `f3b7e2ae77f547d810f75086b326086c610e4745`, and verify the Gemini branch includes the latest prompt update in this file. Fetch and inspect the latest shared handoff ledger before taking action.
+7. If an existing worktree is dirty, has unknown/uncommitted changes, or cannot be safely fast-forwarded, do not run `reset --hard`, `clean -fdx`, checkout-overwrite, or discard changes. Preserve it. Create a fresh isolated clone/worktree from the exact origin SHA in a new directory and verify the new worktree SHA. Never mix files from old and new worktrees.
+8. Verify the working files against Git object contents (at minimum `git status --short`, `git rev-parse HEAD`, `git diff --exit-code`, and checksums for the critical files). Report exact hashes for `tools/checksums.mjs`, `tests/checksums.test.mjs`, `CONSUMING.md`, `tools/uss-tracked-binary-scanner.py`, both workflow/template files, `tools/validate-consumer-workflow.mjs`, and the prompt/handoff files. No tests may run until this freshness gate passes.
+
+### B. Establish one authoritative VPS workspace per agent
+
+1. Use separate isolated worktrees/directories for ChatGPT-owned A2-03 and Gemini-owned F5 work. Never share one mutable worktree between agents.
+2. ChatGPT A2-03 branch is read-only for Gemini. Test the exact latest origin branch SHA, not a copied folder or old local branch.
+3. Gemini owns F5 implementation. Work only from the freshly synchronized origin Gemini branch. Preserve agent identity and existing branch policy. Do not impersonate the owner or another agent.
+4. Keep main read-only. Do not merge branches, rebase shared branches, rewrite history, force-push, sign releases, tag, publish, deploy, or change branch protections.
+5. Do not use local-PC files as source of truth. If a Windows compatibility run is required, first record the exact SHA and use a clean isolated checkout of that exact SHA on Windows; report it as secondary evidence only.
+
+### C. Continuous VPS operation
+
+1. Inspect the existing USS automation/supervision setup before creating anything. Reuse the established project workflow if it is healthy; do not create duplicate cron entries, systemd timers, loops or competing agents.
+2. Make the VPS supervisor resilient to SSH disconnection and terminal closure. Use the existing approved service/scheduler only after verifying its unit, owner, executable, working directory, environment-file permissions and logs. Do not expose secrets in logs.
+3. If no valid USS supervisor exists, propose the smallest systemd service/timer or existing approved scheduler configuration and provide its unit/config diff for owner review before enabling it. Do not invent a new unattended service or enable it without approval.
+4. A continuous cycle must: fetch/prune; verify clean isolated worktrees and exact remote SHAs; inspect handoff and agent prompts; run the next authorised task; record commands, results, test counts, failures and SHAs; update handoff; then continue to the next independent task. Never wait idle when another safe, authorised task can proceed.
+5. On any sync conflict, dirty worktree, unexpected SHA, missing automation policy, failed preflight, credential issue, resource exhaustion or destructive action risk, preserve all state and report the blocker. Do not silently fall back to stale local files.
+
+### D. First VPS execution cycle
+
+After the preflight and freshness gates pass:
+
+1. Run `node --test tests/checksums.test.mjs` on the exact ChatGPT A2-03 branch SHA.
+2. Run `npm test`, `node tools/validate.mjs`, `node --test tests/evidence.test.mjs`, and all documented module/index/bundle generation and drift checks against that same SHA.
+3. Continue Gemini F5 work on its own clean, updated branch: inspect the four scanner implementations, run the F5 parent-symlink adversarial fixture against every copy, positive nested-file test, unsupported-platform fail-closed tests, validator mutation tests, and full validation/scanner matrix.
+4. Capture exact commands, exit codes, test totals, skipped counts, tool versions, worktree SHAs, and concise raw output. Do not call a test passed if it was not executed.
+5. Return a single VPS migration report showing: preflight, source-of-truth SHA per branch, file hashes, test evidence, automation service state, any stale/dirty worktrees preserved, and remaining risks.
+6. After the first successful cycle, continue with the next independent task without waiting for the owner unless an approval gate or missing essential input is encountered.
+
+### E. Ownership and release controls
+
+- Gemini may implement and verify only Gemini-owned F5 files and tests.
+- Gemini must not modify ChatGPT-owned checksum files, A2-03 tests/docs, evidence-validator files or the shared handoff ledger.
+- ChatGPT maintains the shared handoff ledger and reconciles the two branches.
+- PR #9 remains OPEN and UNMERGED. No merge, production deployment, release signing, tagging, publication, branch-protection change or production policy change is authorised by this migration directive.
+
+**Required acknowledgment:** Start your next report with `VPS PREFLIGHT` and state whether the VPS is now the verified authoritative USS host. Do not say “switched” until the exact origin SHAs, worktree freshness, critical-file hashes and automation status have been verified.
+
+
+---
+
+## VPS verification assignment: ChatGPT W-A / W-B / W-C release-closure branch
+
+**Issued:** 2026-11-24  
+**Branch to verify:** `chatgpt/release-closure-wabc`  
+**Base:** `262f1e589cd75ba1bcfc5444bcce669a11c91e19`  
+**Scope:** Read-only verification only. ChatGPT owns this branch. Do not edit, cherry-pick, rebase, merge, or push to it.
+
+The branch contains ChatGPT's independent implementation of Claude's W-A/W-B/W-C release-closure changes. It is seven commits ahead of the stated base and changes only:
+- `.gitattributes`
+- `tools/validate.mjs`
+- `tools/gitattributes-policy.mjs`
+- `tests/gitattributes-policy.test.mjs`
+- `tests/validate-scanner-parity.test.mjs`
+
+### Mandatory freshness gate
+
+1. On the VPS, fetch/prune origin and verify the exact remote branch SHA for `chatgpt/release-closure-wabc`.
+2. Create a fresh isolated read-only worktree from that exact SHA. Do not reuse the local-PC checkout or an existing stale VPS directory.
+3. Verify the five changed paths and their blob hashes against GitHub before running commands.
+4. Read `automation.md`, `AGENTS.md`, `KERNEL.md` and the current handoff before proceeding.
+5. Keep Gemini's own F5 worktree separate and unchanged.
+
+### Required verification
+
+Run on the VPS:
+1. `npm ci --ignore-scripts` only if the isolated worktree has no valid dependencies; do not change lockfiles.
+2. `node --test tests/gitattributes-policy.test.mjs`
+3. `node --test tests/validate-scanner-parity.test.mjs`
+4. `npm test`
+5. `node tools/validate.mjs`
+6. `node tools/validate-evidence.mjs --file templates/security-evidence.example.json`
+7. `node tools/validate-consumer-workflow.mjs`
+8. All documented module/index/bundle generators and zero-drift checks.
+9. `git ls-files --eol` and verify all tracked files remain LF.
+10. Confirm the actual `.gitattributes` rules contain no prohibited `diff`, `binary`, `filter`, `merge`, `-text`, `export-*`, or `linguist*` attributes.
+
+### Adversarial checks
+
+- Confirm the header validator rejects early executable content, altered shebangs and code inserted before the scanner's first `import os`.
+- Confirm both mandatory workflow files fail validation when removed.
+- Confirm prohibited attributes are rejected including `export-custom-policy`, `linguist-generated`, `filter`, `-text`, and `!diff`.
+- Confirm ordinary `text=auto` and `text eol=lf` rules remain accepted and comments mentioning prohibited words do not trigger false positives.
+- Confirm the scanner's canonical header still passes.
+
+### Report
+
+Update the shared handoff with a read-only verification report: exact branch/head SHA, five changed-file hashes, VPS hostname/time, tool versions, each command/exit code, test pass/fail/skip totals, generator drift, LF count, and any failure output. If the shared handoff is not writable under the established ownership rules, return the complete report to ChatGPT for ledger entry.
+
+Do not claim any test passed unless it was executed on this exact SHA. Continue Gemini's independent F5 implementation in its separate worktree while this verification runs. No merge, signing, release, or deployment.
+
+
+---
+
+## URGENT PARALLEL EXECUTION DIRECTIVE — 2026-11-24
+
+This is an execution assignment, not another planning/review request. You own the following workstream and must progress it immediately without waiting for ChatGPT or Claude.
+
+### Your deliverables
+
+**A. F5-R1 scanner parent-symlink hardening**
+1. Inspect the current exact remote head and the supervisory F5-R1 finding in the handoff.
+2. Implement the same race-resistant parent-directory traversal protection consistently in every shipped copy: standalone scanner, first-party workflow guard, consumer template guard, and canonical generated guard.
+3. Add adversarial fixtures proving parent-directory symlinks cannot redirect reads outside the intended root. Include positive nested regular-file cases.
+4. Unsupported platforms must fail closed. Test the unsupported-platform branch explicitly; do not silently weaken protection.
+5. Run the focused F5 matrix, full suite, validators, generators and drift checks on a fresh isolated VPS worktree at the exact resulting SHA.
+6. Return exact changed paths, base/head SHAs, commands, exit codes, pass/fail/skip counts and concise raw evidence.
+
+**B. Verify ChatGPT W-A/W-B/W-C branch**
+Verify branch `chatgpt/release-closure-wabc` at its exact current origin head, read-only. It contains five changed paths: `.gitattributes`, `tools/validate.mjs`, `tools/gitattributes-policy.mjs`, `tests/gitattributes-policy.test.mjs`, and `tests/validate-scanner-parity.test.mjs`.
+Run all verification steps already listed in this prompt's W-A/W-B/W-C assignment, including focused tests, full suite, validators, generators, LF checks and adversarial mutation cases. Do not modify this branch.
+
+### Parallel execution rules
+- Continue F5 implementation while W-A/W-B/W-C verification runs in a separate clean worktree. Do not serialize unrelated work.
+- Do not wait for another agent to finish.
+- Keep Gemini-owned F5 code on your Gemini branch only.
+- Do not edit checksum/A2-03 files, Claude's evidence-validator or stack-profile files, ChatGPT's W-A/W-B/W-C branch, or the shared handoff ledger.
+- Do not merge, rebase shared branches, force-push, sign, tag, publish, deploy or change repository settings.
+
+### Reporting
+Send ChatGPT one complete handback as soon as each workstream finishes; do not wait for both. State blockers immediately with exact evidence and continue other safe tasks. No completion claim without exact SHA and executed test output.
