@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {openSecureDirectory} from './secure-root.mjs';
+import {isTrustedExecutableStat,isTrustedDirectoryStat} from './trusted-git-policy.mjs';
 
 const MANIFEST='SHA256SUMS';
 const SIGNATURE='SHA256SUMS.sig';
@@ -21,14 +22,13 @@ function resolveTrustedGit() {
     try {
       const resolved=fs.realpathSync(candidate);
       const stat=fs.statSync(resolved);
-      if(!stat.isFile()||(stat.mode&0o111)===0||(stat.mode&0o022)!==0)continue;
-      if(typeof process.getuid==='function'&&stat.uid!==0&&stat.uid!==process.getuid())continue;
+      const currentUid=typeof process.getuid==='function'?process.getuid():undefined;
+      if(!isTrustedExecutableStat(stat,currentUid))continue;
       let directory=path.dirname(resolved);
       let safe=true;
       while(directory!=='/') {
         const parentStat=fs.statSync(directory);
-        if(!parentStat.isDirectory()||(parentStat.mode&0o022)!==0||
-          (typeof process.getuid==='function'&&parentStat.uid!==0&&parentStat.uid!==process.getuid())) {
+        if(!isTrustedDirectoryStat(parentStat,currentUid)) {
           safe=false;break;
         }
         directory=path.dirname(directory);
