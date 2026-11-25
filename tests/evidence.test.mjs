@@ -348,3 +348,28 @@ test('run evidence IDs enforce the exact unsigned 64-bit boundary',()=>{
   expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
  }
 });
+
+
+test('evidence references reject IP literals, private hostnames, single-label hosts, whitespace and path placeholders',()=>{
+ for(const reference of [
+  'https://127.0.0.1/evidence/1',
+  'https://10.0.0.1/evidence/1',
+  'https://192.168.1.10/evidence/1',
+  'https://[::1]/evidence/1',
+  'https://[fd00::1]/evidence/1',
+  'https://intranet/evidence/1',
+  'https://service.internal/evidence/1',
+  'https://host.local/evidence/1',
+  'https://host.lan/evidence/1',
+  'https://github.com/TBD',
+  'https://github.com/owner/repo#TBD',
+  'https://github.com/owner/TODO/commit/abc',
+  'https://github.com/owner/repo/actions/runs/123\\n',
+  'https://github.com/owner/repo/actions/runs/123 with-space',
+  'TBD#TBD',
+  'tests/TODO.md#L1',
+  'tests/evidence.test.mjs#TBD'
+ ]){
+  expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
+ }
+});
