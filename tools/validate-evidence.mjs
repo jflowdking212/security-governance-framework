@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {isIP} from 'node:net';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const args=process.argv.slice(2);
@@ -63,21 +64,41 @@ function isRunReference(reference){
  return BigInt(match[1])<=MAX_UNSIGNED_64;
 }
 
+function isPlaceholderToken(value){
+ let decoded;
+ try{decoded=decodeURIComponent(value);}catch{return true;}
+ const norm=decoded.trim().toLowerCase().replace(/\s+/g,' ');
+ return ['n/a','na','none','unknown','tbd','todo','pending','placeholder','example','sample','null','undefined','x','-','--'].includes(norm)||/^-+$/.test(norm);
+}
+
 function validEvidenceReference(value){
  if(!nonEmpty(value)||isPlaceholderReference(value))return false;
+ // URL parsing silently normalizes some whitespace/control characters. Reject
+ // them before parsing so the submitted evidence string is unambiguous.
+ if(/[\s\u0000-\u001f\u007f]/u.test(value))return false;
  const reference=value.trim();
  if(isRunReference(reference))return true;
  if(/^https:\/\//i.test(reference)){
   try{
    const url=new URL(reference);
-   return url.protocol==='https:'&&Boolean(url.hostname)&&!url.username&&!url.password;
+   if(url.protocol!=='https:'||!url.hostname||url.username||url.password)return false;
+   const hostname=url.hostname.toLowerCase();
+   const ipHost=hostname.replace(/^\[|\]$/g,'');
+   if(isIP(ipHost)!==0)return false;
+   if(!hostname.includes('.')||hostname.endsWith('.'))return false;
+   if(/\.(?:localhost|local|internal|lan|home|test|invalid|example)$/i.test(hostname))return false;
+   const segments=url.pathname.split('/').filter(Boolean);
+   if(!segments.length||segments.some(isPlaceholderToken))return false;
+   if(url.hash&&isPlaceholderToken(url.hash.slice(1)))return false;
+   return true;
   }catch{return false;}
  }
  const separator=reference.indexOf('#');
  if(separator<=0||separator===reference.length-1)return false;
  const relativePath=reference.slice(0,separator);
  const anchor=reference.slice(separator+1);
- if(relativePath.startsWith('/')||relativePath.includes('\\')||relativePath.split('/').some(part=>!part||part==='.'||part==='..'))return false;
+ if(relativePath.startsWith('/')||relativePath.includes('\\')||relativePath.split('/').some(part=>!part||part==='.'||part==='..'||isPlaceholderToken(part)))return false;
+ if(isPlaceholderToken(anchor))return false;
  return /^[A-Za-z0-9._/-]+$/.test(relativePath)&&/^[A-Za-z0-9._:-]+$/.test(anchor);
 }
 
