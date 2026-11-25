@@ -508,3 +508,41 @@ test('A2-03: opened root remains anchored when its pathname is replaced',t=>{
   assert.equal(fs.readFileSync(path.join(opened.path,'marker.txt'),'utf8'),'original-root');
   assert.equal(fs.readFileSync(path.join(root,'marker.txt'),'utf8'),'attacker-root');
 });
+
+
+test('W04-F1: unsupported Git platform fails closed without an uncaught stack trace',t=>{
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const shim=path.join(cwd,'fake-platform.cjs');
+ fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\\n");
+ const result=spawnSync(process.execPath,['--require',shim,TOOL,'create'],{cwd,encoding:'utf8'});
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/Checksum Git mode is supported only on Linux; refusing to use PATH-based Git/);
+ assert.doesNotMatch(result.stderr,/\\n\\s+at /,'must not print an uncaught stack trace');
+});
+
+test('W04-F1: filesystem mode reports unsupported root traversal cleanly on non-Linux',t=>{
+ const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-checksums-platform-'));
+ t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ fs.writeFileSync(path.join(cwd,'README.md'),'filesystem snapshot\\n');
+ const shim=path.join(cwd,'fake-platform.cjs');
+ fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\\n");
+ const result=spawnSync(process.execPath,['--require',shim,TOOL,'create','--filesystem'],{cwd,encoding:'utf8'});
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/Checksum operation failed: Race-resistant checksum root traversal is unsupported on this platform/);
+ assert.doesNotMatch(result.stderr,/\\n\\s+at /,'must not print an uncaught stack trace');
+});
+
+test('W04-F3: manifest replacement does not modify an existing hardlink',t=>{
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const manifest=path.join(cwd,'SHA256SUMS');
+ const external=path.join(os.tmpdir(),'uss-checksums-hardlink-'+process.pid+'-'+Date.now());
+ t.after(()=>fs.rmSync(external,{force:true}));
+ const old='previous manifest inode\\n';
+ fs.writeFileSync(manifest,old);
+ fs.linkSync(manifest,external);
+ const result=run(cwd,'create');
+ assert.equal(result.status,0,result.stderr);
+ assert.equal(fs.readFileSync(external,'utf8'),old,'the pre-existing hardlink must retain its original bytes');
+ assert.notEqual(fs.readFileSync(manifest,'utf8'),old,'SHA256SUMS must be replaced with the new manifest');
+ assert.notEqual(fs.statSync(manifest).ino,fs.statSync(external).ino,'new manifest must have a different inode');
+});
