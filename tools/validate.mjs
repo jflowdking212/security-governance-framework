@@ -35,16 +35,19 @@ const global=await fs.readFile(m.sources.global.archive,'utf8'),anti=await fs.re
 const marker='# EMBEDDED CANONICAL GLOBAL DIRECTIVE — v4',pos=anti.indexOf(marker);
 if(pos<0)errors.push('Anti-Gravity embedded canonical marker missing');else{const norm=x=>x.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean).join('\n');if(norm(anti.slice(pos+marker.length))!==norm(global))errors.push('Embedded global directive does not match standalone canonical source')}
 if(m.rules.p0_release!=='BLOCK'||m.rules.p1_release!=='BLOCK'||m.rules.agent_may_waive_p0_p1!==false||m.rules.unknown_is_pass!==false)errors.push('Release policy invariant failed');
-for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md','REVIEW-CLAUDE.md','RELEASE-CHECKLIST.md','CHANGELOG.md','VERSION','SECURITY.md','SECURITY-ROOT.md','CONSUMING.md','LICENSE','CONTRIBUTING.md','.gitignore','.github/PULL_REQUEST_TEMPLATE.md','.github/CODEOWNERS','.security/README.md','tools/checksums.mjs','tests/checksums.test.mjs','tools/uss-tracked-binary-scanner.py','templates/uss-version.example','.gitattributes','tools/gitattributes-policy.mjs'])if(!await exists(p))errors.push('Missing required project file '+p);
+for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md','REVIEW-CLAUDE.md','RELEASE-CHECKLIST.md','CHANGELOG.md','VERSION','SECURITY.md','SECURITY-ROOT.md','CONSUMING.md','LICENSE','CONTRIBUTING.md','.gitignore','.github/PULL_REQUEST_TEMPLATE.md','.github/CODEOWNERS','.security/README.md','tools/checksums.mjs','tests/checksums.test.mjs','tools/uss-tracked-binary-scanner.py','templates/uss-version.example','.gitattributes','tools/gitattributes-policy.mjs','.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml'])if(!await exists(p))errors.push('Missing required project file '+p);
 if(await exists('tools/uss-tracked-binary-scanner.py')){
  const scannerRaw=await fs.readFile('tools/uss-tracked-binary-scanner.py','utf8');
  const scannerLines=scannerRaw.split(/\r?\n/);
  const osIdx=scannerLines.indexOf('import os');
+ const scannerHeader=scannerLines.slice(0,osIdx).join('\n')+'\n';
+ if(osIdx<0||!/^#![/]usr[/]bin[/]env python3\n(?:\n|#[^\n]*\n|\"\"\"(?:(?!\"\"\")[\s\S])*\"\"\"\n)*$/.test(scannerHeader))errors.push('tools/uss-tracked-binary-scanner.py has executable or unexpected content before import os; only the python3 shebang, comments and a docstring are permitted');
  if(osIdx<0)errors.push('tools/uss-tracked-binary-scanner.py missing import os');
  else{
   const standaloneEngine=scannerLines.slice(osIdx).join('\n').trim();
   for(const wfPath of ['.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml']){
-   if(await exists(wfPath)){
+   if(!await exists(wfPath))errors.push('Missing required scanner workflow '+wfPath);
+   else{
     const wfContent=await fs.readFile(wfPath,'utf8');
     const matches=[...wfContent.matchAll(/python3 - <<'EOF'\n([\s\S]*?)\n\s*EOF/g)];
     if(matches.length!==2)errors.push(wfPath+' must contain exactly 2 embedded scanner blocks');
