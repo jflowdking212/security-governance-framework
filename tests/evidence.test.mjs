@@ -383,14 +383,18 @@ test('A2-06 identity normalisation rejects whitespace and non-canonical GitHub s
  for(const [reviewer,approver] of [
   ['github:123456','github:0123456'],
   ['google:1234','google: 1234'],
-  ['google:1234','google:1234'.replace(':',':\\t')],
-  ['okta:subject-1','okta:\\tsubject-1']
+  ['google:1234','google:1234'.replace(':',':\t')],
+  ['okta:subject-1','okta:\tsubject-1']
  ]){
   expectInvalid(r=>{
    r.project.reviewer_identity=reviewer;
    r.findings=[{id:'F-034',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:approver,rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
   },/stable issuer-scoped identity/);
  }
+ expectInvalid(r=>{
+  r.project.reviewer_identity='google: 1234';
+  r.findings=[{id:'F-036',severity:'P2',status:'ACCEPTED',title:'x',severity_rationale:'r',control_ids:[r.controls[0].control_id],risk_acceptance:{approved_by:'Owner',approved_by_identity:'google:5678',rationale:'r',approved_at:'2026-11-18T00:00:00Z',expires_at:'2026-12-18T00:00:00Z'}}];
+ },/stable issuer-scoped identity/);
  const valid=withReport(r=>{
   markAllPass(r);
   r.project.reviewer_identity='GitHub:123456';
