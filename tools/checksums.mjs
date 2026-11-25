@@ -89,36 +89,6 @@ function gitAt(cwd,args,{encoding='utf8'}={}) {
   return r;
 }
 
-function gitAt(cwd,args,{encoding='utf8'}={}) {
-  if(process.platform!=='linux') {
-    console.error('Checksum Git mode is supported only on Linux; refusing to use PATH-based Git.');
-    process.exit(1);
-  }
-  if(!TRUSTED_GIT) {
-    try {TRUSTED_GIT=resolveTrustedGit();}
-    catch(error) {
-      console.error('Checksum Git mode failed closed: '+error.message);
-      process.exit(1);
-    }
-  }
-  const hardenedArgs=[
-    '-c','core.fsmonitor=false',
-    '-c','core.hooksPath=/dev/null',
-    '-c','core.pager=cat',
-    '-c','core.attributesFile=/dev/null',
-    '-c','core.excludesFile=/dev/null',
-    '-c','diff.external=',
-    '-c','protocol.ext.allow=never',
-    '-c','credential.helper=',
-    ...args
-  ];
-  const r=spawnSync(TRUSTED_GIT,hardenedArgs,{
-    cwd,encoding,stdio:['ignore','pipe','pipe'],env:sanitizedGitEnvironment()
-  });
-  if(r.error)throw new Error('Unable to run trusted Git: '+r.error.message);
-  return r;
-}
-
 const argv=process.argv.slice(2);
 const command=argv[0];
 let rootArg='.';
