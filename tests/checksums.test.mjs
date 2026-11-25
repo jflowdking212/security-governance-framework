@@ -6,6 +6,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {openSecureDirectory} from '../tools/secure-root.mjs';
+import {isTrustedExecutableStat,isTrustedDirectoryStat} from '../tools/trusted-git-policy.mjs';
 
 const TOOL=fileURLToPath(new URL('../tools/checksums.mjs',import.meta.url));
 
@@ -545,4 +546,26 @@ test('W04-F3: manifest replacement does not modify an existing hardlink',t=>{
  assert.equal(fs.readFileSync(external,'utf8'),old,'the pre-existing hardlink must retain its original bytes');
  assert.notEqual(fs.readFileSync(manifest,'utf8'),old,'SHA256SUMS must be replaced with the new manifest');
  assert.notEqual(fs.statSync(manifest).ino,fs.statSync(external).ino,'new manifest must have a different inode');
+});
+
+
+test('W04-F2: trusted Git executable policy rejects writable and foreign-owned candidates',()=>{
+ const currentUid=1000;
+ const fakeFile=(mode,uid)=>({mode,uid,isFile:()=>true});
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100755,0),currentUid),true,'root-owned non-writable executable is trusted');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100755,currentUid),currentUid),true,'current-user-owned non-writable executable is trusted');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o102755,0),currentUid),false,'group-writable fake Git is rejected');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100757,0),currentUid),false,'world-writable fake Git is rejected');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100755,2000),currentUid),false,'foreign-owned fake Git is rejected');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100644,0),currentUid),false,'non-executable Git candidate is rejected');
+});
+
+test('W04-F2: trusted Git parent-directory policy rejects writable and foreign-owned directories',()=>{
+ const currentUid=1000;
+ const fakeDirectory=(mode,uid)=>({mode,uid,isDirectory:()=>true});
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40755,0),currentUid),true,'root-owned non-writable directory is trusted');
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40755,currentUid),currentUid),true,'current-user-owned non-writable directory is trusted');
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40775,0),currentUid),false,'group-writable parent directory is rejected');
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40777,0),currentUid),false,'world-writable parent directory is rejected');
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40755,2000),currentUid),false,'foreign-owned parent directory is rejected');
 });
