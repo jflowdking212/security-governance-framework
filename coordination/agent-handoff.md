@@ -1336,3 +1336,62 @@ The latest A2-03 branch snapshot inspected contains owner-issued commits through
 - The owner-issued prompt commit is not an implementation-agent commit. Gemini must return its own patch/commit identity or a patch for owner-authorized integration.
 
 **Immediate next sequence:** Gemini implements the F5-R1 embedded guard parity; ChatGPT continues A2-03 descriptor-anchored checksum correction; then ChatGPT reconciles exact diffs and evidence and Claude independently audits the exact combined candidate SHA. Workstreams proceed in parallel without waiting on one another. PR #9 remains OPEN and UNMERGED.
+
+
+---
+
+## 24. Scratch integration candidate: Gemini + A2-03 + W-04 + W-A/B/C + A2-06
+
+**Date:** 2026-11-25  
+**Owner:** ChatGPT  
+**Branch:** `chatgpt/uss-integrated-scratch-candidate`  
+**Integrated code/test SHA:** `c289a81aace996b967c468eaff34159a07b85c26`  
+**Base implementation:** Gemini verified SHA `6d33dfa4cc855b39a03016ae1661a4e7cf48e877`
+
+### Integrated workstreams
+
+- **Gemini A2-02/A2-07:** exact branch commit `6d33dfa4cc855b39a03016ae1661a4e7cf48e877`; 251/251 Linux VPS tests, 249 passed + 2 platform skips on Windows, validators/generators and zero drift; hosted validation run `45544065684`; hosted security scan run `45544066041` succeeded across all four jobs.
+- **A2-03:** integrated descriptor-relative Linux root traversal, pinned directory descriptors, parent-relative file opens, file identity re-checks, ancestor/leaf race tests and controlled unsupported-platform behavior from the A2-03 line. Preserved the A2-03 exclusive-temp + fsync + rename manifest writer.
+- **W-04:** integrated trusted absolute Git resolution, ownership/mode policy helper, strict child environment allowlist, hostile PATH/GIT_* regression, fail-closed non-Linux diagnostics, and W04-F1/F2/F3 regression tests.
+- **W-A/B/C:** integrated .gitattributes policy helper/tests, scanner parity mutation tests and fail-closed required-workflow/header validation.
+- **A2-06:** integrated unsigned-64 run evidence ID validation using BigInt and exact boundary regression tests. Valid examples include run:1, run:42 and 18446744073709551615; zero, leading-zero, malformed and over-limit IDs are rejected.
+
+### Candidate hosted validation
+
+Exact code/test SHA `c289a81aace996b967c468eaff34159a07b85c26`:
+- USS validation run `45545256488`: SUCCESS.
+- Full suite: **289 passed, 0 failed, 0 skipped**.
+- All three generators completed; USS repository validation passed (22 modules, 52 source references).
+- W-04 hostile PATH/GIT_* test passed.
+- W04-F1 Git and filesystem non-Linux diagnostics passed.
+- W04-F2 executable and directory ownership/mode tests passed.
+- W04-F3 hardlink-preservation test passed.
+- A2-03 descriptor-root/race tests passed.
+- A2-06 unsigned-64 run-ID boundary test passed.
+- W-A/B/C gitattributes and scanner-header mutation tests passed.
+- Generated module/index/bundle drift gate passed.
+
+Hosted security scan run `45545256855` for the same SHA: in progress when this entry was written. Re-fetch before claiming completion.
+
+### Independent branch verification
+
+The separate W-04 branch code/test SHA `d2ac9a4371e68abce4bfa9699aa674b85af0bcdf` independently passed 190/190 hosted tests, and its hosted security scan run `45540328636` succeeded across all four jobs. This is supporting branch evidence, not a substitute for security scans on the integrated candidate.
+
+### Open items and limitations
+
+- Candidate remains a **scratch branch**, not a final squash and not a release candidate.
+- Claude must independently audit the exact integrated code/test SHA, including the A2-03 ancestor-swap harness and W-04 adversarial tests.
+- A2-11 (eight stack profiles) and A2-12 (M21) remain NOT RE-VERIFIED against current primary sources in this cycle.
+- SCAN-S6 (indexed regular file replaced by worktree symlink) remains OPEN pending Gemini reproduction/remediation.
+- W-02/W-03 full adversarial re-attack remains pending.
+- No VPS execution is claimed for the integrated candidate.
+- Owner-only A2-05 required status-check policy, U-01 signing/verified artefacts, release notes/rollback and final approval remain outstanding.
+- No merge, tag, signing ceremony, publication or deployment has occurred.
+
+### Next gates
+
+1. Complete hosted security scans on the exact integrated SHA.
+2. Gemini closes/reports SCAN-S6 and W-02/W-03 in its own branch.
+3. Claude independently audits this exact integrated candidate and re-verifies A2-11/A2-12 against primary sources.
+4. Reconcile all results and build the mandatory clean squash, preserving no prohibited directive in release history.
+5. Run all validation and hosted CI again on the exact squash SHA; only then request owner-controlled release decisions.
