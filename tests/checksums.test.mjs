@@ -13,6 +13,14 @@ function git(cwd,...args) {
   const r=spawnSync('git',args,{cwd,encoding:'utf8'});
   assert.equal(r.status,0,'git '+args.join(' ')+' failed: '+r.stderr);
 }
+function requireLinux(t) {
+  if(process.platform!=='linux') {
+    t.skip('Checksum create/verify execution requires Linux /proc/self/fd and trusted system Git (non-Linux fail-closed verified separately)');
+    return false;
+  }
+  return true;
+}
+
 function fixture() {
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-checksums-'));
   git(cwd,'init','-q');
@@ -36,6 +44,7 @@ function runWithPreload(cwd,hook,command,env,...args) {
 }
 
 test('checksum tool creates a deterministic manifest and verifies it',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   const first=run(cwd,'create');
   assert.equal(first.status,0,first.stderr);
@@ -48,6 +57,7 @@ test('checksum tool creates a deterministic manifest and verifies it',t=>{
 });
 
 test('verification rejects content modified after the manifest was created',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   assert.equal(run(cwd,'create').status,0);
   git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add checksum manifest');
@@ -59,6 +69,7 @@ test('verification rejects content modified after the manifest was created',t=>{
 });
 
 test('verification rejects files added after the manifest was created',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   assert.equal(run(cwd,'create').status,0);
   git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add checksum manifest');
@@ -70,6 +81,7 @@ test('verification rejects files added after the manifest was created',t=>{
 });
 
 test('manifest creation refuses unstaged untracked files',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   fs.writeFileSync(path.join(cwd,'untracked.txt'),'not staged\n');
   const result=run(cwd,'create');
@@ -78,6 +90,7 @@ test('manifest creation refuses unstaged untracked files',t=>{
 });
 
 test('verification works on an extracted release snapshot without Git metadata',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   assert.equal(run(cwd,'create').status,0);
   const bundle=fs.mkdtempSync(path.join(os.tmpdir(),'uss-bundle-'));
@@ -90,6 +103,7 @@ test('verification works on an extracted release snapshot without Git metadata',
 });
 
 test('root option verifies a vendored USS subtree inside another Git repository',t=>{
+  if(!requireLinux(t))return;
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-vendor-'));t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   git(cwd,'init','-q');
   git(cwd,'config','user.name','USS Test');
@@ -109,6 +123,7 @@ test('root option verifies a vendored USS subtree inside another Git repository'
 });
 
 test('filesystem mode creates and verifies a separate manifest for generated release bundles',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   const bundle=path.join(cwd,'dist','bundles');
   fs.mkdirSync(bundle,{recursive:true});
@@ -128,6 +143,7 @@ test('filesystem mode creates and verifies a separate manifest for generated rel
 });
 
 test('adversarial: filesystem checksum mode rejects a symlinked root and symlinked root ancestors',t=>{
+  if(!requireLinux(t))return;
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-symlink-cwd-'));
   const external=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-symlink-external-'));
   t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
@@ -158,6 +174,7 @@ test('adversarial: filesystem checksum mode rejects a symlinked root and symlink
 });
 
 test('Git-mode verification is stable across Windows CRLF worktree conversion',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   git(cwd,'config','core.autocrlf','true');
   assert.equal(run(cwd,'create').status,0);
@@ -169,6 +186,7 @@ test('Git-mode verification is stable across Windows CRLF worktree conversion',t
 });
 
 test('manifest creation rejects ignored untracked files outside dist bundles',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   fs.writeFileSync(path.join(cwd,'.gitignore'),'secret-local.txt\n');
   git(cwd,'add','.gitignore');
@@ -180,6 +198,7 @@ test('manifest creation rejects ignored untracked files outside dist bundles',t=
 });
 
 test('adversarial: rejects assume-unchanged index bypass concealing modifications',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   assert.equal(run(cwd,'create').status,0);
   git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add manifest');
@@ -191,6 +210,7 @@ test('adversarial: rejects assume-unchanged index bypass concealing modification
 });
 
 test('adversarial: rejects skip-worktree index bypass concealing modifications',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   assert.equal(run(cwd,'create').status,0);
   git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add manifest');
@@ -202,6 +222,7 @@ test('adversarial: rejects skip-worktree index bypass concealing modifications',
 });
 
 test('adversarial: rejects uncommitted working tree modifications in Git mode',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   assert.equal(run(cwd,'create').status,0);
   git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add manifest');
@@ -212,6 +233,7 @@ test('adversarial: rejects uncommitted working tree modifications in Git mode',t
 });
 
 test('adversarial: rejects nested .git directories in filesystem mode',t=>{
+  if(!requireLinux(t))return;
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-nested-git-fs-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
@@ -223,6 +245,7 @@ test('adversarial: rejects nested .git directories in filesystem mode',t=>{
 });
 
 test('adversarial: rejects nested .git directories in Git mode',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   fs.mkdirSync(path.join(cwd,'sub','.git'),{recursive:true});
   fs.writeFileSync(path.join(cwd,'sub','.git','config'),'sub git config\n');
@@ -232,6 +255,7 @@ test('adversarial: rejects nested .git directories in Git mode',t=>{
 });
 
 test('adversarial: rejects all root .git directory metadata in filesystem mode',t=>{
+  if(!requireLinux(t))return;
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-git-dir-fs-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
@@ -254,6 +278,7 @@ test('adversarial: rejects all root .git directory metadata in filesystem mode',
 });
 
 test('adversarial: rejects root .git gitfiles in filesystem mode',t=>{
+  if(!requireLinux(t))return;
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-git-file-fs-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
@@ -273,6 +298,7 @@ test('adversarial: rejects root .git gitfiles in filesystem mode',t=>{
 });
 
 test('adversarial: does not silently exclude top-level dist directory in filesystem mode',t=>{
+  if(!requireLinux(t))return;
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-dist-fs-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'main doc\n');
@@ -290,6 +316,7 @@ test('adversarial: does not silently exclude top-level dist directory in filesys
 });
 
 test('adversarial: rejects unexpected untracked files in dist outside bundles',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   fs.mkdirSync(path.join(cwd,'dist'),{recursive:true});
   fs.writeFileSync(path.join(cwd,'dist','backdoor.txt'),'unexpected dist file\n');
@@ -300,6 +327,7 @@ test('adversarial: rejects unexpected untracked files in dist outside bundles',t
 
 
 test('adversarial: Git-mode checksum operations do not execute repository-configured fsmonitor commands',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   const hookDir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-fsmonitor-hook-'));
   t.after(()=>fs.rmSync(hookDir,{recursive:true,force:true}));
@@ -322,6 +350,7 @@ test('adversarial: Git-mode checksum operations do not execute repository-config
 });
 
 test('adversarial: Git-mode checksum operations do not execute repository-configured clean filters',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   fs.writeFileSync(path.join(cwd,'.gitattributes'),'*.uss-filtered filter=uss-audit'+String.fromCharCode(10));
   fs.writeFileSync(path.join(cwd,'policy.uss-filtered'),'trusted policy bytes'+String.fromCharCode(10));
@@ -349,6 +378,7 @@ test('adversarial: Git-mode checksum operations do not execute repository-config
 });
 
 test('adversarial: rejects a tracked file reached through a symbolic-link parent directory',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   const policyDir=path.join(cwd,'policy');
   fs.mkdirSync(policyDir);
@@ -372,6 +402,7 @@ test('adversarial: rejects a tracked file reached through a symbolic-link parent
 
 
 test('adversarial: rejects .git metadata at the selected vendored root in Git mode',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
   const vendor=path.join(cwd,'vendor','uss');
   fs.mkdirSync(vendor,{recursive:true});
@@ -419,6 +450,7 @@ test('adversarial: filesystem checksum binds executable mode to the digest',t=>{
 });
 
 test('adversarial: root .git metadata failure is controlled and has no uncaught stack trace',t=>{
+  if(!requireLinux(t))return;
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-git-controlled-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   fs.writeFileSync(path.join(dir,'README.md'),'main doc\\n');
@@ -534,6 +566,7 @@ fs.openSync=function(target,...args){
 });
 
 test('adversarial: checksum Git calls ignore inherited GIT environment overrides',t=>{
+  if(!requireLinux(t))return;
   const cwd=fixture();
   const decoy=fs.mkdtempSync(path.join(os.tmpdir(),'uss-checksums-decoy-'));
   t.after(()=>{fs.rmSync(cwd,{recursive:true,force:true});fs.rmSync(decoy,{recursive:true,force:true});});
@@ -609,6 +642,7 @@ test('W04-F1: filesystem mode reports unsupported root traversal cleanly on non-
 });
 
 test('W04-F3: manifest replacement does not modify an existing hardlink',t=>{
+ if(!requireLinux(t))return;
  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
  const manifest=path.join(cwd,'SHA256SUMS');
  const external=path.join(os.tmpdir(),'uss-checksums-hardlink-'+process.pid+'-'+Date.now());
@@ -642,4 +676,238 @@ test('W04-F2: trusted Git parent-directory policy rejects writable and foreign-o
  assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40775,0),currentUid),false,'group-writable parent directory is rejected');
  assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40777,0),currentUid),false,'world-writable parent directory is rejected');
  assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40755,2000),currentUid),false,'foreign-owned parent directory is rejected');
+});
+
+test('F-3: non-Linux runtime (native or simulated) fails closed in both Git and filesystem modes even with inherited PATH',t=>{
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const useShim=process.platform==='linux';
+ const shim=path.join(cwd,'fake-platform-f3.cjs');
+ if(useShim) {
+  fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\n");
+ }
+ for(const args of [['create'],['verify'],['create','--filesystem'],['verify','--filesystem']]) {
+  const result=useShim
+   ?spawnSync(process.execPath,['--require',shim,TOOL,...args],{cwd,encoding:'utf8',env:{...process.env}})
+   :run(cwd,...args);
+  assert.equal(result.status,1,`non-Linux must fail closed for ${args.join(' ')}`);
+  assert.match(result.stderr,/supported only on Linux|unsupported on this platform/);
+  assert.doesNotMatch(result.stderr,/\n\s+at /,'must not print an uncaught stack trace');
+ }
+});
+
+test('F-3: PATH inheritance ignores prepended malicious executables across create and verify and survives empty PATH',t=>{
+ if(!requireLinux(t))return;
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const attacker=fs.mkdtempSync(path.join(os.tmpdir(),'uss-path-inherit-'));
+ t.after(()=>fs.rmSync(attacker,{recursive:true,force:true}));
+ const marker=path.join(attacker,'intercepted.txt');
+ for(const cmd of ['git','sh','cat']) {
+  const decoy=path.join(attacker,cmd);
+  fs.writeFileSync(decoy,`#!/bin/sh\nprintf ${JSON.stringify(cmd)} >> ${JSON.stringify(marker)}\nexit 97\n`);
+  fs.chmodSync(decoy,0o755);
+ }
+
+ // Prepending malicious dir to inherited PATH must never intercept Git or shell utilities
+ const inheritedEnv={PATH:attacker+path.delimiter+(process.env.PATH||'/usr/bin:/bin')};
+ const created=runWithEnv(cwd,'create',inheritedEnv);
+ assert.equal(created.status,0,created.stderr);
+ assert.equal(fs.existsSync(marker),false,'create must not execute tools from inherited PATH');
+
+ git(cwd,'add','SHA256SUMS');
+ git(cwd,'commit','-m','commit manifest for PATH inheritance verify');
+ const verified=runWithEnv(cwd,'verify',inheritedEnv);
+ assert.equal(verified.status,0,verified.stderr);
+ assert.equal(fs.existsSync(marker),false,'verify must not execute tools from inherited PATH');
+
+ // Completely empty caller PATH must still work using hardcoded trusted system Git paths
+ const emptyPathVerify=runWithEnv(cwd,'verify',{PATH:''});
+ assert.equal(emptyPathVerify.status,0,emptyPathVerify.stderr);
+});
+
+test('F-3: parent-chain traversal rejects multi-level intermediate symlinks, intermediate races, and compromised ancestor directories',t=>{
+ const currentUid=1000;
+ const dirStat=(mode,uid)=>({mode,uid,isDirectory:()=>true});
+ const trustAncestorChain=stats=>stats.every(s=>isTrustedDirectoryStat(s,currentUid));
+ assert.equal(trustAncestorChain([dirStat(0o40755,0),dirStat(0o40755,0),dirStat(0o40755,0)]),true);
+ assert.equal(trustAncestorChain([dirStat(0o40755,0),dirStat(0o40775,0),dirStat(0o40755,0)]),false,'compromised intermediate parent dir fails chain');
+ assert.equal(trustAncestorChain([dirStat(0o40755,0),dirStat(0o40755,2000),dirStat(0o40755,0)]),false,'foreign-owned intermediate parent dir fails chain');
+
+ if(!requireLinux(t))return;
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const nestedLeafDir=path.join(cwd,'policy','nested','deep');
+ fs.mkdirSync(nestedLeafDir,{recursive:true});
+ fs.writeFileSync(path.join(nestedLeafDir,'README.md'),'trusted multi-level content\n');
+ git(cwd,'add','policy/nested/deep/README.md');
+ git(cwd,'commit','-m','add multi-level policy path');
+ assert.equal(run(cwd,'create').status,0);
+ git(cwd,'add','SHA256SUMS');
+ git(cwd,'commit','-m','add manifest before intermediate symlink replacement');
+
+ // Replace intermediate directory policy/nested with symlink to external dir containing identical bytes
+ const external=fs.mkdtempSync(path.join(os.tmpdir(),'uss-mid-parent-'));
+ t.after(()=>fs.rmSync(external,{recursive:true,force:true}));
+ fs.mkdirSync(path.join(external,'deep'),{recursive:true});
+ fs.writeFileSync(path.join(external,'deep','README.md'),'trusted multi-level content\n');
+ fs.rmSync(path.join(cwd,'policy','nested'),{recursive:true,force:true});
+ fs.symlinkSync(external,path.join(cwd,'policy','nested'),'dir');
+
+ for(const args of [['verify'],['create']]) {
+  const res=run(cwd,...args);
+  assert.notEqual(res.status,0,`intermediate parent symlink must fail in Git mode for ${args.join(' ')}`);
+  assert.match(res.stderr,/symbolic-link parent/);
+ }
+
+ const fsDir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-mid-fs-'));
+ t.after(()=>fs.rmSync(fsDir,{recursive:true,force:true}));
+ fs.mkdirSync(path.join(fsDir,'policy','nested','deep'),{recursive:true});
+ fs.writeFileSync(path.join(fsDir,'policy','nested','deep','README.md'),'trusted multi-level content\n');
+ assert.equal(run(fsDir,'create','--filesystem').status,0);
+ fs.rmSync(path.join(fsDir,'policy','nested'),{recursive:true,force:true});
+ fs.symlinkSync(external,path.join(fsDir,'policy','nested'),'dir');
+ for(const cmd of ['verify','create']) {
+  const res=run(fsDir,cmd,'--filesystem');
+  assert.notEqual(res.status,0,`intermediate parent symlink must fail in filesystem mode for ${cmd}`);
+  assert.match(res.stderr,/symbolic-link parent|Symbolic links are not supported/);
+ }
+
+ // Restore real directory and test intermediate --root parent-chain symlink
+ fs.rmSync(path.join(cwd,'policy','nested'),{force:true});
+ fs.mkdirSync(path.join(cwd,'policy','nested','deep'),{recursive:true});
+ fs.writeFileSync(path.join(cwd,'policy','nested','deep','README.md'),'trusted multi-level content\n');
+ const rootHolder=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-chain-'));
+ t.after(()=>fs.rmSync(rootHolder,{recursive:true,force:true}));
+ fs.mkdirSync(path.join(rootHolder,'outer'),{recursive:true});
+ fs.symlinkSync(external,path.join(rootHolder,'outer','mid'),'dir');
+ for(const cmd of ['create','verify']) {
+  const rootRes=run(rootHolder,cmd,'--root','outer/mid/deep','--filesystem');
+  assert.notEqual(rootRes.status,0,`multi-level --root intermediate symlink must fail for ${cmd}`);
+  assert.match(rootRes.stderr,/Checksum root path traverses a symbolic link/);
+ }
+
+ // Linux /proc/self/fd intermediate directory race: swap policy/nested after policy fd opens
+ const evilMid=fs.mkdtempSync(path.join(os.tmpdir(),'uss-mid-race-evil-'));
+ t.after(()=>fs.rmSync(evilMid,{recursive:true,force:true}));
+ fs.mkdirSync(path.join(evilMid,'deep'),{recursive:true});
+ fs.writeFileSync(path.join(evilMid,'deep','README.md'),'attacker multi-level bytes\n');
+ const hook=path.join(os.tmpdir(),'uss-mid-swap-'+process.pid+'.cjs');
+ t.after(()=>fs.rmSync(hook,{force:true}));
+ fs.writeFileSync(hook,`
+const fs=require('node:fs');
+let swapped=false;
+const origOpen=fs.openSync;
+fs.openSync=function(target,...args){
+  if(!swapped&&typeof target==='string'&&target.endsWith('/nested')){
+    swapped=true;
+    fs.renameSync(process.env.USS_MID_ORIG,process.env.USS_MID_BAK);
+    fs.symlinkSync(process.env.USS_MID_EVIL,process.env.USS_MID_ORIG,'dir');
+  }
+  return origOpen.call(this,target,...args);
+};
+`);
+ const raceRes=runWithPreload(cwd,hook,'verify',{
+  USS_MID_ORIG:path.join(cwd,'policy','nested'),
+  USS_MID_BAK:path.join(cwd,'policy','nested.bak'),
+  USS_MID_EVIL:evilMid
+ });
+ assert.notEqual(raceRes.status,0,'concurrent intermediate parent symlink swap must fail closed');
+ assert.match(raceRes.stderr,/ELOOP|ENOTDIR|symbolic-link parent/);
+});
+
+test('F-3: core.hooksPath repository and environment overrides never execute hooks during create or verify',t=>{
+ if(!requireLinux(t))return;
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const hookDir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-hooks-path-'));
+ t.after(()=>fs.rmSync(hookDir,{recursive:true,force:true}));
+ const marker=path.join(hookDir,'hook-executed.txt');
+ for(const hookName of ['pre-commit','post-checkout','post-merge','reference-transaction','fsmonitor-watchman']) {
+  const hookFile=path.join(hookDir,hookName);
+  fs.writeFileSync(hookFile,`#!/bin/sh\nprintf ${JSON.stringify(hookName)} >> ${JSON.stringify(marker)}\nexit 98\n`);
+  fs.chmodSync(hookFile,0o755);
+ }
+
+ // Configure core.hooksPath in repo .git/config AND via GIT_CONFIG_COUNT env override
+ git(cwd,'config','core.hooksPath',hookDir);
+ const envOverride={
+  GIT_CONFIG_COUNT:'1',
+  GIT_CONFIG_KEY_0:'core.hooksPath',
+  GIT_CONFIG_VALUE_0:hookDir
+ };
+
+ const created=runWithEnv(cwd,'create',envOverride);
+ assert.equal(created.status,0,created.stderr);
+ assert.equal(fs.existsSync(marker),false,'create must not execute hooks from core.hooksPath');
+
+ git(cwd,'add','SHA256SUMS');
+ // Commit without triggering our malicious repo hooks by passing -c core.hooksPath=/dev/null in fixture setup
+ const commitRes=spawnSync('git',['-c','core.hooksPath=/dev/null','commit','-m','add manifest with poisoned hooksPath'],{cwd,encoding:'utf8'});
+ assert.equal(commitRes.status,0,commitRes.stderr);
+
+ const verified=runWithEnv(cwd,'verify',envOverride);
+ assert.equal(verified.status,0,verified.stderr);
+ assert.equal(fs.existsSync(marker),false,'verify must not execute hooks from core.hooksPath');
+});
+
+test('F-3: GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM, HOME, and XDG_CONFIG_HOME overrides are completely isolated across create and verify',t=>{
+ if(!requireLinux(t))return;
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const extDir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-global-config-'));
+ t.after(()=>fs.rmSync(extDir,{recursive:true,force:true}));
+
+ fs.writeFileSync(path.join(cwd,'.gitattributes'),'*.uss-filtered filter=uss-audit\n');
+ fs.writeFileSync(path.join(cwd,'filtered.uss-filtered'),'trusted bytes\n');
+ git(cwd,'add','.gitattributes','filtered.uss-filtered');
+ git(cwd,'commit','-m','add attributed file for global config test');
+
+ const marker=path.join(extDir,'global-config-executed.txt');
+ const triggerScript=path.join(extDir,'trigger.sh');
+ fs.writeFileSync(triggerScript,`#!/bin/sh\nprintf triggered >> ${JSON.stringify(marker)}\nexit 99\n`);
+ fs.chmodSync(triggerScript,0o755);
+
+ const hostileHookDir=path.join(extDir,'hooks');
+ fs.mkdirSync(hostileHookDir,{recursive:true});
+ fs.writeFileSync(path.join(hostileHookDir,'pre-commit'),`#!/bin/sh\nprintf hook >> ${JSON.stringify(marker)}\nexit 99\n`);
+ fs.chmodSync(path.join(hostileHookDir,'pre-commit'),0o755);
+
+ const configBody=[
+  '[core]',
+  `  fsmonitor = ${triggerScript}`,
+  `  hooksPath = ${hostileHookDir}`,
+  `  attributesFile = ${path.join(extDir,'evil-attributes')}`,
+  '[diff]',
+  `  external = ${triggerScript}`,
+  '[filter "uss-audit"]',
+  `  clean = ${triggerScript}`,
+  `  smudge = ${triggerScript}`,
+  '[credential]',
+  `  helper = ${triggerScript}`
+ ].join('\n')+'\n';
+
+ const globalCfg=path.join(extDir,'global.gitconfig');
+ const systemCfg=path.join(extDir,'system.gitconfig');
+ const homeDir=path.join(extDir,'home');
+ const xdgDir=path.join(extDir,'xdg');
+ fs.mkdirSync(homeDir,{recursive:true});
+ fs.mkdirSync(path.join(xdgDir,'git'),{recursive:true});
+ fs.writeFileSync(globalCfg,configBody);
+ fs.writeFileSync(systemCfg,configBody);
+ fs.writeFileSync(path.join(homeDir,'.gitconfig'),configBody);
+ fs.writeFileSync(path.join(xdgDir,'git','config'),configBody);
+
+ const isolatedEnv={
+  GIT_CONFIG_GLOBAL:globalCfg,
+  GIT_CONFIG_SYSTEM:systemCfg,
+  HOME:homeDir,
+  XDG_CONFIG_HOME:xdgDir
+ };
+
+ const created=runWithEnv(cwd,'create',isolatedEnv);
+ assert.equal(created.status,0,created.stderr);
+ assert.equal(fs.existsSync(marker),false,'create must isolate GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM, HOME, and XDG_CONFIG_HOME');
+
+ git(cwd,'add','SHA256SUMS');
+ git(cwd,'commit','-m','add manifest before isolated global verify');
+
+ const verified=runWithEnv(cwd,'verify',isolatedEnv);
+ assert.equal(verified.status,0,verified.stderr);
+ assert.equal(fs.existsSync(marker),false,'verify must isolate GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM, HOME, and XDG_CONFIG_HOME');
 });
