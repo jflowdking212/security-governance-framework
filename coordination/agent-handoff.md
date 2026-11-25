@@ -1919,7 +1919,7 @@ ChatGPT implemented the first W-04 hardening pass on `chatgpt/checksum-root-syml
 
 ### Still open
 
-- **W04-F2 (P3):** implemented a dedicated policy helper in `tools/trusted-git-policy.mjs`, used by the actual resolver, and added tests for root/current-user-owned trusted files/directories plus group-writable, world-writable and foreign-owned rejected candidates. Hosted validation for the updated exact head is pending; do not mark this closed until that run succeeds.
+- **W04-F2 (P3):** implemented a dedicated policy helper in `tools/trusted-git-policy.mjs`, used by the actual resolver, and added tests for root/current-user-owned trusted files/directories plus group-writable, world-writable and foreign-owned rejected candidates. Hosted validation for exact code/test SHA `d2ac9a4371e68abce4bfa9699aa674b85af0bcdf` completed successfully (run `45540328520`): **190 tests passed, 0 failed, 0 skipped**. Both W04-F2 policy tests passed. All three generators and repository validation completed successfully. Hosted security scans run `45540328636` for the same SHA were still in progress at the time of this update; re-fetch before claiming scan completion.
 - Claude's integration review found that A2-03 and W-04 checksum implementations are competing rewrites. This branch is a focused W-04 correction branch, not the integrated candidate.
 - A2-03 handle-relative root integration, one canonical run-ID implementation, and reconciliation of the handoff ledger remain integration work.
 - No hosted CI is claimed for the combined release candidate.
