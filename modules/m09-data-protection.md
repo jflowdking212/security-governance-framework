@@ -13,7 +13,7 @@ Verify encryption in transit, encryption at rest where required, secret/key stor
 
 
 
-If hosting region, encryption-at-rest configuration, or retention policy cannot be verified from authoritative configuration, mark it \`UNKNOWN\` rather than assuming.
+If hosting region, encryption-at-rest configuration, or retention policy cannot be verified from authoritative configuration, mark it `UNKNOWN` rather than assuming.
 
 **### Layer 5 — Database, Financial & Transaction Integrity**
 

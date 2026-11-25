@@ -1,0 +1,4506 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
+import { validateConsumerWorkflowStructure, buildExpectedConsumerGuard } from '../tools/validate-consumer-workflow.mjs';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const workflowDir = path.join(ROOT, '.github/workflows');
+const read = name => fs.readFileSync(path.join(workflowDir, name), 'utf8');
+
+const FORBIDDEN_ERROR_SUPPRESSIONS = [
+  /\|\|\s*true\b/,
+  /\|\|\s*exit\s+0\b/,
+  /\|\|\s*(?:echo|printf|cat)\b/,
+  /\|\|\s*\/(?:usr\/)?bin\/true\b/,
+  /\|\|\s*:/,
+  /\|\|\s*return\b/,
+  /;\s*true\b/,
+  /;\s*exit\s+0\b/,
+  /;\s*(?:echo|printf)\b/,
+  /;\s*:/,
+  /\bset\s+\+e\b/,
+  /\bset\s+\+o\s+(?:errexit|e|pipefail)\b/,
+  /\btrap\s+[^;\n]*\s+ERR\b/i,
+  /--suppress-errors\b/,
+  /--no-error\b/,
+  /--no-strict\b/
+];
+
+const ALLOWED_TRIGGERS = new Set(['push', 'pull_request', 'schedule', 'workflow_dispatch']);
+const FORBIDDEN_TRIGGER_FILTER_KEYS = new Set(['branches-ignore', 'tags', 'tags-ignore', 'paths', 'paths-ignore', 'types']);
+
+// Matches any GitHub Actions expression span containing untrusted context or input references,
+// including dot/bracket notation and expressions wrapped inside helper functions like format() or toJSON().
+const EXPRESSION_SPAN_REGEX = /\$\{\{([\s\S]*?)\}\}/g;
+const UNTRUSTED_CONTEXT_REGEX = /\b(?:github(?:\s*\.\s*|\s*\[\s*['"])(?:event|event_path|head_ref|actor|ref_name|base_ref|ref|triggering_actor)\b|inputs(?:\s*\.\s*|\s*\[\s*['"]))/i;
+
+function hasUntrustedExpression(text) {
+  EXPRESSION_SPAN_REGEX.lastIndex = 0;
+  let match;
+  while ((match = EXPRESSION_SPAN_REGEX.exec(text)) !== null) {
+    if (UNTRUSTED_CONTEXT_REGEX.test(match[1])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildScannerConfigGuard(targetSpec, emptyMessage) {
+  return [
+    'set -euo pipefail',
+    'while IFS= read -r var_line; do',
+    '  case "$var_line" in',
+    '    [Gg][Ii][Tt]_*) unset "${var_line%%=*}" ;;',
+    '  esac',
+    'done < <(env)',
+    'git -c safe.directory="$PWD" -c core.fsmonitor=false rev-parse --show-toplevel >/dev/null',
+    'for file in .gitleaks.toml .gitleaksignore gitleaks.toml gitleaks.yaml gitleaks.yml .semgrep.yml .semgrep.yaml semgrep.yml semgrep.yaml codeql-config.yml codeql-config.yaml .github/codeql/codeql-config.yml .github/codeql/codeql-config.yaml osv-scanner.toml .osv-scanner.toml .allowed-binaries; do',
+    '  if [ -e "$file" ] || [ -L "$file" ]; then',
+    '    printf \'Unreviewed scanner override is not permitted: %s\\n\' "$file" >&2',
+    '    exit 1',
+    '  fi',
+    'done',
+    'nested_osv_config="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o \\( -name \'osv-scanner.toml\' -o -name \'.osv-scanner.toml\' \\) -print)"',
+    'if [ -n "$nested_osv_config" ]; then',
+    '  printf \'Unreviewed OSV configuration is not permitted: %s\\n\' "$nested_osv_config" >&2',
+    '  exit 1',
+    'fi',
+    'nested_scanner_override="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o \\( -name \'.gitleaks.toml\' -o -name \'.gitleaksignore\' -o -name \'gitleaks.toml\' -o -name \'gitleaks.yaml\' -o -name \'gitleaks.yml\' -o -name \'.semgrep.yml\' -o -name \'.semgrep.yaml\' -o -name \'semgrep.yml\' -o -name \'semgrep.yaml\' -o -name \'codeql-config.yml\' -o -name \'codeql-config.yaml\' -o -name \'.allowed-binaries\' \\) -print)"',
+    'if [ -n "$nested_scanner_override" ]; then',
+    '  printf \'Unreviewed scanner override is not permitted: %s\\n\' "$nested_scanner_override" >&2',
+    '  exit 1',
+    'fi',
+    'if git -c safe.directory="$PWD" -c core.fsmonitor=false grep -n -I -i -E \'[g]itleaks[[:space:]]*:[[:space:]]*allow\' -- . >&2; then',
+    '  printf \'%s\\n\' \'Prohibited Gitleaks inline suppression directive is not permitted\' >&2',
+    '  exit 1',
+    'else',
+    '  status=$?',
+    '  if [ "$status" -ne 1 ]; then',
+    '    exit "$status"',
+    '  fi',
+    'fi',
+    'if ! historical_suppression="$(git -c safe.directory="$PWD" -c core.fsmonitor=false log -n 1 -i -E -G\'[g]itleaks[[:space:]]*:[[:space:]]*allow\' --format=\'%H %s\')"; then',
+    '  printf \'%s\\n\' \'Failed to inspect Git history for prohibited Gitleaks directives\' >&2',
+    '  exit 1',
+    'fi',
+    'if [ -n "$historical_suppression" ]; then',
+    '  printf \'Prohibited Gitleaks inline suppression directive found in Git history: %s\\n\' "$historical_suppression" >&2',
+    '  exit 1',
+    'fi',
+    'while IFS= read -r attr_file; do',
+    '  [ -z "$attr_file" ] && continue',
+    '  if [ -L "$attr_file" ]; then',
+    '    printf \'Symlinked .gitattributes is not permitted: %s\\n\' "$attr_file" >&2',
+    '    exit 1',
+    '  fi',
+    '  if grep -v \'^[[:space:]]*#\' "$attr_file" | grep -n -E \'(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)\' >&2; then',
+    '    printf \'Prohibited .gitattributes configuration is not permitted: %s\\n\' "$attr_file" >&2',
+    '    exit 1',
+    '  fi',
+    'done < <(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.gitattributes\' -print)',
+    'if [ -L .git/info/attributes ]; then',
+    '  printf \'%s\\n\' \'Symlinked .git/info/attributes is not permitted\' >&2',
+    '  exit 1',
+    'fi',
+    'if [ -e .git/info/attributes ]; then',
+    '  if grep -v \'^[[:space:]]*#\' .git/info/attributes | grep -n -E \'(^|[[:space:]])(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)([[:space:]=]|$)\' >&2; then',
+    '    printf \'%s\\n\' \'Prohibited .git/info/attributes configuration is not permitted\' >&2',
+    '    exit 1',
+    '  fi',
+    'fi',
+    'python3 - <<\'EOF\'',
+    'import os',
+    'import stat',
+    'import subprocess',
+    'import sys',
+    'import tempfile',
+    '',
+    'CHUNK_SIZE = 1024 * 1024',
+    'ROOT = os.getcwd()',
+    '',
+    'SECURE_DIR_FD = (',
+    '    os.open in getattr(os, "supports_dir_fd", set()) and',
+    '    os.stat in getattr(os, "supports_dir_fd", set()) and',
+    '    hasattr(os, "O_DIRECTORY") and',
+    '    hasattr(os, "O_NOFOLLOW")',
+    ')',
+    '',
+    'if not SECURE_DIR_FD:',
+    '    print(',
+    '        f"FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: {sys.platform}",',
+    '        file=sys.stderr,',
+    '    )',
+    '    sys.exit(2)',
+    '',
+    'def resolve_trusted_git(clean_env, candidate_dirs=None):',
+    '    untrusted_prefixes = [',
+    '        os.path.realpath(ROOT),',
+    '        os.path.realpath(tempfile.gettempdir()),',
+    '    ]',
+    '    for v in (',
+    '        "RUNNER_TEMP",',
+    '        "TEMP",',
+    '        "TMP",',
+    '        "TMPDIR",',
+    '        "USERPROFILE",',
+    '        "HOME",',
+    '        "HOMEPATH",',
+    '        "LOCALAPPDATA",',
+    '        "APPDATA",',
+    '    ):',
+    '        val = os.environ.get(v)',
+    '        if val:',
+    '            try:',
+    '                untrusted_prefixes.append(os.path.realpath(val))',
+    '            except Exception:',
+    '                pass',
+    '    try:',
+    '        user_home = os.path.realpath(os.path.expanduser("~"))',
+    '        if user_home:',
+    '            untrusted_prefixes.append(user_home)',
+    '    except Exception:',
+    '        pass',
+    '    if sys.platform != "win32":',
+    '        untrusted_prefixes.extend(["/tmp", "/var/tmp", "/dev/shm"])',
+    '',
+    '    def is_untrusted_path(p):',
+    '        try:',
+    '            rp = os.path.realpath(p)',
+    '        except Exception:',
+    '            return True',
+    '        for prefix in untrusted_prefixes:',
+    '            try:',
+    '                if rp == prefix or os.path.commonpath([rp, prefix]) == prefix:',
+    '                    return True',
+    '            except ValueError:',
+    '                pass',
+    '        if sys.platform == "win32":',
+    '            p_lower = rp.lower()',
+    '            if "\\\\users\\\\" in p_lower or p_lower.startswith(("\\\\\\\\", "//")):',
+    '                return True',
+    '        else:',
+    '            if rp.startswith(("/home/", "/Users/")):',
+    '                return True',
+    '        return False',
+    '',
+    '    def get_windows_authoritative_roots():',
+    '        roots = []',
+    '        try:',
+    '            import winreg',
+    '            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion") as k:',
+    '                for val in ("ProgramFilesDir", "ProgramFilesDir (x86)", "ProgramFilesDir (Arm)", "ProgramW6432Dir"):',
+    '                    try:',
+    '                        rv, _ = winreg.QueryValueEx(k, val)',
+    '                        if rv and os.path.isdir(rv):',
+    '                            roots.append(os.path.realpath(rv))',
+    '                    except OSError:',
+    '                        pass',
+    '        except Exception:',
+    '            pass',
+    '        try:',
+    '            import winreg',
+    '            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion") as k:',
+    '                rv, _ = winreg.QueryValueEx(k, "SystemRoot")',
+    '                if rv and os.path.isdir(rv):',
+    '                    roots.append(os.path.realpath(rv))',
+    '        except Exception:',
+    '            pass',
+    '        return list(dict.fromkeys(roots))',
+    '',
+    '    def verify_posix_ancestors(target_path):',
+    '        rp = os.path.realpath(target_path)',
+    '        curr = rp',
+    '        while True:',
+    '            try:',
+    '                st = os.stat(curr)',
+    '            except OSError:',
+    '                return False',
+    '            if st.st_uid != 0:',
+    '                return False',
+    '            if (st.st_mode & 0o022) != 0:',
+    '                return False',
+    '            parent = os.path.dirname(curr)',
+    '            if parent == curr:',
+    '                break',
+    '            curr = parent',
+    '        return True',
+    '',
+    '    def verify_windows_dacl(target_path, trusted_roots):',
+    '        rp = os.path.realpath(target_path)',
+    '        in_trusted_root = False',
+    '        for troot in trusted_roots:',
+    '            try:',
+    '                if rp == troot or os.path.commonpath([rp, troot]) == troot:',
+    '                    in_trusted_root = True',
+    '                    break',
+    '            except ValueError:',
+    '                pass',
+    '        if not in_trusted_root:',
+    '            return False',
+    '',
+    '        try:',
+    '            import ctypes',
+    '            from ctypes import wintypes',
+    '            advapi32 = ctypes.windll.advapi32',
+    '            kernel32 = ctypes.windll.kernel32',
+    '',
+    '            SE_FILE_OBJECT = 1',
+    '            OWNER_SECURITY_INFORMATION = 1',
+    '            DACL_SECURITY_INFORMATION = 4',
+    '            AclSizeInformation = 2',
+    '            INHERIT_ONLY_ACE = 0x08',
+    '',
+    '            class ACE_HEADER(ctypes.Structure):',
+    '                _fields_ = [(\'AceType\', wintypes.BYTE), (\'AceFlags\', wintypes.BYTE), (\'AceSize\', wintypes.WORD)]',
+    '            class ACL_SIZE_INFORMATION(ctypes.Structure):',
+    '                _fields_ = [(\'AceCount\', wintypes.DWORD), (\'AclBytesInUse\', wintypes.DWORD), (\'AclBytesFree\', wintypes.DWORD)]',
+    '',
+    '            TRUSTED_SIDS = {',
+    '                \'S-1-5-32-544\',',
+    '                \'S-1-5-18\',',
+    '                \'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464\',',
+    '            }',
+    '            WRITE_MASK = 0x0002 | 0x0004 | 0x00000010 | 0x00000040 | 0x00000100 | 0x00010000 | 0x00040000 | 0x00080000 | 0x40000000 | 0x10000000',
+    '',
+    '            curr = rp',
+    '            while True:',
+    '                p_sec_desc = wintypes.LPVOID()',
+    '                p_owner = wintypes.LPVOID()',
+    '                p_dacl = wintypes.LPVOID()',
+    '                res = advapi32.GetNamedSecurityInfoW(',
+    '                    curr,',
+    '                    SE_FILE_OBJECT,',
+    '                    OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,',
+    '                    ctypes.byref(p_owner),',
+    '                    None,',
+    '                    ctypes.byref(p_dacl),',
+    '                    None,',
+    '                    ctypes.byref(p_sec_desc)',
+    '                )',
+    '                if res != 0 or not p_sec_desc:',
+    '                    return False',
+    '                try:',
+    '                    if not p_owner or not p_dacl:',
+    '                        return False',
+    '',
+    '                    if not advapi32.IsValidSid(p_owner):',
+    '                        return False',
+    '                    owner_len = advapi32.GetLengthSid(p_owner)',
+    '                    if owner_len < 8:',
+    '                        return False',
+    '',
+    '                    p_str_sid = wintypes.LPWSTR()',
+    '                    if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(p_str_sid)):',
+    '                        return False',
+    '                    try:',
+    '                        owner_sid = p_str_sid.value',
+    '                    finally:',
+    '                        kernel32.LocalFree(p_str_sid)',
+    '',
+    '                    if owner_sid not in TRUSTED_SIDS:',
+    '                        return False',
+    '',
+    '                    acl_info = ACL_SIZE_INFORMATION()',
+    '                    if not advapi32.GetAclInformation(p_dacl, ctypes.byref(acl_info), ctypes.sizeof(acl_info), AclSizeInformation):',
+    '                        return False',
+    '',
+    '                    for i in range(acl_info.AceCount):',
+    '                        p_ace = wintypes.LPVOID()',
+    '                        if not advapi32.GetAce(p_dacl, i, ctypes.byref(p_ace)) or not p_ace:',
+    '                            return False',
+    '                        ace_header = ACE_HEADER.from_address(p_ace.value)',
+    '                        ace_type = ace_header.AceType',
+    '                        ace_size = ace_header.AceSize',
+    '',
+    '                        # Explicit deny ACEs deny access; they do not grant write rights',
+    '                        if ace_type in (1, 6, 10, 12):',
+    '                            continue',
+    '',
+    '                        # Allow ACEs: standard (0), callback (9), object (5), callback object (11), compound (4)',
+    '                        if ace_type in (0, 9):',
+    '                            if ace_size < 16:',
+    '                                return False',
+    '                            mask = ctypes.c_uint32.from_address(p_ace.value + 4).value',
+    '                            sid_offset = 8',
+    '                            p_sid = ctypes.c_void_p(p_ace.value + 8)',
+    '                        elif ace_type in (5, 11):',
+    '                            if ace_size < 20:',
+    '                                return False',
+    '                            mask = ctypes.c_uint32.from_address(p_ace.value + 4).value',
+    '                            flags = ctypes.c_uint32.from_address(p_ace.value + 8).value',
+    '                            if (flags & ~0x03) != 0:',
+    '                                return False',
+    '                            offset = 12',
+    '                            if (flags & 0x1):',
+    '                                offset += 16',
+    '                            if (flags & 0x2):',
+    '                                offset += 16',
+    '                            if ace_size < offset + 8:',
+    '                                return False',
+    '                            sid_offset = offset',
+    '                            p_sid = ctypes.c_void_p(p_ace.value + offset)',
+    '                        elif ace_type == 4:',
+    '                            if ace_size < 20:',
+    '                                return False',
+    '                            mask = ctypes.c_uint32.from_address(p_ace.value + 4).value',
+    '                            compound_type = ctypes.c_uint16.from_address(p_ace.value + 8).value',
+    '                            reserved = ctypes.c_uint16.from_address(p_ace.value + 10).value',
+    '                            if compound_type != 1 or reserved != 0:',
+    '                                return False',
+    '                            sid_offset = 12',
+    '                            p_sid = ctypes.c_void_p(p_ace.value + 12)',
+    '                        else:',
+    '                            # Unknown / unhandled ACE type: fail closed',
+    '                            return False',
+    '',
+    '                        if not advapi32.IsValidSid(p_sid):',
+    '                            return False',
+    '                        sid_len = advapi32.GetLengthSid(p_sid)',
+    '                        if sid_len < 8 or ace_size < sid_offset + sid_len:',
+    '                            return False',
+    '                        revision = ctypes.c_uint8.from_address(p_sid.value).value',
+    '                        sub_auth_count = ctypes.c_uint8.from_address(p_sid.value + 1).value',
+    '                        if revision != 1 or sid_len != 8 + 4 * sub_auth_count:',
+    '                            return False',
+    '',
+    '                        p_ace_str_sid = wintypes.LPWSTR()',
+    '                        if not advapi32.ConvertSidToStringSidW(p_sid, ctypes.byref(p_ace_str_sid)):',
+    '                            return False',
+    '                        try:',
+    '                            ace_sid = p_ace_str_sid.value',
+    '                        finally:',
+    '                            kernel32.LocalFree(p_ace_str_sid)',
+    '',
+    '                        if (mask & WRITE_MASK) != 0:',
+    '                            if ace_sid in TRUSTED_SIDS:',
+    '                                continue',
+    '                            if ace_sid == \'S-1-3-0\' and (ace_header.AceFlags & INHERIT_ONLY_ACE):',
+    '                                continue',
+    '                            return False',
+    '                finally:',
+    '                    kernel32.LocalFree(p_sec_desc)',
+    '',
+    '                parent = os.path.dirname(curr)',
+    '                if parent == curr:',
+    '                    break',
+    '                if any(curr == troot for troot in trusted_roots):',
+    '                    break',
+    '                curr = parent',
+    '',
+    '            return True',
+    '        except Exception:',
+    '            return False',
+    '',
+    '    trusted_roots = []',
+    '    if sys.platform == "win32":',
+    '        trusted_roots = get_windows_authoritative_roots()',
+    '        if not trusted_roots:',
+    '            return None',
+    '        exe_names = ["git.exe", "git.cmd"]',
+    '    else:',
+    '        exe_names = ["git"]',
+    '',
+    '    if candidate_dirs is not None:',
+    '        search_dirs = list(candidate_dirs)',
+    '    else:',
+    '        path_dirs = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]',
+    '        system_dirs = []',
+    '        if sys.platform == "win32":',
+    '            for r in trusted_roots:',
+    '                system_dirs.extend([',
+    '                    os.path.join(r, "Git", "cmd"),',
+    '                    os.path.join(r, "Git", "bin"),',
+    '                ])',
+    '        else:',
+    '            system_dirs = ["/usr/bin", "/bin", "/usr/local/bin"]',
+    '        search_dirs = path_dirs + system_dirs',
+    '',
+    '    seen_dirs = set()',
+    '    for d in search_dirs:',
+    '        if not os.path.isabs(d):',
+    '            continue',
+    '        try:',
+    '            real_d = os.path.realpath(d)',
+    '        except Exception:',
+    '            continue',
+    '        if real_d in seen_dirs:',
+    '            continue',
+    '        seen_dirs.add(real_d)',
+    '        if not os.path.isdir(real_d):',
+    '            continue',
+    '',
+    '        if is_untrusted_path(d) or is_untrusted_path(real_d):',
+    '            continue',
+    '',
+    '        if sys.platform == "win32":',
+    '            if not verify_windows_dacl(real_d, trusted_roots):',
+    '                continue',
+    '        else:',
+    '            if not verify_posix_ancestors(real_d):',
+    '                continue',
+    '',
+    '        for name in exe_names:',
+    '            candidate = os.path.join(real_d, name)',
+    '            if not (os.path.isfile(candidate) and os.access(candidate, os.X_OK)):',
+    '                continue',
+    '            try:',
+    '                real_exe = os.path.realpath(candidate)',
+    '            except Exception:',
+    '                continue',
+    '            if not (os.path.isfile(real_exe) and os.access(real_exe, os.X_OK)):',
+    '                continue',
+    '',
+    '            if is_untrusted_path(candidate) or is_untrusted_path(real_exe):',
+    '                continue',
+    '',
+    '            if sys.platform == "win32":',
+    '                if not verify_windows_dacl(real_exe, trusted_roots):',
+    '                    continue',
+    '            else:',
+    '                if not verify_posix_ancestors(real_exe):',
+    '                    continue',
+    '',
+    '            try:',
+    '                r = subprocess.run(',
+    '                    [real_exe, "--version"],',
+    '                    stdout=subprocess.PIPE,',
+    '                    stderr=subprocess.PIPE,',
+    '                    timeout=5,',
+    '                    check=True,',
+    '                    **{"env": clean_env},',
+    '                )',
+    '                if r.stdout.startswith(b"git version"):',
+    '                    return real_exe',
+    '            except Exception:',
+    '                continue',
+    '',
+    '    return None',
+    '',
+    'clean_git_env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("GIT_", "LD_", "DYLD_")) and k.upper() not in {"BASH_ENV", "ENV", "SHELLOPTS", "PYTHONPATH", "PYTHONHOME"}}',
+    '',
+    'trusted_git = resolve_trusted_git(clean_git_env)',
+    'if not trusted_git:',
+    '    print("FAIL CLOSED: trusted git executable could not be resolved", file=sys.stderr)',
+    '    sys.exit(2)',
+    '',
+    'try:',
+    '    result = subprocess.run(',
+    '        [trusted_git, "-c", f"safe.directory={ROOT}", "-c", "core.fsmonitor=false", "ls-files", "-z"],',
+    '        cwd=ROOT,',
+    '        stdout=subprocess.PIPE,',
+    '        stderr=subprocess.PIPE,',
+    '        check=True,',
+    '        **{"env": clean_git_env},',
+    '    )',
+    'except (OSError, subprocess.CalledProcessError) as exc:',
+    '    detail = getattr(exc, "stderr", b"")',
+    '    print(f"FAIL CLOSED: cannot enumerate tracked files: {detail.decode(\'utf-8\', \'replace\')}", file=sys.stderr)',
+    '    sys.exit(2)',
+    '',
+    'root_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)',
+    'try:',
+    '    root_fd = os.open(os.fsencode(ROOT), root_flags)',
+    'except OSError as exc:',
+    '    print(f"FAIL CLOSED: cannot open repository root: {exc}", file=sys.stderr)',
+    '    sys.exit(2)',
+    '',
+    'try:',
+    '    root_stat = os.fstat(root_fd)',
+    '    if not stat.S_ISDIR(root_stat.st_mode):',
+    '        print("FAIL CLOSED: repository root is not a directory", file=sys.stderr)',
+    '        sys.exit(2)',
+    '',
+    '    for rel in result.stdout.split(b"\\0"):',
+    '        if not rel:',
+    '            continue',
+    '',
+    '        parts = rel.split(b"/")',
+    '        for comp in parts:',
+    '            if comp in (b".", b"..") or not comp:',
+    '                print(f"FAIL CLOSED: invalid path component in tracked path: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                sys.exit(2)',
+    '',
+    '        cur_fd = root_fd',
+    '        close_fds = []',
+    '        try:',
+    '            for comp in parts[:-1]:',
+    '                dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
+    '                try:',
+    '                    next_fd = os.open(comp, dir_flags, dir_fd=cur_fd)',
+    '                except OSError as exc:',
+    '                    print(f"FAIL: parent directory component is a symbolic link or cannot be securely traversed: {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '                    sys.exit(1)',
+    '                close_fds.append(next_fd)',
+    '                next_stat = os.fstat(next_fd)',
+    '                if not stat.S_ISDIR(next_stat.st_mode):',
+    '                    print(f"FAIL: parent component is not a directory: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                    sys.exit(1)',
+    '                cur_fd = next_fd',
+    '',
+    '            leaf = parts[-1]',
+    '            try:',
+    '                leaf_stat = os.stat(leaf, dir_fd=cur_fd, follow_symlinks=False)',
+    '            except OSError as exc:',
+    '                print(f"FAIL CLOSED: cannot inspect tracked path {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '                sys.exit(2)',
+    '',
+    '            if stat.S_ISLNK(leaf_stat.st_mode):',
+    '                continue',
+    '',
+    '            if not stat.S_ISREG(leaf_stat.st_mode):',
+    '                print(f"FAIL: tracked path is not a regular file or symlink: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                sys.exit(1)',
+    '',
+    '            file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)',
+    '            try:',
+    '                file_fd = os.open(leaf, file_flags, dir_fd=cur_fd)',
+    '            except OSError as exc:',
+    '                print(f"FAIL: cannot open tracked regular file {os.fsdecode(rel)}: {exc}", file=sys.stderr)',
+    '                sys.exit(1)',
+    '',
+    '            try:',
+    '                opened_stat = os.fstat(file_fd)',
+    '                if not stat.S_ISREG(opened_stat.st_mode):',
+    '                    print(f"FAIL: opened tracked path is not a regular file: {os.fsdecode(rel)}", file=sys.stderr)',
+    '                    sys.exit(1)',
+    '',
+    '                while True:',
+    '                    chunk = os.read(file_fd, CHUNK_SIZE)',
+    '                    if not chunk:',
+    '                        break',
+    '                    if b"\\0" in chunk:',
+    '                        print("FAIL: tracked binary file contains NUL byte: " + os.fsdecode(rel), file=sys.stderr)',
+    '                        sys.exit(1)',
+    '            finally:',
+    '                os.close(file_fd)',
+    '        finally:',
+    '            for fd in close_fds:',
+    '                try:',
+    '                    os.close(fd)',
+    '                except OSError:',
+    '                    pass',
+    'finally:',
+    '    os.close(root_fd)',
+    '',
+    'print("PASS: complete content scan found no NUL bytes in tracked regular files")',
+    'EOF',
+    'nested_semgrepignore="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.semgrepignore\' -not -path \'./.semgrepignore\' -print)"',
+    'if [ -n "$nested_semgrepignore" ]; then',
+    '  printf \'Nested .semgrepignore is not permitted: %s\\n\' "$nested_semgrepignore" >&2',
+    '  exit 1',
+    'fi',
+    'if [ -L .semgrepignore ]; then',
+    '  printf \'%s\\n\' \'A symlinked .semgrepignore is not permitted\' >&2',
+    '  exit 1',
+    'fi',
+    'if [ -e .semgrepignore ] && [ ! -f .semgrepignore ]; then',
+    '  printf \'%s\\n\' \'.semgrepignore must be a regular file\' >&2',
+    '  exit 1',
+    'fi',
+    'if [ -f .semgrepignore ]; then',
+    '  actual="$(awk \'NF && $0 !~ /^[[:space:]]*#/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print }\' .semgrepignore | sort)"',
+    '  expected="$(printf \'.git/\\nnode_modules/\\n\' | sort)"',
+    '  if [ "$actual" != "$expected" ]; then',
+    '    printf \'%s\\n\' \'.semgrepignore may exclude only .git/ and node_modules/\' >&2',
+    '    exit 1',
+    '  fi',
+    'fi',
+    'symlinked_gitignore="$(find . -path \'./.git\' -prune -o -path \'./node_modules\' -prune -o -name \'.gitignore\' -type l -print)"',
+    'if [ -n "$symlinked_gitignore" ]; then',
+    '  printf \'Symlinked .gitignore is not permitted: %s\\n\' "$symlinked_gitignore" >&2',
+    '  exit 1',
+    'fi',
+    'target_count=0',
+    'while IFS= read -r -d \'\' file; do',
+    '  target_count=$((target_count+1))',
+    '  if git -c safe.directory="$PWD" -c core.fsmonitor=false check-ignore --no-index -q -- "$file"; then',
+    '    printf \'Tracked Semgrep target is excluded by .gitignore: %s\\n\' "$file" >&2',
+    '    exit 1',
+    '  else',
+    '    status=$?',
+    '    if [ "$status" -ne 1 ]; then',
+    '      exit "$status"',
+    '    fi',
+    '  fi',
+    'done < <(git -c safe.directory="$PWD" -c core.fsmonitor=false ls-files -z' + targetSpec + ')',
+    'if [ "$target_count" -eq 0 ]; then',
+    "  printf '%s\\n' '" + emptyMessage + "' >&2",
+    '  exit 1',
+    'fi'
+  ].join('\n');
+}
+
+const SCANNER_CONFIG_GUARD_RUN = buildScannerConfigGuard(
+  ' -- tools/ tests/ .github/workflows/ templates/',
+  'No tracked files found in required Semgrep scan targets'
+);
+const CONSUMER_CONFIG_GUARD_RUN = buildScannerConfigGuard(
+  '',
+  'No tracked files found for Semgrep scan'
+);
+
+function assertScannerConfigGuard(step, label, consumerTemplate = false) {
+  assert.equal(step.name, 'Reject unreviewed scanner configuration', label + ' must include the scanner configuration guard');
+  assert.equal(step.shell, 'bash', label + ' scanner configuration guard must use bash');
+  const expected = consumerTemplate ? CONSUMER_CONFIG_GUARD_RUN : SCANNER_CONFIG_GUARD_RUN;
+  assert.equal(step.run?.trim(), expected.trim(), label + ' must execute the exact fail-closed scanner configuration guard');
+}
+
+// Narrow allowlist of approved job-level write permissions:
+// Only CodeQL and OSV jobs may request security-events: write
+const APPROVED_JOB_WRITE_PERMISSIONS = {
+  codeql: new Set(['security-events']),
+  osv: new Set(['security-events'])
+};
+
+/**
+ * Validates that an if: condition is not constant-false or disabling.
+ */
+function assertNotConstantFalse(condition, context) {
+  if (condition === undefined || condition === null) return;
+  if (condition === false || condition === 0) {
+    assert.fail(`${context} has constant-false condition: ${condition}`);
+  }
+  if (typeof condition === 'string') {
+    const trimmed = condition.trim();
+    const unquoted = trimmed.replace(/^['"]|['"]$/g, '').trim();
+    if (unquoted === 'false' || unquoted === '0') {
+      assert.fail(`${context} has constant-false condition: ${condition}`);
+    }
+    const exprMatch = trimmed.match(/^\$\{\{\s*['"]?(false|0)['"]?\s*\}\}$/i);
+    if (exprMatch) {
+      assert.fail(`${context} has constant-false expression: ${condition}`);
+    }
+  }
+}
+
+/**
+ * Inspects job-level permissions for least privilege and unapproved write permissions.
+ */
+function assertJobPermissions(jobId, job, label) {
+  if (!job.permissions) return;
+  if (typeof job.permissions === 'string') {
+    assert.notEqual(job.permissions, 'write-all', `${label} job ${jobId} must not use write-all permissions`);
+    assert.fail(`${label} job ${jobId} permissions must be an explicit mapping, not string ${job.permissions}`);
+  } else if (typeof job.permissions === 'object') {
+    for (const [scope, perm] of Object.entries(job.permissions)) {
+      if (perm === 'write' || perm === 'write-all') {
+        const allowedScopes = APPROVED_JOB_WRITE_PERMISSIONS[jobId];
+        assert.ok(
+          allowedScopes && allowedScopes.has(scope) && perm === 'write',
+          `${label} job ${jobId} granted unapproved write permission to ${scope}`
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Validates action pinning to full 40-character commit SHAs.
+ */
+function assertPinnedActions(parsed, label) {
+  const jobs = parsed.jobs || {};
+  for (const [jobId, job] of Object.entries(jobs)) {
+    if (job.uses) {
+      const parts = job.uses.split('@');
+      assert.equal(parts.length, 2, `${label} job ${jobId} invalid uses: ${job.uses}`);
+      assert.match(parts[1], /^[0-9a-f]{40}$/i, `${label} job ${jobId} unpinned reusable workflow: ${job.uses}`);
+    }
+    const steps = job.steps || [];
+    for (const [i, step] of steps.entries()) {
+      if (step.uses) {
+        const parts = step.uses.split('@');
+        assert.equal(parts.length, 2, `${label} job ${jobId} step ${i} invalid uses: ${step.uses}`);
+        assert.match(parts[1], /^[0-9a-f]{40}$/i, `${label} job ${jobId} step ${i} unpinned action: ${step.uses}`);
+      }
+    }
+  }
+}
+
+/**
+ * Rejects untrusted GitHub context interpolation in workflow/job/step env and action inputs.
+ * Secret expressions such as secrets.GITHUB_TOKEN remain permitted.
+ */
+function assertNoUntrustedExpressionsInValue(value, context) {
+  if (typeof value === 'string') {
+    assert.ok(!hasUntrustedExpression(value), context + ' contains forbidden untrusted GitHub context: ' + value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) assertNoUntrustedExpressionsInValue(item, context + '[' + index + ']');
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) assertNoUntrustedExpressionsInValue(item, context + '.' + key);
+  }
+}
+
+const FORBIDDEN_ENV_NAMES = new Set([
+  'BASH_ENV',
+  'PATH',
+  'NPM_CONFIG_IGNORE_SCRIPTS',
+  'NODE_TLS_REJECT_UNAUTHORIZED',
+  'GIT_DIR',
+  'GIT_INDEX_FILE',
+  'GIT_WORK_TREE',
+  'GIT_EXEC_PATH',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_SSH_COMMAND',
+  'GIT_CONFIG_COUNT',
+  'NODE_OPTIONS',
+  'NODE_PATH',
+  'NODE_EXTRA_CA_CERTS',
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'PYTHONPATH',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'PERL5LIB',
+  'RUBYOPT',
+  'IFS',
+  'SHELLOPTS',
+  'BASHOPTS',
+  'ENV'
+]);
+
+function assertSafeEnv(env, context, allowedKeys = null) {
+  if (env === undefined || env === null) return;
+  assert.ok(typeof env === 'object' && !Array.isArray(env), context + ' env must be an object');
+  for (const [name, value] of Object.entries(env)) {
+    const upper = name.toUpperCase();
+    if (FORBIDDEN_ENV_NAMES.has(upper) || upper.startsWith('NPM_CONFIG_') || upper.startsWith('GIT_')) {
+      assert.fail(context + " must not define forbidden runtime environment variable '" + name + "'");
+    }
+    assert.equal(typeof value, 'string', context + ' env ' + name + ' must be a string');
+    assertNoUntrustedExpressionsInValue(value, context + ' env ' + name);
+    if (allowedKeys && !allowedKeys.has(name)) {
+      assert.fail(context + " defines unapproved environment variable '" + name + "'");
+    }
+  }
+}
+
+const APPROVED_SHELLS = new Set([
+  'bash',
+  'bash --noprofile --norc -eo pipefail {0}',
+  'bash --noprofile --norc -e -o pipefail {0}'
+]);
+
+function assertSafeShell(shell, context) {
+  if (shell === undefined || shell === null) return;
+  assert.equal(typeof shell, 'string', context + ' specifies invalid shell type: ' + typeof shell);
+  const trimmed = shell.trim();
+  assert.ok(
+    !/(?:^|\s)(?:-[a-zA-Z]*c|--command)(?:\s|$|=|:)/i.test(trimmed),
+    context + " specifies unsafe shell command override '" + trimmed + "' that bypasses runner script execution"
+  );
+  assert.ok(
+    !/\b(?:ba)?sh\s+(?:--noprofile\s+|--norc\s+)*\{0\}/i.test(trimmed) && trimmed !== 'bash {0}' && trimmed !== 'sh {0}',
+    context + " specifies unsafe shell override '" + trimmed + "' that disables fail-fast error handling (-e)"
+  );
+  assert.ok(
+    APPROVED_SHELLS.has(trimmed),
+    context + " specifies unapproved shell '" + trimmed + "'; must be approved safe shell template ('bash')"
+  );
+}
+
+function assertSafeWith(inputs, context) {
+  if (inputs !== undefined && inputs !== null) assertNoUntrustedExpressionsInValue(inputs, context + ' with');
+}
+
+function getTriggerMap(parsed) {
+  const raw = parsed.on ?? parsed['true'];
+  if (typeof raw === 'string') return { [raw]: {} };
+  if (Array.isArray(raw)) return Object.fromEntries(raw.map(trigger => [trigger, {}]));
+  return raw || {};
+}
+
+function assertBranchCoverage(parsed, label, requiredPullRequestBranches) {
+  const triggers = getTriggerMap(parsed);
+  for (const event of ['push', 'pull_request']) {
+    const config = triggers[event];
+    assert.ok(config && typeof config === 'object' && !Array.isArray(config), label + ' must configure ' + event + ' branch filters');
+    for (const key of Object.keys(config)) {
+      if (FORBIDDEN_TRIGGER_FILTER_KEYS.has(key) || key !== 'branches') {
+        assert.fail(label + ' ' + event + " declares unapproved filter key '" + key + "'");
+      }
+    }
+    assert.ok(Array.isArray(config.branches) && config.branches.length > 0, label + ' ' + event + ' must declare an explicit non-empty branches allowlist');
+    for (const pattern of config.branches) {
+      if (typeof pattern !== 'string' || !pattern.trim() || pattern.trim().startsWith('!')) {
+        assert.fail(label + ' ' + event + " branch pattern '" + pattern + "' must be a non-negated branch pattern");
+      }
+    }
+    const required = event === 'push' ? ['**'] : requiredPullRequestBranches;
+    for (const branchPattern of required) {
+      assert.ok(config.branches.includes(branchPattern), label + ' ' + event + ' branch filter is missing required pattern ' + branchPattern);
+    }
+  }
+}
+
+function assertExactObject(actual, expected, context) {
+  assert.deepEqual(actual, expected, context + ' must match the exact approved configuration');
+}
+
+function assertNoMandatoryJobConditions(jobId, job, label) {
+  assert.equal(job.if, undefined, label + ' mandatory job ' + jobId + ' must not have a conditional if');
+  assert.equal(job.needs, undefined, label + ' mandatory job ' + jobId + ' must not depend on optional jobs');
+  assert.equal(job.strategy, undefined, label + ' mandatory job ' + jobId + ' must not use a matrix that can omit required coverage');
+  assert.ok(!job['continue-on-error'], label + ' mandatory job ' + jobId + ' must not continue on error');
+  for (const [index, step] of (job.steps || []).entries()) {
+    assert.equal(step.if, undefined, label + ' mandatory job ' + jobId + ' step ' + index + ' must not be conditional');
+  }
+}
+
+function findNamedEntriesRecursive(root, names) {
+  const hits = [];
+  function scan(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === '.git' || entry.name === 'node_modules') continue;
+        if (names.has(entry.name)) hits.push(path.relative(root, fullPath));
+        scan(fullPath);
+      } else if (names.has(entry.name)) {
+        hits.push(path.relative(root, fullPath));
+      }
+    }
+  }
+  scan(root);
+  return hits;
+}
+
+function assertNoGitleaksOverrideFiles(root = ROOT) {
+  for (const file of ['.gitleaks.toml', '.gitleaksignore', 'gitleaks.toml', 'gitleaks.yaml', 'gitleaks.yml']) {
+    let exists = false;
+    try {
+      fs.lstatSync(path.join(root, file));
+      exists = true;
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+    assert.ok(!exists, 'Unreviewed Gitleaks configuration/ignore file is not permitted: ' + file);
+  }
+  const nested = findNamedEntriesRecursive(root, new Set(['.gitleaks.toml', '.gitleaksignore', 'gitleaks.toml', 'gitleaks.yaml', 'gitleaks.yml']));
+  assert.deepEqual(nested, [], 'Unreviewed Gitleaks configuration/ignore file is not permitted: ' + nested.join(', '));
+}
+
+function assertSemgrepIgnoreAllowlist(root = ROOT) {
+  const ignorePath = path.join(root, '.semgrepignore');
+  let stat;
+  try {
+    stat = fs.lstatSync(ignorePath);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      assert.fail('First-party repository must include its reviewed .semgrepignore');
+    }
+    throw err;
+  }
+  assert.ok(!stat.isSymbolicLink(), 'Symlinked .semgrepignore is not permitted');
+  assert.ok(stat.isFile(), '.semgrepignore must be a regular file');
+  const nested = findNamedEntriesRecursive(root, new Set(['.semgrepignore'])).filter(rel => rel !== '.semgrepignore');
+  assert.deepEqual(nested, [], 'Nested .semgrepignore is not permitted: ' + nested.join(', '));
+  const patterns = fs.readFileSync(ignorePath, 'utf8')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('#'))
+    .sort();
+  assert.deepEqual(patterns, ['.git/', 'node_modules/'], '.semgrepignore may exclude only VCS metadata and dependency artifacts');
+}
+
+function assertNoCodeQLConfigOverrides(root = ROOT) {
+  for (const file of ['codeql-config.yml', 'codeql-config.yaml', '.github/codeql/codeql-config.yml', '.github/codeql/codeql-config.yaml']) {
+    let exists = false;
+    try {
+      fs.lstatSync(path.join(root, file));
+      exists = true;
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+    assert.ok(!exists, 'Unreviewed CodeQL configuration override is not permitted: ' + file);
+  }
+  const nested = findNamedEntriesRecursive(root, new Set(['codeql-config.yml', 'codeql-config.yaml']));
+  assert.deepEqual(nested, [], 'Unreviewed CodeQL configuration override is not permitted: ' + nested.join(', '));
+}
+
+function assertNoSemgrepConfigOverrides(root = ROOT) {
+  for (const file of ['.semgrep.yml', '.semgrep.yaml', 'semgrep.yml', 'semgrep.yaml']) {
+    let exists = false;
+    try {
+      fs.lstatSync(path.join(root, file));
+      exists = true;
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+    assert.ok(!exists, 'Unreviewed Semgrep configuration override is not permitted: ' + file);
+  }
+  const nested = findNamedEntriesRecursive(root, new Set(['.semgrep.yml', '.semgrep.yaml', 'semgrep.yml', 'semgrep.yaml']));
+  assert.deepEqual(nested, [], 'Unreviewed Semgrep configuration override is not permitted: ' + nested.join(', '));
+}
+
+function assertNoOsvConfigOverrides(root = ROOT) {
+  function scan(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (entry.name === '.git' || entry.name === 'node_modules') continue;
+        scan(path.join(dir, entry.name));
+      } else if (entry.isFile() || entry.isSymbolicLink()) {
+        if (entry.name === 'osv-scanner.toml' || entry.name === '.osv-scanner.toml') {
+          assert.fail('Unreviewed OSV configuration override is not permitted: ' + path.relative(root, path.join(dir, entry.name)));
+        }
+      }
+    }
+  }
+  scan(root);
+}
+
+function hasProhibitedGitAttributes(content) {
+  const lines = content.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    if (/(?:^|\s)(?:[-!]?(?:diff|binary|filter|merge)|[-!]text)(?:[\s=]|$)/.test(trimmed)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertNoProhibitedGitAttributes(root = ROOT) {
+  function scan(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (entry.name === '.git' || entry.name === 'node_modules') continue;
+        scan(path.join(dir, entry.name));
+      } else if (entry.name === '.gitattributes') {
+        const fullPath = path.join(dir, entry.name);
+        if (fs.lstatSync(fullPath).isSymbolicLink()) {
+          assert.fail('Symlinked .gitattributes is not permitted: ' + path.relative(root, fullPath));
+        }
+        const content = fs.readFileSync(fullPath, 'utf8');
+        if (hasProhibitedGitAttributes(content)) {
+          assert.fail('Prohibited .gitattributes configuration is not permitted: ' + path.relative(root, fullPath));
+        }
+      }
+    }
+  }
+  scan(root);
+  const gitDirResult = spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: root, encoding: 'utf8' });
+  const gitDir = gitDirResult.status === 0 ? gitDirResult.stdout.trim() : path.join(root, '.git');
+  const infoAttr = path.join(gitDir, 'info', 'attributes');
+  try {
+    if (fs.lstatSync(infoAttr).isSymbolicLink()) {
+      assert.fail('Symlinked .git/info/attributes is not permitted');
+    }
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
+  if (fs.existsSync(infoAttr)) {
+    const content = fs.readFileSync(infoAttr, 'utf8');
+    if (hasProhibitedGitAttributes(content)) {
+      assert.fail('Prohibited .git/info/attributes configuration is not permitted');
+    }
+  }
+}
+
+function assertNoTrackedBinaryFiles(root = ROOT) {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const result = spawnSync(pythonBin, [scannerPath], { cwd: root, encoding: 'utf8' });
+  if (process.platform === 'win32') {
+    assert.equal(result.status, 2, 'Scanner must fail closed by default on win32');
+    assert.match(result.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    return;
+  }
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout).trim();
+    const m = detail.match(/contains NUL byte:\s*(.+)$/m);
+    const file = m ? m[1].trim() : detail;
+    assert.fail('Tracked binary file is not permitted: ' + file + ' (' + detail + ')');
+  }
+}
+
+function assertNoAllowedBinariesFile(root = ROOT) {
+  const allowlistPath = path.join(root, '.allowed-binaries');
+  if (fs.existsSync(allowlistPath)) {
+    assert.fail('.allowed-binaries file is prohibited');
+  }
+}
+
+function assertNoHistoricalGitleaksDirectives(root = ROOT) {
+  const result = spawnSync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', 'log', '-n', '1', '-i', '-E', '-G[g]itleaks[[:space:]]*:[[:space:]]*allow', '--format=%H %s'], { cwd: root, encoding: 'utf8' });
+  if (result.status !== 0) {
+    assert.fail('Failed to inspect Git history for prohibited Gitleaks directives: ' + result.stderr);
+  }
+  if (result.stdout.trim()) {
+    assert.fail('Prohibited Gitleaks inline suppression directive found in Git history: ' + result.stdout.trim());
+  }
+}
+
+function assertNoGitleaksSuppressionDirectives(root = ROOT) {
+  const result = spawnSync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', 'grep', '-n', '-I', '-i', '-E', '[g]itleaks[[:space:]]*:[[:space:]]*allow', '--', '.'], { cwd: root, encoding: 'utf8' });
+  if (result.status === 0) {
+    assert.fail('Prohibited Gitleaks inline suppression directive found in tracked files:\n' + result.stdout);
+  }
+  assert.equal(result.status, 1, 'git grep for inline suppression directive failed: ' + result.stderr);
+}
+
+const ALLOWED_WORKFLOW_KEYS = new Set(['name', 'on', 'true', 'permissions', 'jobs', 'defaults', 'concurrency', 'env']);
+const ALLOWED_JOB_KEYS = new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'if', 'needs', 'strategy', 'continue-on-error', 'env', 'with', 'defaults', 'steps', 'container', 'uses']);
+const ALLOWED_OSV_JOB_KEYS = new Set(['name', 'uses', 'with', 'permissions']);
+const ALLOWED_STEP_KEYS = new Set(['name', 'uses', 'with', 'run', 'env', 'shell', 'if', 'continue-on-error', 'id']);
+
+/**
+ * Validates structural security invariants across GitHub Actions workflows.
+ */
+function validateWorkflowSecurity(parsed, label) {
+  for (const key of Object.keys(parsed)) {
+    assert.ok(ALLOWED_WORKFLOW_KEYS.has(key), label + " contains unapproved workflow-level key '" + key + "'");
+  }
+
+  assertNoUntrustedExpressionsInValue(parsed.name, label + ' name');
+  assertNoUntrustedExpressionsInValue(parsed.defaults, label + ' defaults');
+  assertNoUntrustedExpressionsInValue(parsed.concurrency, label + ' concurrency');
+
+  if (parsed.concurrency) {
+    assert.notEqual(parsed.concurrency['cancel-in-progress'], true, label + ' must not set concurrency cancel-in-progress: true');
+  }
+
+  assert.ok(parsed.permissions !== undefined && parsed.permissions !== null, label + ' must declare workflow-level permissions');
+  if (typeof parsed.permissions === 'string') {
+    assert.notEqual(parsed.permissions, 'write-all', label + ' must not use write-all permissions');
+    assert.fail(label + ' workflow-level permissions must be an explicit mapping, not string ' + parsed.permissions);
+  } else if (typeof parsed.permissions === 'object' && !Array.isArray(parsed.permissions)) {
+    for (const [scope, perm] of Object.entries(parsed.permissions)) {
+      assert.notEqual(perm, 'write', label + ' workflow-level permissions must not grant write access to ' + scope);
+      assert.notEqual(perm, 'write-all', label + ' workflow-level permissions must not grant write access to ' + scope);
+    }
+  } else {
+    assert.fail(label + ' workflow-level permissions must be an explicit mapping');
+  }
+
+  const rawTriggers = parsed.on ?? parsed['true'];
+  assert.ok(rawTriggers !== undefined && rawTriggers !== null, label + ' must define trigger conditions');
+  let triggerKeys = [];
+  if (typeof rawTriggers === 'string') triggerKeys = [rawTriggers];
+  else if (Array.isArray(rawTriggers)) triggerKeys = rawTriggers;
+  else if (typeof rawTriggers === 'object') triggerKeys = Object.keys(rawTriggers);
+  assert.ok(triggerKeys.length > 0, label + ' must define at least one trigger');
+  for (const trigger of triggerKeys) {
+    assert.ok(ALLOWED_TRIGGERS.has(trigger), label + " uses unapproved trigger '" + trigger + "'");
+  }
+  assert.ok(typeof rawTriggers === 'object' && !Array.isArray(rawTriggers), label + ' triggers must be an explicit mapping');
+  if (rawTriggers.workflow_dispatch !== undefined) {
+    assertNoUntrustedExpressionsInValue(rawTriggers.workflow_dispatch, label + ' trigger workflow_dispatch');
+  }
+  if (rawTriggers.schedule !== undefined) {
+    assert.ok(Array.isArray(rawTriggers.schedule) && rawTriggers.schedule.length > 0, label + ' schedule must be a non-empty array');
+    for (const entry of rawTriggers.schedule) {
+      assert.ok(
+        entry && typeof entry === 'object' && !Array.isArray(entry) && Object.keys(entry).every(k => k === 'cron') && typeof entry.cron === 'string',
+        label + ' schedule entries must define only a cron string'
+      );
+    }
+  }
+
+  assertSafeEnv(parsed.env, label + ' workflow');
+  if (parsed.defaults?.run?.['working-directory']) {
+    assert.fail(label + ' defaults.run must not override working-directory');
+  }
+  assertSafeShell(parsed.defaults?.run?.shell, label + ' workflow defaults.run.shell');
+  assertPinnedActions(parsed, label);
+
+  const jobs = parsed.jobs || {};
+  assert.ok(Object.keys(jobs).length > 0, label + ' must define at least one job');
+  for (const [jobId, job] of Object.entries(jobs)) {
+    assert.equal(job.services, undefined, label + ' job ' + jobId + ' must not declare services');
+    if (job.defaults?.run?.['working-directory']) {
+      assert.fail(label + ' job ' + jobId + ' defaults.run must not override working-directory');
+    }
+    for (const key of Object.keys(job)) {
+      assert.ok(ALLOWED_JOB_KEYS.has(key), label + ' job ' + jobId + " contains unapproved key '" + key + "'");
+    }
+
+    assertNoUntrustedExpressionsInValue(job.name, label + ' job ' + jobId + ' name');
+    assertNoUntrustedExpressionsInValue(job.if, label + ' job ' + jobId + ' if');
+    assertJobPermissions(jobId, job, label);
+    assertNotConstantFalse(job.if, label + ' job ' + jobId);
+    assert.ok(!job['continue-on-error'], label + ' job ' + jobId + ' must not have continue-on-error: true');
+    assertSafeEnv(job.env, label + ' job ' + jobId);
+    assertSafeWith(job.with, label + ' job ' + jobId);
+    assertSafeShell(job.defaults?.run?.shell, label + ' job ' + jobId + ' defaults.run.shell');
+
+    if (job.uses) {
+      assert.equal(job['runs-on'], undefined, label + ' reusable job ' + jobId + ' must not override runs-on');
+      assert.equal(job.steps, undefined, label + ' reusable job ' + jobId + ' must not add inline steps');
+      assert.equal(job.container, undefined, label + ' reusable job ' + jobId + ' must not declare container');
+    } else {
+      assert.equal(typeof job['runs-on'], 'string', label + ' job ' + jobId + ' runs-on must be a single approved string');
+      assert.equal(job['runs-on'], 'ubuntu-latest', label + ' job ' + jobId + " runs-on must be 'ubuntu-latest', got: " + String(job['runs-on']));
+      assert.ok(Number.isInteger(job['timeout-minutes']) && job['timeout-minutes'] > 0, label + ' job ' + jobId + ' must specify a positive timeout-minutes integer');
+      if (jobId !== 'semgrep') {
+        assert.equal(job.container, undefined, label + ' non-Semgrep job ' + jobId + ' must not declare a container');
+      }
+    }
+
+    const steps = job.steps || [];
+    for (const [i, step] of steps.entries()) {
+      assert.equal(step['working-directory'], undefined, label + ' job ' + jobId + ' step ' + i + ' must not override working-directory');
+      if (step.uses !== undefined && step.run !== undefined) {
+        assert.fail(label + ' job ' + jobId + ' step ' + i + " must not combine both 'uses' and 'run'");
+      }
+      for (const k of Object.keys(step)) {
+        assert.ok(ALLOWED_STEP_KEYS.has(k), label + ' job ' + jobId + ' step ' + i + " contains unapproved key '" + k + "'");
+      }
+      assertNoUntrustedExpressionsInValue(step.name, label + ' job ' + jobId + ' step ' + i + ' name');
+      assertNoUntrustedExpressionsInValue(step.if, label + ' job ' + jobId + ' step ' + i + ' if');
+      assertNotConstantFalse(step.if, label + ' job ' + jobId + ' step ' + i + ' (' + (step.name || 'unnamed') + ')');
+      assert.ok(!step['continue-on-error'], label + ' job ' + jobId + ' step ' + i + ' must not have continue-on-error: true');
+      assertSafeEnv(step.env, label + ' job ' + jobId + ' step ' + i);
+      assertSafeWith(step.with, label + ' job ' + jobId + ' step ' + i);
+      assertSafeShell(step.shell, label + ' job ' + jobId + ' step ' + i + ' shell');
+
+      if (step.uses && step.uses.startsWith('actions/checkout')) {
+        assert.ok(step.with, label + ' checkout step ' + i + ' must provide with configuration');
+        assert.strictEqual(step.with['persist-credentials'], false, label + ' checkout step ' + i + ' must set persist-credentials: false');
+        assert.strictEqual(step.with.token, undefined, label + ' checkout step ' + i + ' must not override token with unexpected credentials');
+      }
+
+      if (step.run) {
+        assert.ok(!hasUntrustedExpression(step.run), label + ' job ' + jobId + ' step ' + i + ' contains forbidden direct expression interpolation: ' + step.run);
+        if (/\bNODE_OPTIONS\s*=/i.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not set NODE_OPTIONS: ' + step.run);
+        }
+        if (/(?:^|\s|;)(?:BASH_ENV|PATH|NPM_CONFIG_[A-Z_]+|NODE_PATH|NODE_TLS_REJECT_UNAUTHORIZED|GIT_[A-Z0-9_]+|LD_PRELOAD|LD_LIBRARY_PATH|PYTHONPATH|NODE_EXTRA_CA_CERTS|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|PERL5LIB|RUBYOPT|SHELLOPTS|BASHOPTS|ENV)\s*=|(?<!while\s+)(?:^|\s|;)IFS\s*=(?!\s*read\b)/i.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + ' assigns to dangerous environment variable: ' + step.run);
+        }
+        for (const pattern of FORBIDDEN_ERROR_SUPPRESSIONS) {
+          assert.ok(!pattern.test(step.run), label + ' job ' + jobId + ' step ' + i + ' suppresses errors with ' + pattern + ': ' + step.run);
+        }
+        if (/(?:^|\s|;)export\s+/i.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not use inline export statements: ' + step.run);
+        }
+        if (/(?:^|[^&])&\s*(?:$|\n|;)/.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not background commands (&): ' + step.run);
+        }
+        if (/\b(?:echo|printf|eval)\s+[^;\n]*\$\(/.test(step.run) || /\b(?:echo|printf|eval)\s+[^;\n]*`[^`]+`/.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not mask command failure inside echo/eval command substitution: ' + step.run);
+        }
+        if (/\bif\s+[^;\n]+;\s*then\s*(?::|true)\s*;\s*fi\b/.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not mask command failure inside conditional block: ' + step.run);
+        }
+        if (/\b(?:function\s+[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+\s*\(\)\s*\{)/.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + ' must not define shell functions: ' + step.run);
+        }
+        if (/\bnpm\s+(?:install|i)\b/.test(step.run)) {
+          assert.fail(label + ' job ' + jobId + ' step ' + i + " uses 'npm install' instead of 'npm ci': " + step.run);
+        }
+        if (/\bnpm\s+ci\b/.test(step.run)) {
+          assert.ok(step.run.includes('--ignore-scripts'), label + ' job ' + jobId + ' step ' + i + ' running npm ci must enforce --ignore-scripts: ' + step.run);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Validates USS validation workflow specific structural invariants.
+ */
+function validateUssValidationWorkflow(parsed) {
+  validateWorkflowSecurity(parsed, 'uss-validation.yml');
+  assertExactObject(parsed.permissions, { contents: 'read' }, 'uss-validation.yml workflow permissions');
+  assertBranchCoverage(parsed, 'uss-validation.yml', ['main', 'integration/uss-pr3-pr8-hardening']);
+
+  const job = parsed.jobs?.validate;
+  assert.ok(job, 'uss-validation.yml must contain validate job');
+  assert.equal(job.permissions, undefined, 'uss-validation.yml validate job must inherit read-only workflow permissions');
+  assertNoMandatoryJobConditions('validate', job, 'uss-validation.yml');
+  const steps = job.steps || [];
+  const stepMatchers = [
+    s => s.uses && s.uses.startsWith('actions/checkout'),
+    s => s.uses && s.uses.startsWith('actions/setup-node'),
+    s => s.run && s.run.includes('npm ci'),
+    s => s.run && s.run.includes('node tools/build-modules.mjs'),
+    s => s.run && s.run.includes('git diff --exit-code -- modules/'),
+    s => s.run && s.run.includes('node tools/build-indexes.mjs'),
+    s => s.run && s.run.includes('node tools/build-bundles.mjs'),
+    s => s.run && s.run.includes('node tools/validate.mjs'),
+    s => s.run && s.run.includes('validate-evidence.mjs'),
+    s => s.run && s.run.includes('node --test tests/*.test.mjs')
+  ];
+  const EXPECTED_USS_COMMANDS = [
+    'npm ci --ignore-scripts --no-audit --no-fund',
+    'node tools/build-modules.mjs',
+    'git diff --exit-code -- modules/',
+    'node tools/build-indexes.mjs\ngit diff --exit-code -- MODULE-INDEX.md bundles/',
+    'node tools/build-bundles.mjs',
+    'node tools/validate.mjs',
+    'node tools/validate-evidence.mjs --file templates/security-evidence.example.json',
+    'node --test tests/*.test.mjs'
+  ];
+  assert.equal(steps.length, 10, 'uss-validation.yml validate job must contain exactly 10 steps, got ' + steps.length);
+  for (let idx = 0; idx < stepMatchers.length; idx++) {
+    assert.ok(stepMatchers[idx](steps[idx]), 'uss-validation.yml step ' + idx + ' does not match required step sequence: ' + (steps[idx].name || steps[idx].run || steps[idx].uses));
+    assert.equal(steps[idx].if, undefined, 'uss-validation.yml mandatory step ' + idx + ' must not be conditional');
+    if (idx >= 2) {
+      assert.equal(steps[idx].uses, undefined, 'uss-validation.yml step ' + idx + ' must not define uses');
+      assert.equal(steps[idx].with, undefined, 'uss-validation.yml step ' + idx + ' must not define with');
+      assert.equal(steps[idx].env, undefined, 'uss-validation.yml step ' + idx + ' must not define env');
+      const normalizedRun = (steps[idx].run || '').replace(/\r\n/g, '\n').trim();
+      assert.equal(normalizedRun, EXPECTED_USS_COMMANDS[idx - 2], 'uss-validation.yml step ' + idx + ' does not match exact approved execution contract');
+      if (/(?:^|\s)\|(?:\s|$)/.test(steps[idx].run)) {
+        assert.fail('uss-validation.yml step ' + idx + ' must not pipe commands (|): ' + steps[idx].run);
+      }
+    }
+  }
+
+  assert.equal(steps[0].uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', 'uss-validation.yml checkout must use the approved pinned action');
+  assertExactObject(steps[0].with, { 'persist-credentials': false }, 'uss-validation.yml checkout inputs');
+  assert.equal(steps[0].env, undefined, 'uss-validation.yml checkout step must not define env');
+
+  assert.equal(steps[1].uses, 'actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38', 'uss-validation.yml setup-node must use the approved pinned action');
+
+  const moduleDriftStep = steps[4];
+  assert.ok(!moduleDriftStep.run.includes('|| true'), 'Module drift gate must not suppress errors');
+  const indexDriftStep = steps[5];
+  assert.ok(indexDriftStep.run.includes('git diff --exit-code -- MODULE-INDEX.md bundles/'), 'Index drift gate must check MODULE-INDEX.md bundles/');
+  assert.ok(!indexDriftStep.run.includes('|| true'), 'Index drift gate must not suppress errors');
+
+  assert.equal(String(steps[1].with?.['node-version']), '20', 'uss-validation.yml must enforce Node.js version 20');
+  assertExactObject(steps[1].with, { 'node-version': 20 }, 'uss-validation.yml setup-node inputs');
+  assert.equal(steps[1].env, undefined, 'uss-validation.yml setup-node step must not define env');
+  assert.ok(!steps[9].run.includes('|| true'), 'Test step must not suppress errors');
+  assert.ok(!steps[8].run.includes('|| true'), 'Evidence validation step must not suppress errors');
+  assert.ok(!steps[8].run.includes('--help'), 'Evidence validation must not be replaced with --help');
+  assert.ok(steps[8].run.includes('--file templates/security-evidence.example.json'), 'Evidence validation must validate security-evidence.example.json');
+}
+
+/**
+ * Validates USS security scans workflow specific structural invariants.
+ */
+function validateSecurityScansWorkflow(parsed, label = 'security-scans.yml', consumerTemplate = false) {
+  validateWorkflowSecurity(parsed, label);
+  assertExactObject(parsed.permissions, { contents: 'read' }, label + ' workflow permissions');
+  assertBranchCoverage(parsed, label, consumerTemplate ? ['**'] : ['main', 'integration/uss-pr3-pr8-hardening']);
+
+  const triggers = getTriggerMap(parsed);
+  assert.ok(triggers.schedule, label + ' must define schedule trigger for periodic full-history scan');
+  assert.ok(Array.isArray(triggers.schedule) && triggers.schedule.length > 0, label + ' schedule must be a non-empty array');
+  assert.ok(
+    triggers.schedule.some(s => s?.cron === '17 5 * * 1'),
+    label + ' schedule must include weekly full-history scan cron "17 5 * * 1"'
+  );
+
+  const jobs = parsed.jobs || {};
+  const gitleaksId = consumerTemplate ? 'secrets' : 'gitleaks';
+  const gitleaksJob = jobs[gitleaksId];
+  assert.ok(gitleaksJob, label + ' must contain ' + gitleaksId + ' job');
+  for (const jobId of [gitleaksId, 'semgrep', 'codeql', 'osv']) {
+    assert.ok(jobs[jobId], label + ' must contain ' + jobId + ' job');
+    assertNoMandatoryJobConditions(jobId, jobs[jobId], label);
+  }
+
+  assert.equal(gitleaksJob.name, 'Secret scan (commit range on push/PR, full history on schedule)', 'Gitleaks job name must describe actual scan scope');
+  if (!consumerTemplate) {
+    assertNoGitleaksOverrideFiles(ROOT);
+    assertNoOsvConfigOverrides(ROOT);
+    assertNoGitleaksSuppressionDirectives(ROOT);
+    assertNoHistoricalGitleaksDirectives(ROOT);
+    assertNoProhibitedGitAttributes(ROOT);
+    assertNoTrackedBinaryFiles(ROOT);
+    assertNoAllowedBinariesFile(ROOT);
+  }
+  assertExactObject(gitleaksJob.permissions, { contents: 'read', 'pull-requests': 'read' }, label + ' Gitleaks permissions');
+  const gitleaksSteps = gitleaksJob.steps || [];
+  assert.equal(gitleaksSteps.length, 3, label + ' Gitleaks job must contain exactly checkout, config guard and scan steps');
+  const gitleaksCheckout = gitleaksSteps[0];
+  assert.equal(gitleaksCheckout.uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', label + ' Gitleaks checkout must use the approved pinned action');
+  assertExactObject(gitleaksCheckout.with, { 'fetch-depth': 0, 'persist-credentials': false }, label + ' Gitleaks checkout inputs');
+  assert.equal(gitleaksCheckout.env, undefined, label + ' Gitleaks checkout must not define env');
+  assertScannerConfigGuard(gitleaksSteps[1], label + ' Gitleaks', consumerTemplate);
+  const gitleaksAction = gitleaksSteps[2];
+  assert.equal(gitleaksAction.uses, 'gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e', label + ' Gitleaks must use the approved pinned action');
+  assert.strictEqual(String(gitleaksAction.env?.GITLEAKS_ENABLE_COMMENTS), 'false', label + ' Gitleaks must disable PR comments');
+  assert.strictEqual(String(gitleaksAction.env?.GITLEAKS_ENABLE_UPLOAD_ARTIFACT), 'false', label + ' Gitleaks must disable artifact uploads');
+  assert.strictEqual(gitleaksAction.env?.GITHUB_TOKEN, '\${{ secrets.GITHUB_TOKEN }}', label + ' Gitleaks must use only the workflow-scoped GitHub token');
+  assertExactObject(gitleaksAction.env, {
+    GITHUB_TOKEN: '\${{ secrets.GITHUB_TOKEN }}',
+    GITLEAKS_ENABLE_COMMENTS: 'false',
+    GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
+  }, label + ' Gitleaks environment');
+  assert.equal(gitleaksAction.with, undefined, label + ' Gitleaks action must not receive unapproved inputs');
+
+  const semgrepJob = jobs.semgrep;
+  assert.equal(semgrepJob.permissions, undefined, label + ' Semgrep must inherit read-only workflow permissions');
+  assert.ok(/^semgrep\/semgrep:[^@]+@sha256:[a-f0-9]{64}$/.test(semgrepJob.container?.image || ''), label + ' Semgrep container image must be pinned by immutable sha256 digest');
+  assertExactObject(semgrepJob.container, {
+    image: 'semgrep/semgrep:1.186.0@sha256:25251de66c3b0fdea1c1c519bbc130170349f3da79edd517335b847f30d3c493'
+  }, label + ' Semgrep container');
+  const semgrepSteps = semgrepJob.steps || [];
+  assert.equal(semgrepSteps.length, 3, label + ' Semgrep job must contain exactly checkout, config guard and scan steps');
+  const semgrepCheckout = semgrepSteps[0];
+  assert.equal(semgrepCheckout.uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', label + ' Semgrep checkout must use the approved pinned action');
+  assertExactObject(semgrepCheckout.with, { 'persist-credentials': false }, label + ' Semgrep checkout inputs');
+  assert.equal(semgrepCheckout.env, undefined, label + ' Semgrep checkout must not define env');
+  assertScannerConfigGuard(semgrepSteps[1], label + ' Semgrep', consumerTemplate);
+  const semgrepStep = semgrepSteps[2];
+  assert.equal(semgrepStep.uses, undefined, label + ' Semgrep scan step must not define uses');
+  assert.equal(semgrepStep.with, undefined, label + ' Semgrep scan step must not define with');
+  assert.ok(semgrepStep.run && semgrepStep.run.includes('semgrep scan'), label + ' Semgrep job must execute a scan');
+  assert.ok(semgrepStep.run.includes('--error'), 'Semgrep scan must fail on findings with --error');
+  assert.ok(semgrepStep.run.includes('--strict'), 'Semgrep scan must fail on findings with --strict');
+  assert.ok(semgrepStep.run.includes('--disable-nosem'), 'Semgrep scan must disable inline suppression with --disable-nosem');
+  assert.ok(!semgrepStep.run.includes('--enable-nosem'), 'Semgrep scan must not re-enable inline suppression');
+  if (!consumerTemplate) {
+    assert.ok(semgrepStep.run.includes('tools/') && semgrepStep.run.includes('tests/') && semgrepStep.run.includes('.github/workflows/') && semgrepStep.run.includes('templates/'), 'Semgrep scan must target tools/ tests/ .github/workflows/ templates/');
+    assert.ok(!semgrepStep.run.includes('--exclude'), 'Semgrep scan must not use --exclude argument to weaken scan');
+  } else {
+    assert.ok(!semgrepStep.run.includes('--exclude'), 'Semgrep scan must not use --exclude argument to weaken scan');
+  }
+  const expectedSemgrepCommand = consumerTemplate
+    ? 'semgrep scan --config p/default --error --strict --disable-nosem --metrics=off .'
+    : 'semgrep scan --config p/default --error --strict --disable-nosem --metrics=off --verbose tools/ tests/ .github/workflows/ templates/';
+  assert.equal(semgrepStep.run.trim(), expectedSemgrepCommand, label + ' Semgrep must use the exact approved ruleset, flags and target scope');
+  assertExactObject(semgrepStep.env, { SEMGREP_SEND_METRICS: 'off' }, label + ' Semgrep environment');
+  if (!consumerTemplate) {
+    assertSemgrepIgnoreAllowlist(ROOT);
+    assertNoSemgrepConfigOverrides(ROOT);
+  }
+
+  const codeqlJob = jobs.codeql;
+  assertExactObject(codeqlJob.permissions, {
+    actions: 'read',
+    contents: 'read',
+    'security-events': 'write'
+  }, label + ' CodeQL permissions');
+  const codeqlSteps = codeqlJob.steps || [];
+  assert.equal(codeqlSteps.length, 3, label + ' CodeQL must contain checkout, init and analyze steps');
+  const codeqlCheckout = codeqlSteps[0];
+  assert.equal(codeqlCheckout.uses, 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803', label + ' CodeQL checkout must use the approved pinned action');
+  assertExactObject(codeqlCheckout.with, { 'persist-credentials': false }, label + ' CodeQL checkout inputs');
+  assert.equal(codeqlCheckout.env, undefined, label + ' CodeQL checkout must not define env');
+  const codeqlInit = codeqlSteps[1];
+  assert.equal(codeqlInit.uses, 'github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066', label + ' CodeQL init action must remain pinned');
+  assertExactObject(codeqlInit.with, { languages: 'javascript-typescript, actions', 'build-mode': 'none' }, label + ' CodeQL init inputs');
+  assert.equal(codeqlInit.env, undefined, label + ' CodeQL init must not define env');
+  const codeqlAnalyze = codeqlSteps[2];
+  assert.equal(codeqlAnalyze.uses, 'github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066', label + ' CodeQL analyze action must remain pinned');
+  assert.equal(codeqlAnalyze.with, undefined, label + ' CodeQL analyze must not receive unapproved inputs');
+  assert.equal(codeqlAnalyze.env, undefined, label + ' CodeQL analyze must not define env');
+  if (!consumerTemplate) assertNoCodeQLConfigOverrides(ROOT);
+
+  const osvJob = jobs.osv;
+  for (const key of Object.keys(osvJob)) {
+    assert.ok(ALLOWED_OSV_JOB_KEYS.has(key), label + " OSV reusable job contains unapproved key '" + key + "'");
+  }
+  assert.equal(osvJob.uses, 'google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@d3c1414ded37de590f207572e37a7d180f1d0ef7', label + ' OSV must use the reviewed immutable upstream SHA');
+  assert.strictEqual(osvJob.with?.['fail-on-vuln'], true, label + ' OSV scanner must set fail-on-vuln: true');
+  assertExactObject(osvJob.with, { 'fail-on-vuln': true, 'upload-sarif': true }, label + ' OSV reusable-workflow inputs');
+  assertExactObject(osvJob.permissions, {
+    actions: 'read',
+    contents: 'read',
+    'security-events': 'write'
+  }, label + ' OSV permissions');
+  for (const key of ['runs-on', 'steps', 'env', 'secrets', 'container']) {
+    assert.equal(osvJob[key], undefined, label + ' OSV reusable job must not override ' + key);
+  }
+}
+
+// Positive tests against actual repository workflows
+test('uss-validation.yml passes structural security validation', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  validateUssValidationWorkflow(parsed);
+});
+
+test('security-scans.yml passes structural security validation', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  validateSecurityScansWorkflow(parsed);
+});
+
+test('consumer-security-scans.yml template passes structural security validation', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+  const parsed = YAML.parse(text);
+  validateSecurityScansWorkflow(parsed, 'consumer-security-scans.yml', true);
+  assert.ok(text.includes('semgrep scan --config p/default --error --strict --disable-nosem --metrics=off .'));
+  const guide = fs.readFileSync(path.join(ROOT, 'templates/ci/README.md'), 'utf8');
+  assert.ok(guide.includes('Change the CodeQL languages'));
+});
+
+// Negative Regression Tests (A2-02 & U-03 Mutation Resilience)
+
+test('negative: rejects removal of generated-module drift gate', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps = parsed.jobs.validate.steps.filter(s => !s.run || !s.run.includes('git diff --exit-code -- modules/'));
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must contain exactly 10 steps/);
+});
+
+test('negative: rejects || true hiding Semgrep failures', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  const semgrepStep = parsed.jobs.semgrep.steps.find(s => s.run && s.run.includes('semgrep scan'));
+  semgrepStep.run += ' || true';
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /suppresses errors with/);
+});
+
+test('negative: rejects || true hiding test failures', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  const testStep = parsed.jobs.validate.steps.find(s => s.run && s.run.includes('node --test'));
+  testStep.run += ' || true';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /suppresses errors with/);
+});
+
+test('negative: rejects || true hiding evidence-validation failures', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  const evidenceStep = parsed.jobs.validate.steps.find(s => s.run && s.run.includes('validate-evidence.mjs'));
+  evidenceStep.run += ' || true';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /suppresses errors with/);
+});
+
+test('negative: rejects continue-on-error: true on security jobs and steps', () => {
+  const parsedJob = YAML.parse(read('security-scans.yml'));
+  parsedJob.jobs.semgrep['continue-on-error'] = true;
+  assert.throws(() => validateSecurityScansWorkflow(parsedJob), /must not have continue-on-error: true/);
+
+  const parsedStep = YAML.parse(read('security-scans.yml'));
+  parsedStep.jobs.semgrep.steps[0]['continue-on-error'] = true;
+  assert.throws(() => validateSecurityScansWorkflow(parsedStep), /must not have continue-on-error: true/);
+});
+
+test('negative: rejects persist-credentials: true or missing on checkout', () => {
+  const parsedTrue = YAML.parse(read('uss-validation.yml'));
+  const checkoutStep = parsedTrue.jobs.validate.steps.find(s => s.uses && s.uses.startsWith('actions/checkout'));
+  checkoutStep.with['persist-credentials'] = true;
+  assert.throws(() => validateUssValidationWorkflow(parsedTrue), /must set persist-credentials: false/);
+
+  const parsedMissing = YAML.parse(read('uss-validation.yml'));
+  const checkoutMissing = parsedMissing.jobs.validate.steps.find(s => s.uses && s.uses.startsWith('actions/checkout'));
+  delete checkoutMissing.with['persist-credentials'];
+  assert.throws(() => validateUssValidationWorkflow(parsedMissing), /must set persist-credentials: false/);
+});
+
+test('negative: rejects pull_request_target trigger', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.on = { pull_request_target: { branches: ['main'] } };
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /uses unapproved trigger 'pull_request_target'/);
+});
+
+test('negative: rejects unnecessary write permissions at workflow level', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.permissions = { contents: 'write' };
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must not grant write access to contents/);
+
+  const parsedWriteAll = YAML.parse(read('uss-validation.yml'));
+  parsedWriteAll.permissions = 'write-all';
+  assert.throws(() => validateUssValidationWorkflow(parsedWriteAll), /must not use write-all permissions/);
+});
+
+test('negative: rejects fail-on-vuln: false disguised or explicit', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.osv.with['fail-on-vuln'] = false;
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must set fail-on-vuln: true/);
+
+  const parsedString = YAML.parse(read('security-scans.yml'));
+  parsedString.jobs.osv.with['fail-on-vuln'] = 'false';
+  assert.throws(() => validateSecurityScansWorkflow(parsedString), /must set fail-on-vuln: true/);
+});
+
+test('negative: rejects replacement of pinned action SHAs with mutable tags', () => {
+  const parsedTag = YAML.parse(read('uss-validation.yml'));
+  parsedTag.jobs.validate.steps[0].uses = 'actions/checkout@v4';
+  assert.throws(() => validateUssValidationWorkflow(parsedTag), /unpinned action: actions\/checkout@v4/);
+
+  const parsedSemgrep = YAML.parse(read('security-scans.yml'));
+  parsedSemgrep.jobs.semgrep.container.image = 'semgrep/semgrep:1.186.0';
+  assert.throws(() => validateSecurityScansWorkflow(parsedSemgrep), /must be pinned by immutable sha256 digest/);
+});
+
+test('negative: rejects missing required scanner jobs', () => {
+  for (const jobName of ['gitleaks', 'semgrep', 'codeql', 'osv']) {
+    const parsed = YAML.parse(read('security-scans.yml'));
+    delete parsed.jobs[jobName];
+    assert.throws(() => validateSecurityScansWorkflow(parsed), new RegExp(`must contain ${jobName} job`));
+  }
+});
+
+test('negative: rejects non-Node-20 validation', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  const setupNode = parsed.jobs.validate.steps.find(s => s.uses && s.uses.startsWith('actions/setup-node'));
+  setupNode.with['node-version'] = 22;
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must enforce Node\.js version 20/);
+});
+
+test('negative: rejects direct github.event expression interpolation in run scripts', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps[2].run = 'echo "${{ github.event.issue.title }}"';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /contains forbidden direct expression interpolation/);
+});
+
+test('negative: rejects workflow_run trigger', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.on = { workflow_run: { workflows: ['CI'] } };
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /uses unapproved trigger 'workflow_run'/);
+});
+
+test('negative: rejects npm install in favor of npm ci', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  const installStep = parsed.jobs.validate.steps.find(s => s.run && s.run.includes('npm ci'));
+  installStep.run = 'npm install --ignore-scripts --no-audit';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /uses 'npm install' instead of 'npm ci'/);
+});
+
+test('negative: rejects npm ci without --ignore-scripts', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  const installStep = parsed.jobs.validate.steps.find(s => s.run && s.run.includes('npm ci'));
+  installStep.run = 'npm ci --no-audit --no-fund';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must enforce --ignore-scripts/);
+});
+
+test('negative: rejects runner job missing timeout-minutes', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  delete parsed.jobs.gitleaks['timeout-minutes'];
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must specify a positive timeout-minutes/);
+});
+
+// Additional adversarial mutation tests (A2-02)
+
+test('negative: rejects missing workflow-level permissions declaration', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  delete parsed.permissions;
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must declare workflow-level permissions/);
+});
+
+test('negative: rejects unapproved job-level write permissions on non-security jobs', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.semgrep.permissions = { contents: 'write' };
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /semgrep granted unapproved write permission to contents/);
+
+  const parsedGitleaks = YAML.parse(read('security-scans.yml'));
+  parsedGitleaks.jobs.gitleaks.permissions = { contents: 'write', 'pull-requests': 'read' };
+  assert.throws(() => validateSecurityScansWorkflow(parsedGitleaks), /gitleaks granted unapproved write permission to contents/);
+});
+
+test('negative: rejects unapproved write permissions on security jobs', () => {
+  const parsedCodeql = YAML.parse(read('security-scans.yml'));
+  parsedCodeql.jobs.codeql.permissions = {
+    actions: 'read',
+    contents: 'write',
+    'security-events': 'write'
+  };
+  assert.throws(() => validateSecurityScansWorkflow(parsedCodeql), /codeql granted unapproved write permission to contents/);
+
+  const parsedOsv = YAML.parse(read('security-scans.yml'));
+  parsedOsv.jobs.osv.permissions = {
+    actions: 'read',
+    contents: 'write',
+    'security-events': 'write'
+  };
+  assert.throws(() => validateSecurityScansWorkflow(parsedOsv), /osv granted unapproved write permission to contents/);
+});
+
+test('negative: rejects job-level write-all permissions', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.semgrep.permissions = 'write-all';
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /semgrep must not use write-all permissions/);
+});
+
+test('negative: rejects unapproved triggers (issue_comment, pull_request_review_comment)', () => {
+  const parsedComment = YAML.parse(read('security-scans.yml'));
+  parsedComment.on = { issue_comment: { types: ['created'] } };
+  assert.throws(() => validateSecurityScansWorkflow(parsedComment), /uses unapproved trigger 'issue_comment'/);
+
+  const parsedReview = YAML.parse(read('security-scans.yml'));
+  parsedReview.on = ['pull_request_review_comment'];
+  assert.throws(() => validateSecurityScansWorkflow(parsedReview), /uses unapproved trigger 'pull_request_review_comment'/);
+});
+
+test('negative: rejects bracket notation untrusted expression interpolation in run scripts', () => {
+  const parsedBracketEvent = YAML.parse(read('uss-validation.yml'));
+  parsedBracketEvent.jobs.validate.steps[2].run = `echo "\${{ github['event']['issue']['title'] }}"`;
+  assert.throws(() => validateUssValidationWorkflow(parsedBracketEvent), /contains forbidden direct expression interpolation/);
+
+  const parsedHeadRef = YAML.parse(read('uss-validation.yml'));
+  parsedHeadRef.jobs.validate.steps[2].run = `echo "\${{ github.head_ref }}"`;
+  assert.throws(() => validateUssValidationWorkflow(parsedHeadRef), /contains forbidden direct expression interpolation/);
+
+  const parsedBracketHeadRef = YAML.parse(read('uss-validation.yml'));
+  parsedBracketHeadRef.jobs.validate.steps[2].run = `echo "\${{ github['head_ref'] }}"`;
+  assert.throws(() => validateUssValidationWorkflow(parsedBracketHeadRef), /contains forbidden direct expression interpolation/);
+
+  const parsedActor = YAML.parse(read('uss-validation.yml'));
+  parsedActor.jobs.validate.steps[2].run = `echo "\${{ github.actor }}"`;
+  assert.throws(() => validateUssValidationWorkflow(parsedActor), /contains forbidden direct expression interpolation/);
+
+  const parsedRefName = YAML.parse(read('uss-validation.yml'));
+  parsedRefName.jobs.validate.steps[2].run = `echo "\${{ github['ref_name'] }}"`;
+  assert.throws(() => validateUssValidationWorkflow(parsedRefName), /contains forbidden direct expression interpolation/);
+});
+
+test('negative: rejects inputs expression interpolation in run scripts', () => {
+  const parsedInput = YAML.parse(read('uss-validation.yml'));
+  parsedInput.jobs.validate.steps[2].run = `echo "\${{ inputs.target }}"`;
+  assert.throws(() => validateUssValidationWorkflow(parsedInput), /contains forbidden direct expression interpolation/);
+
+  const parsedBracketInput = YAML.parse(read('uss-validation.yml'));
+  parsedBracketInput.jobs.validate.steps[2].run = `echo "\${{ inputs['branch'] }}"`;
+  assert.throws(() => validateUssValidationWorkflow(parsedBracketInput), /contains forbidden direct expression interpolation/);
+});
+
+test('negative: rejects constant-false if conditions on jobs and steps', () => {
+  // Job level if: false
+  const parsedJobFalse = YAML.parse(read('security-scans.yml'));
+  parsedJobFalse.jobs.semgrep.if = false;
+  assert.throws(() => validateSecurityScansWorkflow(parsedJobFalse), /has constant-false condition: false/);
+
+  // Job level if: 'false'
+  const parsedJobStrFalse = YAML.parse(read('security-scans.yml'));
+  parsedJobStrFalse.jobs.codeql.if = 'false';
+  assert.throws(() => validateSecurityScansWorkflow(parsedJobStrFalse), /has constant-false condition: false/);
+
+  // Job level if: ${{ false }}
+  const parsedJobExprFalse = YAML.parse(read('security-scans.yml'));
+  parsedJobExprFalse.jobs.osv.if = '${{ false }}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedJobExprFalse), /has constant-false expression/);
+
+  // Step level if: false
+  const parsedStepFalse = YAML.parse(read('uss-validation.yml'));
+  parsedStepFalse.jobs.validate.steps[7].if = false;
+  assert.throws(() => validateUssValidationWorkflow(parsedStepFalse), /has constant-false condition: false/);
+
+  // Step level if: '0'
+  const parsedStepZero = YAML.parse(read('uss-validation.yml'));
+  parsedStepZero.jobs.validate.steps[7].if = '0';
+  assert.throws(() => validateUssValidationWorkflow(parsedStepZero), /has constant-false condition: 0/);
+});
+
+test('negative: rejects error suppression via || echo ignored, set +e, and ; exit 0', () => {
+  const parsedEcho = YAML.parse(read('security-scans.yml'));
+  const semgrepStep = parsedEcho.jobs.semgrep.steps.find(s => s.run && s.run.includes('semgrep scan'));
+  semgrepStep.run += ' || echo ignored';
+  assert.throws(() => validateSecurityScansWorkflow(parsedEcho), /suppresses errors with/);
+
+  const parsedSetE = YAML.parse(read('uss-validation.yml'));
+  const testStep = parsedSetE.jobs.validate.steps.find(s => s.run && s.run.includes('node --test'));
+  testStep.run = 'set +e\n' + testStep.run;
+  assert.throws(() => validateUssValidationWorkflow(parsedSetE), /suppresses errors with/);
+
+  const parsedSemiExit = YAML.parse(read('uss-validation.yml'));
+  const evidenceStep = parsedSemiExit.jobs.validate.steps.find(s => s.run && s.run.includes('validate-evidence.mjs'));
+  evidenceStep.run += '; exit 0';
+  assert.throws(() => validateUssValidationWorkflow(parsedSemiExit), /suppresses errors with/);
+});
+
+test('negative: rejects unapproved self-hosted runner', () => {
+  const parsedStr = YAML.parse(read('security-scans.yml'));
+  parsedStr.jobs.semgrep['runs-on'] = 'self-hosted';
+  assert.throws(() => validateSecurityScansWorkflow(parsedStr), /runs-on must be 'ubuntu-latest', got: self-hosted/);
+
+  const parsedArr = YAML.parse(read('security-scans.yml'));
+  parsedArr.jobs.codeql['runs-on'] = ['self-hosted', 'linux'];
+  assert.throws(() => validateSecurityScansWorkflow(parsedArr), /runs-on must be a single approved string/);
+});
+
+test('negative: rejects checkout token override with unexpected credentials', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps[0].with.token = '${{ secrets.PERSONAL_ACCESS_TOKEN }}';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must not override token with unexpected credentials/);
+});
+
+test('negative: rejects replacing real evidence validation with --help', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  const evidenceStep = parsed.jobs.validate.steps[8];
+  evidenceStep.run = 'node tools/validate-evidence.mjs --help';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /does not match exact approved execution contract|Evidence validation must not be replaced with --help/);
+});
+
+test('negative: rejects reordering of mandatory validation steps', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  // Swap step 7 (validate source coverage) and step 8 (validate evidence)
+  const temp = parsed.jobs.validate.steps[7];
+  parsed.jobs.validate.steps[7] = parsed.jobs.validate.steps[8];
+  parsed.jobs.validate.steps[8] = temp;
+  assert.throws(() => validateUssValidationWorkflow(parsed), /does not match required step sequence/);
+});
+
+test('negative: rejects Semgrep scan omitting .github/workflows/ or templates/', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  const semgrepStep = parsed.jobs.semgrep.steps.find(s => s.run && s.run.includes('semgrep scan'));
+  semgrepStep.run = 'semgrep scan --config p/default --error --strict --disable-nosem --metrics=off --verbose tools/ tests/';
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /Semgrep scan must target tools\/ tests\/ \.github\/workflows\/ templates\//);
+});
+
+test('negative: rejects Semgrep scan with --exclude argument weakening scan', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  const semgrepStep = parsed.jobs.semgrep.steps.find(s => s.run && s.run.includes('semgrep scan'));
+  semgrepStep.run += ' --exclude=templates/';
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /Semgrep scan must not use --exclude argument to weaken scan/);
+});
+
+
+test('negative: rejects untrusted GitHub expressions moved into workflow, job, step env and action inputs', () => {
+  const workflowEnv = YAML.parse(read('uss-validation.yml'));
+  workflowEnv.env = { TITLE: '\${{ github.event.issue.title }}' };
+  assert.throws(() => validateUssValidationWorkflow(workflowEnv), /workflow env TITLE contains forbidden untrusted GitHub context/);
+
+  const jobEnv = YAML.parse(read('uss-validation.yml'));
+  jobEnv.jobs.validate.env = { BRANCH: '\${{ github.head_ref }}' };
+  assert.throws(() => validateUssValidationWorkflow(jobEnv), /job validate env BRANCH contains forbidden untrusted GitHub context/);
+
+  const stepEnv = YAML.parse(read('uss-validation.yml'));
+  stepEnv.jobs.validate.steps[2].env = { ACTOR: '\${{ github.actor }}' };
+  assert.throws(() => validateUssValidationWorkflow(stepEnv), /step 2 env ACTOR contains forbidden untrusted GitHub context/);
+
+  const actionInput = YAML.parse(read('uss-validation.yml'));
+  actionInput.jobs.validate.steps[1].with['node-version'] = '\${{ inputs.target }}';
+  assert.throws(() => validateUssValidationWorkflow(actionInput), /with.*contains forbidden untrusted GitHub context/);
+});
+
+test('negative: rejects array, object and expression-based runner selectors', () => {
+  for (const selector of [
+    ['ubuntu-latest', 'extra-label'],
+    { group: 'ubuntu-latest' },
+    '\${{ inputs.runner }}'
+  ]) {
+    const parsed = YAML.parse(read('security-scans.yml'));
+    parsed.jobs.semgrep['runs-on'] = selector;
+    assert.throws(() => validateSecurityScansWorkflow(parsed), /runs-on must (?:be a single approved string|be 'ubuntu-latest')/);
+  }
+});
+
+test('negative: rejects OSV reusable-workflow input overrides and unknown keys', () => {
+  for (const key of ['scan-args', 'runs-on', 'ref', 'unapproved-input']) {
+    const parsed = YAML.parse(read('security-scans.yml'));
+    parsed.jobs.osv.with[key] = key === 'unapproved-input' ? 'weakened' : '--all-packages';
+    assert.throws(() => validateSecurityScansWorkflow(parsed), /OSV reusable-workflow inputs must match the exact approved configuration/);
+  }
+});
+
+test('negative: rejects Semgrep alternate config, duplicate config, excludes and weakening environment values', () => {
+  const alternate = YAML.parse(read('security-scans.yml'));
+  alternate.jobs.semgrep.steps[2].run += ' --config custom.yml';
+  assert.throws(() => validateSecurityScansWorkflow(alternate), /exact approved ruleset/);
+
+  const duplicate = YAML.parse(read('security-scans.yml'));
+  duplicate.jobs.semgrep.steps[2].run += ' --config p/owasp-top-ten';
+  assert.throws(() => validateSecurityScansWorkflow(duplicate), /exact approved ruleset/);
+
+  const weakenedEnv = YAML.parse(read('security-scans.yml'));
+  weakenedEnv.jobs.semgrep.steps[2].env.SEMGREP_RULES = 'custom.yml';
+  assert.throws(() => validateSecurityScansWorkflow(weakenedEnv), /Semgrep environment must match the exact approved configuration/);
+});
+
+test('negative: rejects Gitleaks config overrides and artifact upload', () => {
+  const configOverride = YAML.parse(read('security-scans.yml'));
+  configOverride.jobs.gitleaks.steps[2].env.GITLEAKS_CONFIG = '.gitleaks.toml';
+  assert.throws(() => validateSecurityScansWorkflow(configOverride), /Gitleaks environment must match the exact approved configuration/);
+
+  const artifactUpload = YAML.parse(read('security-scans.yml'));
+  artifactUpload.jobs.gitleaks.steps[2].env.GITLEAKS_ENABLE_UPLOAD_ARTIFACT = 'true';
+  assert.throws(() => validateSecurityScansWorkflow(artifactUpload), /Gitleaks must disable artifact uploads/);
+});
+
+test('negative: rejects Gitleaks ignore files that silently suppress findings', () => {
+  const temp = fs.mkdtempSync(path.join(ROOT, '.tmp-gitleaks-ignore-'));
+  try {
+    fs.writeFileSync(path.join(temp, '.gitleaksignore'), 'deadbeef\n');
+    assert.throws(() => assertNoGitleaksOverrideFiles(temp), /Unreviewed Gitleaks configuration\/ignore file/);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('negative: rejects Semgrep ignore rules that exclude source coverage', () => {
+  const temp = fs.mkdtempSync(path.join(ROOT, '.tmp-semgrep-ignore-'));
+  try {
+    fs.writeFileSync(path.join(temp, '.semgrepignore'), '.git/\nnode_modules/\ntools/\n');
+    assert.throws(() => assertSemgrepIgnoreAllowlist(temp), /may exclude only VCS metadata and dependency artifacts/);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('negative: rejects CodeQL path exclusions and custom query weakening', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.codeql.steps[1].with['paths-ignore'] = ['tools/**'];
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /CodeQL init inputs must match the exact approved configuration/);
+});
+
+test('negative: rejects pull-request and push branch filters that skip required branches', () => {
+  const pullRequest = YAML.parse(read('security-scans.yml'));
+  const triggers = pullRequest.on || pullRequest['true'];
+  triggers.pull_request.branches = ['main'];
+  assert.throws(() => validateSecurityScansWorkflow(pullRequest), /pull_request branch filter is missing required pattern integration\/uss-pr3-pr8-hardening/);
+
+  const push = YAML.parse(read('security-scans.yml'));
+  const pushTriggers = push.on || push['true'];
+  pushTriggers.push.branches = ['main'];
+  assert.throws(() => validateSecurityScansWorkflow(push), /push branch filter is missing required pattern \*\*/);
+});
+
+test('negative: rejects additional error-masking shell variants', () => {
+  for (const suffix of [' || :', ' || /bin/true', '; echo ignored', 'set +o errexit', ' --suppress-errors', ' --no-error', ' --no-strict']) {
+    const parsed = YAML.parse(read('security-scans.yml'));
+    parsed.jobs.semgrep.steps[2].run += suffix;
+    assert.throws(() => validateSecurityScansWorkflow(parsed), /suppresses errors with/);
+  }
+});
+
+test('negative: consumer template receives scanner-specific validation, not only generic YAML checks', () => {
+  const upload = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  upload.jobs.secrets.steps[2].env.GITLEAKS_ENABLE_UPLOAD_ARTIFACT = 'true';
+  assert.throws(() => validateSecurityScansWorkflow(upload, 'consumer-security-scans.yml', true), /Gitleaks must disable artifact uploads/);
+
+  const semgrep = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  semgrep.jobs.semgrep.steps[2].run += ' --exclude=src/';
+  assert.throws(() => validateSecurityScansWorkflow(semgrep, 'consumer-security-scans.yml', true), /must not use --exclude/);
+
+  const osv = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  osv.jobs.osv.with['scan-args'] = '--all-packages';
+  assert.throws(() => validateSecurityScansWorkflow(osv, 'consumer-security-scans.yml', true), /OSV reusable-workflow inputs must match the exact approved configuration/);
+});
+
+test('negative: mandatory scanner jobs and steps cannot be made conditional or optional', () => {
+  const conditional = YAML.parse(read('security-scans.yml'));
+  conditional.jobs.semgrep.if = "\${{ github.event_name == 'push' }}";
+  assert.throws(() => validateSecurityScansWorkflow(conditional), /mandatory job semgrep must not have a conditional if/);
+
+  const dependency = YAML.parse(read('security-scans.yml'));
+  dependency.jobs.codeql.needs = ['gitleaks'];
+  assert.throws(() => validateSecurityScansWorkflow(dependency), /mandatory job codeql must not depend on optional jobs/);
+
+  const stepConditional = YAML.parse(read('security-scans.yml'));
+  stepConditional.jobs.semgrep.steps[2].if = "\${{ github.event_name == 'push' }}";
+  assert.throws(() => validateSecurityScansWorkflow(stepConditional), /must not be conditional/);
+});
+
+
+test('negative: consumer template cannot omit or weaken the runtime scanner configuration guard', () => {
+  const missing = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  missing.jobs.secrets.steps.splice(1, 1);
+  assert.throws(() => validateSecurityScansWorkflow(missing, 'consumer-security-scans.yml', true), /Gitleaks job must contain exactly checkout, config guard and scan steps/);
+
+  const weakened = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  weakened.jobs.semgrep.steps[1].run = 'echo scanner config check skipped';
+  assert.throws(() => validateSecurityScansWorkflow(weakened, 'consumer-security-scans.yml', true), /must execute the exact fail-closed scanner configuration guard/);
+});
+
+
+test('runtime scanner guard rejects nested Semgrep ignore files and .gitignore-suppressed tracked scan targets', t => {
+  if (process.platform === 'win32') {
+    t.skip('Runtime guard integration test requires bash, available in hosted Linux CI');
+    return;
+  }
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-scanner-guard-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const runGit = args => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    assert.equal(result.status, 0, 'git ' + args.join(' ') + ' failed: ' + result.stderr);
+    return result;
+  };
+  runGit(['init', '-q']);
+  runGit(['config', 'user.name', 'USS Scanner Guard Test']);
+  runGit(['config', 'user.email', 'uss-scanner-guard@example.invalid']);
+  runGit(['config', 'commit.gpgsign', 'false']);
+  for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+    fs.mkdirSync(path.join(cwd, dir), { recursive: true });
+  }
+  fs.writeFileSync(path.join(cwd, '.gitignore'), 'tools/guard.js\n');
+  fs.writeFileSync(path.join(cwd, 'tools/guard.js'), 'const ok = true;\n');
+  fs.writeFileSync(path.join(cwd, 'tests/check.mjs'), 'const ok = true;\n');
+  fs.writeFileSync(path.join(cwd, '.github/workflows/test.yml'), 'name: test\n');
+  fs.writeFileSync(path.join(cwd, 'templates/template.yml'), 'name: template\n');
+  runGit(['add', '.gitignore', 'tests/check.mjs', '.github/workflows/test.yml', 'templates/template.yml']);
+  runGit(['add', '-f', 'tools/guard.js']);
+  runGit(['commit', '-m', 'scanner guard fixture']);
+
+  const ignored = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.notEqual(ignored.status, 0, 'Guard must reject a tracked scanner target hidden by .gitignore');
+  assert.match(ignored.stderr, /excluded by \.gitignore/);
+
+  fs.writeFileSync(path.join(cwd, '.gitignore'), '');
+  runGit(['add', '.gitignore']);
+  runGit(['commit', '-m', 'remove ignored target pattern']);
+  fs.writeFileSync(path.join(cwd, 'tools', '.semgrepignore'), 'sensitive-source/\n');
+  const nested = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.notEqual(nested.status, 0, 'Guard must reject nested .semgrepignore files');
+  assert.match(nested.stderr, /Nested \.semgrepignore is not permitted/);
+
+  fs.rmSync(path.join(cwd, 'tools', '.semgrepignore'));
+  const cleanRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.equal(cleanRun.status, 0, 'Guard must pass on clean repository: ' + cleanRun.stderr);
+
+  fs.writeFileSync(path.join(cwd, 'osv-scanner.toml'), '[[IgnoredVulns]]\nid = "GO-2023-1234"\n');
+  const osvOverride = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.notEqual(osvOverride.status, 0, 'Guard must reject osv-scanner.toml');
+  assert.match(osvOverride.stderr, /Unreviewed scanner override is not permitted: osv-scanner\.toml/);
+
+  fs.rmSync(path.join(cwd, 'osv-scanner.toml'));
+  fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "secret"; // ' + ['gitleaks', 'allow'].join(':') + '\n');
+  runGit(['add', 'tools/secret.js']);
+  runGit(['commit', '-m', 'add secret with suppression']);
+  const gitleaksSuppressed = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.notEqual(gitleaksSuppressed.status, 0, 'Guard must reject inline suppression');
+  assert.match(gitleaksSuppressed.stderr, /Prohibited Gitleaks inline suppression directive/);
+
+  fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "secret"; // ' + ['GITLEAKS', ' ALLOW'].join(' : ') + '\n');
+  runGit(['add', 'tools/secret.js']);
+  runGit(['commit', '-m', 'add whitespace suppression']);
+  const whitespaceSuppressed = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.notEqual(whitespaceSuppressed.status, 0, 'Guard must reject whitespace/case variant suppression');
+  assert.match(whitespaceSuppressed.stderr, /Prohibited Gitleaks inline suppression directive/);
+
+  fs.writeFileSync(path.join(cwd, 'tools/secret.js'), 'const token = "safe";\n');
+  runGit(['add', 'tools/secret.js']);
+  runGit(['commit', '-m', 'clean code']);
+  const historicalRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: SCANNER_CONFIG_GUARD_RUN });
+  assert.notEqual(historicalRun.status, 0, 'Guard must reject repository with historical suppression');
+  assert.match(historicalRun.stderr, /Prohibited Gitleaks inline suppression directive found in Git history/);
+});
+
+test('negative: rejects Semgrep scan omitting --disable-nosem', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.semgrep.steps[2].run = parsed.jobs.semgrep.steps[2].run.replace(' --disable-nosem', '');
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must disable inline suppression with --disable-nosem/);
+});
+
+test('negative: rejects Semgrep scan re-enabling inline suppression with --enable-nosem', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.semgrep.steps[2].run += ' --enable-nosem';
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must not re-enable inline suppression/);
+});
+
+test('negative: rejects unreviewed osv-scanner.toml configuration overrides', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.gitleaks.steps[1].run = parsed.jobs.gitleaks.steps[1].run.replace(' osv-scanner.toml .osv-scanner.toml', '');
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must execute the exact fail-closed scanner configuration guard/);
+});
+
+test('negative: rejects removing weekly scheduled full-history secret scan in security-scans.yml', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  delete parsed.on.schedule;
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must define schedule trigger for periodic full-history scan/);
+});
+
+test('negative: rejects removing weekly scheduled full-history secret scan in consumer template', () => {
+  const parsed = YAML.parse(fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8'));
+  delete parsed.on.schedule;
+  assert.throws(() => validateSecurityScansWorkflow(parsed, 'consumer-security-scans.yml', true), /must define schedule trigger for periodic full-history scan/);
+});
+
+test('negative: rejects invalid or empty schedule cron definitions', () => {
+  const parsedEmpty = YAML.parse(read('security-scans.yml'));
+  parsedEmpty.on.schedule = [];
+  assert.throws(() => validateSecurityScansWorkflow(parsedEmpty), /schedule must be a non-empty array/);
+
+  const parsedWrongCron = YAML.parse(read('security-scans.yml'));
+  parsedWrongCron.on.schedule = [{ cron: '0 0 * * *' }];
+  assert.throws(() => validateSecurityScansWorkflow(parsedWrongCron), /schedule must include weekly full-history scan cron "17 5 \* \* 1"/);
+});
+
+test('negative: rejects NODE_OPTIONS and dangerous runtime options in workflow, job, and step env', () => {
+  const parsedWfEnv = YAML.parse(read('security-scans.yml'));
+  parsedWfEnv.env = { NODE_OPTIONS: '--require /tmp/malicious.js' };
+  assert.throws(() => validateSecurityScansWorkflow(parsedWfEnv), /must not define forbidden runtime environment variable 'NODE_OPTIONS'/);
+
+  const parsedJobEnv = YAML.parse(read('security-scans.yml'));
+  parsedJobEnv.jobs.semgrep.env = { NODE_OPTIONS: '--inspect=0.0.0.0' };
+  assert.throws(() => validateSecurityScansWorkflow(parsedJobEnv), /must not define forbidden runtime environment variable 'NODE_OPTIONS'/);
+
+  const parsedStepEnv = YAML.parse(read('uss-validation.yml'));
+  parsedStepEnv.jobs.validate.steps[2].env = { NODE_OPTIONS: '--openssl-legacy-provider' };
+  assert.throws(() => validateUssValidationWorkflow(parsedStepEnv), /must not define forbidden runtime environment variable 'NODE_OPTIONS'/);
+});
+
+test('negative: rejects NODE_OPTIONS inline assignments in run scripts', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps[2].run = 'export NODE_OPTIONS="--require malicious"\n' + parsed.jobs.validate.steps[2].run;
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must not set NODE_OPTIONS/);
+});
+
+test('negative: rejects shell: bash {0} and error-disabling shell overrides', () => {
+  const parsedStep = YAML.parse(read('security-scans.yml'));
+  parsedStep.jobs.gitleaks.steps[1].shell = 'bash {0}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedStep), /disables fail-fast error handling/);
+
+  const parsedSh = YAML.parse(read('security-scans.yml'));
+  parsedSh.jobs.gitleaks.steps[1].shell = 'sh {0}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedSh), /disables fail-fast error handling/);
+
+  const parsedDefaults = YAML.parse(read('security-scans.yml'));
+  parsedDefaults.defaults = { run: { shell: 'bash {0}' } };
+  assert.throws(() => validateSecurityScansWorkflow(parsedDefaults), /disables fail-fast error handling/);
+
+  const parsedUnapproved = YAML.parse(read('security-scans.yml'));
+  parsedUnapproved.jobs.gitleaks.steps[1].shell = 'pwsh';
+  assert.throws(() => validateSecurityScansWorkflow(parsedUnapproved), /specifies unapproved shell 'pwsh'/);
+
+  const parsedCmdShort = YAML.parse(read('security-scans.yml'));
+  parsedCmdShort.jobs.gitleaks.steps[1].shell = "bash -e -c 'exit 0' {0}";
+  assert.throws(() => validateSecurityScansWorkflow(parsedCmdShort), /bypasses runner script execution/);
+
+  const parsedCmdLong = YAML.parse(read('security-scans.yml'));
+  parsedCmdLong.jobs.gitleaks.steps[1].shell = 'bash -e --command "exit 0" {0}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedCmdLong), /bypasses runner script execution/);
+
+  const parsedExtraArg = YAML.parse(read('security-scans.yml'));
+  parsedExtraArg.jobs.gitleaks.steps[1].shell = 'bash -eo pipefail {0} extra';
+  assert.throws(() => validateSecurityScansWorkflow(parsedExtraArg), /must be approved safe shell template/);
+
+  const parsedLeadingArg = YAML.parse(read('security-scans.yml'));
+  parsedLeadingArg.jobs.gitleaks.steps[1].shell = 'bash -eo pipefail /bin/true {0}';
+  assert.throws(() => validateSecurityScansWorkflow(parsedLeadingArg), /must be approved safe shell template/);
+
+  assert.doesNotThrow(() => assertSafeShell('bash', 'valid bash'));
+  assert.doesNotThrow(() => assertSafeShell('bash --noprofile --norc -eo pipefail {0}', 'valid template'));
+  assert.doesNotThrow(() => assertSafeShell('bash --noprofile --norc -e -o pipefail {0}', 'valid template'));
+});
+
+// ==============================================================================
+// Claude Section 18 Adversarial Regression Test Suite (A1 - C1 Remediation)
+// ==============================================================================
+
+// Finding A1: Historical Gitleaks suppression
+test('finding A1: historical suppression check rejects suppression introduced in earlier commit', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a1-early-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+    
+    // Commit 1: Introduce inline suppression directive
+    fs.writeFileSync(path.join(tempDir, 'file.txt'), 'secret // ' + ['gitleaks', 'allow'].join(':') + '\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'add secret with inline suppression'], { cwd: tempDir });
+
+    // Commit 2: unrelated clean file
+    fs.writeFileSync(path.join(tempDir, 'other.txt'), 'clean\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'add other clean file'], { cwd: tempDir });
+
+    assert.throws(
+      () => assertNoHistoricalGitleaksDirectives(tempDir),
+      /Prohibited Gitleaks inline suppression directive found in Git history/
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding A1: historical suppression check rejects suppression deleted in subsequent commit', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a1-del-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    // Commit 1: Introduce inline suppression directive
+    fs.writeFileSync(path.join(tempDir, 'file.txt'), 'secret // ' + ['gitleaks', 'allow'].join(':') + '\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'add secret with inline suppression'], { cwd: tempDir });
+
+    // Commit 2: Delete suppression from tip
+    fs.writeFileSync(path.join(tempDir, 'file.txt'), 'secret removed\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean up tip'], { cwd: tempDir });
+
+    assert.throws(
+      () => assertNoHistoricalGitleaksDirectives(tempDir),
+      /Prohibited Gitleaks inline suppression directive found in Git history/
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding A1: historical suppression check passes on clean history', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a1-clean-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(tempDir, 'file.txt'), 'const safe = 42;\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean code'], { cwd: tempDir });
+
+    assert.doesNotThrow(() => assertNoHistoricalGitleaksDirectives(tempDir));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding A1: historical suppression check fails closed on Git command error', () => {
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a1-nogit-'));
+  try {
+    // Non-git directory causes git log to fail
+    assert.throws(
+      () => assertNoHistoricalGitleaksDirectives(emptyDir),
+      /Failed to inspect Git history for prohibited Gitleaks directives/
+    );
+  } finally {
+    fs.rmSync(emptyDir, { recursive: true, force: true });
+  }
+});
+
+// Finding A2: Git attributes and hidden scanner content
+test('finding A2: rejects prohibited .gitattributes configurations (-diff, binary, diff=, filter=, merge=)', () => {
+  for (const directive of ['-diff', 'binary', 'diff=astextplain', 'filter=lfs', 'merge=ours']) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a2-attr-'));
+    try {
+      fs.mkdirSync(path.join(tempDir, 'sub'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'sub', '.gitattributes'), `*.dat ${directive}\n`);
+      assert.throws(
+        () => assertNoProhibitedGitAttributes(tempDir),
+        /Prohibited \.gitattributes configuration is not permitted/
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('finding A2: rejects prohibited .git/info/attributes configurations', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a2-infoattr-'));
+  try {
+    fs.mkdirSync(path.join(tempDir, '.git', 'info'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.git', 'info', 'attributes'), '* -diff\n');
+    assert.throws(
+      () => assertNoProhibitedGitAttributes(tempDir),
+      /Prohibited \.git\/info\/attributes configuration is not permitted/
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding A2: rejects symlinked .gitattributes', t => {
+  if (process.platform === 'win32') {
+    try {
+      fs.symlinkSync('target', path.join(os.tmpdir(), 'probe-symlink'));
+      fs.unlinkSync(path.join(os.tmpdir(), 'probe-symlink'));
+    } catch {
+      t.skip('Symlink creation requires elevated privilege on Windows');
+      return;
+    }
+  }
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a2-symlink-'));
+  try {
+    fs.writeFileSync(path.join(tempDir, 'real.txt'), '*.dat -diff\n');
+    fs.symlinkSync('real.txt', path.join(tempDir, '.gitattributes'));
+    assert.throws(
+      () => assertNoProhibitedGitAttributes(tempDir),
+      /Symlinked \.gitattributes is not permitted/
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding A2: detects newly introduced binary files in tracked history', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a2-bin-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    // Track a binary file (containing null byte)
+    fs.writeFileSync(path.join(tempDir, 'data.bin'), Buffer.from([0, 1, 2, 3, 4]));
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'add binary file'], { cwd: tempDir });
+
+    if (process.platform === 'win32') {
+      assertNoTrackedBinaryFiles(tempDir);
+    } else {
+      assert.throws(
+        () => assertNoTrackedBinaryFiles(tempDir),
+        /Tracked binary file is not permitted: data\.bin/
+      );
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F1: rejects binary file even if contributor attempts self-authorising .allowed-binaries', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f1-binallow-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(tempDir, 'data.bin'), Buffer.from([0, 1, 2, 3, 4]));
+    fs.writeFileSync(path.join(tempDir, '.allowed-binaries'), 'data.bin\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'attempt binary and self-authorising allowlist'], { cwd: tempDir });
+
+    if (process.platform === 'win32') {
+      assertNoTrackedBinaryFiles(tempDir);
+    } else {
+      assert.throws(
+        () => assertNoTrackedBinaryFiles(tempDir),
+        /Tracked binary file is not permitted: data\.bin/
+      );
+    }
+    assert.throws(
+      () => assertNoAllowedBinariesFile(tempDir),
+      /\.allowed-binaries file is prohibited/
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// Finding A3: Nested OSV configuration
+test('finding A3: rejects nested osv-scanner.toml and .osv-scanner.toml', () => {
+  for (const filename of ['osv-scanner.toml', '.osv-scanner.toml']) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a3-nested-'));
+    try {
+      const nestedDir = path.join(tempDir, 'services', 'api');
+      fs.mkdirSync(nestedDir, { recursive: true });
+      fs.writeFileSync(path.join(nestedDir, filename), '[[IgnoredVulns]]\nid = "GO-2023"\n');
+      assert.throws(
+        () => assertNoOsvConfigOverrides(tempDir),
+        /Unreviewed OSV configuration override is not permitted/
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('finding A3: nested OSV scanner safely excludes .git and node_modules directories', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-a3-safe-'));
+  try {
+    fs.mkdirSync(path.join(tempDir, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'node_modules', 'dep'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.git', 'osv-scanner.toml'), 'ignore in git\n');
+    fs.writeFileSync(path.join(tempDir, 'node_modules', 'dep', 'osv-scanner.toml'), 'ignore in deps\n');
+    assert.doesNotThrow(() => assertNoOsvConfigOverrides(tempDir));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// Finding B1: Environment variable bypass
+test('finding B1: rejects dangerous environment variables in workflow, job, and step env', () => {
+  const dangerousVars = [
+    'BASH_ENV',
+    'PATH',
+    'NPM_CONFIG_IGNORE_SCRIPTS',
+    'NODE_TLS_REJECT_UNAUTHORIZED',
+    'GIT_CONFIG_COUNT'
+  ];
+  for (const v of dangerousVars) {
+    const wfEnv = YAML.parse(read('security-scans.yml'));
+    wfEnv.env = { [v]: 'malicious' };
+    assert.throws(() => validateSecurityScansWorkflow(wfEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+
+    const jobEnv = YAML.parse(read('security-scans.yml'));
+    jobEnv.jobs.semgrep.env = { [v]: 'malicious' };
+    assert.throws(() => validateSecurityScansWorkflow(jobEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+
+    const stepEnv = YAML.parse(read('uss-validation.yml'));
+    stepEnv.jobs.validate.steps[2].env = { [v]: 'malicious' };
+    assert.throws(() => validateUssValidationWorkflow(stepEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+  }
+});
+
+test('finding B1: rejects inline export statements and dangerous variable assignments in run scripts', () => {
+  const parsedExport = YAML.parse(read('uss-validation.yml'));
+  parsedExport.jobs.validate.steps[2].run = 'export BASH_ENV=/tmp/bad\n' + parsedExport.jobs.validate.steps[2].run;
+  assert.throws(() => validateUssValidationWorkflow(parsedExport), /assigns to dangerous environment variable|must not use inline export statements/);
+
+  for (const v of ['BASH_ENV', 'PATH', 'NPM_CONFIG_IGNORE_SCRIPTS', 'NODE_TLS_REJECT_UNAUTHORIZED', 'GIT_CONFIG_COUNT']) {
+    const parsedVar = YAML.parse(read('uss-validation.yml'));
+    parsedVar.jobs.validate.steps[2].run = `${v}=/tmp/bad\n` + parsedVar.jobs.validate.steps[2].run;
+    assert.throws(() => validateUssValidationWorkflow(parsedVar), /assigns to dangerous environment variable/);
+  }
+});
+
+// Finding B2: Shell failure masking
+test('finding B2: rejects piping (|) in uss-validation.yml steps that can mask exit codes', () => {
+  for (const pipeTarget of ['cat', 'tee /tmp/log', 'true', 'head -n 5']) {
+    const parsed = YAML.parse(read('uss-validation.yml'));
+    parsed.jobs.validate.steps[3].run = `node tools/build-modules.mjs | ${pipeTarget}`;
+    assert.throws(() => validateUssValidationWorkflow(parsed), /does not match exact approved execution contract|must not pipe commands/);
+  }
+});
+
+test('finding B2: rejects backgrounding commands with single &', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps[3].run = 'node tools/build-modules.mjs &';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must not background commands/);
+});
+
+test('finding B2: rejects command substitution inside echo, printf, and eval', () => {
+  const parsedEcho = YAML.parse(read('uss-validation.yml'));
+  parsedEcho.jobs.validate.steps[3].run = 'echo "$(node tools/build-modules.mjs)"';
+  assert.throws(() => validateUssValidationWorkflow(parsedEcho), /must not mask command failure inside echo\/eval/);
+
+  const parsedEval = YAML.parse(read('uss-validation.yml'));
+  parsedEval.jobs.validate.steps[3].run = 'eval "$(node tools/build-modules.mjs)"';
+  assert.throws(() => validateUssValidationWorkflow(parsedEval), /must not mask command failure inside echo\/eval/);
+});
+
+test('finding B2: rejects conditional block failure masking (if cmd; then :; fi)', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps[3].run = 'if node tools/build-modules.mjs; then :; fi';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must not mask command failure inside conditional block/);
+});
+
+test('finding B2: rejects shell function shadowing', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps[2].run = 'npm() { :; }\nnpm ci --ignore-scripts --no-audit --no-fund';
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must not define shell functions/);
+});
+
+// Finding B3: Structural weakening
+test('finding B3: rejects adding unauthorized steps to uss-validation.yml', () => {
+  const parsed = YAML.parse(read('uss-validation.yml'));
+  parsed.jobs.validate.steps.push({ name: 'Extra unauthorized step', run: 'echo extra' });
+  assert.throws(() => validateUssValidationWorkflow(parsed), /must contain exactly 10 steps/);
+});
+
+test('finding B3: rejects adding services to jobs', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.semgrep.services = { redis: { image: 'redis:latest' } };
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must not declare services/);
+});
+
+test('finding B3: rejects overriding working-directory in defaults or steps', () => {
+  const parsedDefaults = YAML.parse(read('security-scans.yml'));
+  parsedDefaults.defaults = { run: { 'working-directory': 'subdir' } };
+  assert.throws(() => validateSecurityScansWorkflow(parsedDefaults), /defaults\.run must not override working-directory/);
+
+  const parsedJobDefaults = YAML.parse(read('security-scans.yml'));
+  parsedJobDefaults.jobs.semgrep.defaults = { run: { 'working-directory': 'subdir' } };
+  assert.throws(() => validateSecurityScansWorkflow(parsedJobDefaults), /defaults\.run must not override working-directory/);
+
+  const parsedStep = YAML.parse(read('uss-validation.yml'));
+  parsedStep.jobs.validate.steps[2]['working-directory'] = 'subdir';
+  assert.throws(() => validateUssValidationWorkflow(parsedStep), /must not override working-directory/);
+});
+
+test('finding B3: rejects concurrency cancel-in-progress: true', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.concurrency = { group: 'ci', 'cancel-in-progress': true };
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /must not set concurrency cancel-in-progress: true/);
+});
+
+test('finding B3: rejects unauthorized containers in non-Semgrep jobs', () => {
+  const parsed = YAML.parse(read('security-scans.yml'));
+  parsed.jobs.gitleaks.container = 'ubuntu:latest';
+  assert.throws(() => validateSecurityScansWorkflow(parsed), /non-Semgrep job gitleaks must not declare a container/);
+});
+
+// Finding C1: Consumer template protection
+test('finding C1: reusable consumer workflow validator validates canonical template', async () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+  const parsed = YAML.parse(text);
+  assert.doesNotThrow(() => validateConsumerWorkflowStructure(parsed, 'consumer-security-scans.yml'));
+});
+
+test('finding C1: reusable consumer workflow validator rejects unpinned actions and weakened guards', async () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+  
+  // Unpinned action
+  const unpinned = YAML.parse(text);
+  unpinned.jobs.secrets.steps[0].uses = 'actions/checkout@v4';
+  assert.throws(() => validateConsumerWorkflowStructure(unpinned), /must use pinned action/);
+
+  // Missing config guard
+  const missingGuard = YAML.parse(text);
+  missingGuard.jobs.secrets.steps = missingGuard.jobs.secrets.steps.filter(s => s.name !== 'Reject unreviewed scanner configuration');
+  assert.throws(() => validateConsumerWorkflowStructure(missingGuard), /must contain exactly 3 steps/);
+
+  // Dangerous env variable in semgrep step run (violates execution contract)
+  const dangerousEnv = YAML.parse(text);
+  dangerousEnv.jobs.semgrep.steps[2].run = 'BASH_ENV=/tmp/bad\n' + dangerousEnv.jobs.semgrep.steps[2].run;
+  assert.throws(() => validateConsumerWorkflowStructure(dangerousEnv), /violates strict execution contract/);
+
+  // Dangerous env variable in job env
+  const dangerousJobEnv = YAML.parse(text);
+  dangerousJobEnv.jobs.semgrep.env = { BASH_ENV: '/tmp/bad' };
+  assert.throws(() => validateConsumerWorkflowStructure(dangerousJobEnv), /job-level env is not permitted|contains unapproved key 'env'/);
+
+  // Failure masking via cat
+  const failureMasking = YAML.parse(text);
+  failureMasking.jobs.semgrep.steps[2].run += ' | cat';
+  assert.throws(() => validateConsumerWorkflowStructure(failureMasking), /violates strict execution contract/);
+});
+
+// Supervisory Finding F2: Arbitrary Pinned Action Acceptance & Structural Control
+test('finding F2: consumer validator rejects third-party actions pinned to valid-looking SHAs', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  // Third-party substitute with valid 40-char SHA
+  const maliciousCheckout = YAML.parse(text);
+  maliciousCheckout.jobs.secrets.steps[0].uses = 'malicious/checkout@d23441a48e516b6c34aea4fa41551a30e30af803';
+  assert.throws(() => validateConsumerWorkflowStructure(maliciousCheckout), /must use pinned action 'actions\/checkout@d23441a48e516b6c34aea4fa41551a30e30af803'/);
+
+  // Approved action name with unapproved SHA
+  const unapprovedShaCheckout = YAML.parse(text);
+  unapprovedShaCheckout.jobs.secrets.steps[0].uses = 'actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  assert.throws(() => validateConsumerWorkflowStructure(unapprovedShaCheckout), /must use pinned action 'actions\/checkout@d23441a48e516b6c34aea4fa41551a30e30af803'/);
+
+  // Malicious secret scanner substitute
+  const maliciousGitleaks = YAML.parse(text);
+  maliciousGitleaks.jobs.secrets.steps[2].uses = 'attacker/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e';
+  assert.throws(() => validateConsumerWorkflowStructure(maliciousGitleaks), /must use pinned action 'gitleaks\/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e'/);
+
+  // Malicious CodeQL init substitute
+  const maliciousCodeql = YAML.parse(text);
+  maliciousCodeql.jobs.codeql.steps[1].uses = 'attacker/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066';
+  assert.throws(() => validateConsumerWorkflowStructure(maliciousCodeql), /must use pinned action 'github\/codeql-action\/init@33d7b85da1a04171e211befe2c739303b9a4c066'/);
+
+  // Malicious OSV reusable workflow substitute
+  const maliciousOsv = YAML.parse(text);
+  maliciousOsv.jobs.osv.uses = 'attacker/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@d3c1414ded37de590f207572e37a7d180f1d0ef7';
+  assert.throws(() => validateConsumerWorkflowStructure(maliciousOsv), /must use pinned reusable workflow/);
+});
+
+test('finding F2: consumer validator rejects unapproved action steps, permissions, and altered container digests', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  // Additional action step in secrets job
+  const extraStep = YAML.parse(text);
+  extraStep.jobs.secrets.steps.push({ name: 'Exfiltrate', uses: 'actions/upload-artifact@v4' });
+  assert.throws(() => validateConsumerWorkflowStructure(extraStep), /must contain exactly 3 steps/);
+
+  // Altered container image/digest in semgrep job
+  const alteredContainer = YAML.parse(text);
+  alteredContainer.jobs.semgrep.container.image = 'semgrep/semgrep:1.186.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  assert.throws(() => validateConsumerWorkflowStructure(alteredContainer), /semgrep container image must be exactly/);
+
+  // Altered permissions in secrets job
+  const alteredPerms = YAML.parse(text);
+  alteredPerms.jobs.secrets.permissions['contents'] = 'write';
+  assert.throws(() => validateConsumerWorkflowStructure(alteredPerms), /configuration mismatch|contains unexpected values/);
+
+  // Permissions added to semgrep job
+  const semgrepPerms = YAML.parse(text);
+  semgrepPerms.jobs.semgrep.permissions = { contents: 'read' };
+  assert.throws(() => validateConsumerWorkflowStructure(semgrepPerms), /must inherit read-only workflow permissions/);
+});
+
+// Supervisory Finding F3: Strict Execution Contracts and Pipeline Masking Prevention
+test('finding F3: rejects pipeline failure masking in uss-validation and consumer workflow', () => {
+  // Example pipeline from ChatGPT: node tools/validate.mjs | sed -n '1,10p'
+  const parsedUss = YAML.parse(read('uss-validation.yml'));
+  parsedUss.jobs.validate.steps[7].run = "node tools/validate.mjs | sed -n '1,10p'";
+  assert.throws(() => validateUssValidationWorkflow(parsedUss), /does not match exact approved execution contract|must not pipe commands/);
+
+  // Pipeline in consumer semgrep scan step
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+  const parsedConsumer = YAML.parse(text);
+  parsedConsumer.jobs.semgrep.steps[2].run = "semgrep scan --config p/default --error --strict --disable-nosem --metrics=off . | sed -n '1,10p'";
+  assert.throws(() => validateConsumerWorkflowStructure(parsedConsumer), /violates strict execution contract/);
+
+  // Pipeline in security-scans.yml semgrep scan step
+  const parsedSec = YAML.parse(read('security-scans.yml'));
+  parsedSec.jobs.semgrep.steps[2].run += " | sed -n '1,10p'";
+  assert.throws(() => validateSecurityScansWorkflow(parsedSec), /Semgrep must use the exact approved ruleset|must not pipe commands/);
+
+  // Additional pipeline variants: awk, head, tee, true
+  for (const pipeTarget of ['awk \'{print}\'', 'head -n 1', 'tee /tmp/out', 'true']) {
+    const parsed = YAML.parse(read('uss-validation.yml'));
+    parsed.jobs.validate.steps[7].run = `node tools/validate.mjs | ${pipeTarget}`;
+    assert.throws(() => validateUssValidationWorkflow(parsed), /does not match exact approved execution contract|must not pipe commands/);
+  }
+});
+
+// Supervisory Finding F4: Comprehensive Sensitive Execution Environment Protection
+test('finding F4: rejects all execution-sensitive environment variables across workflows', () => {
+  const sensitiveVars = [
+    'GIT_DIR',
+    'GIT_INDEX_FILE',
+    'GIT_WORK_TREE',
+    'GIT_EXEC_PATH',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_SSH_COMMAND',
+    'GIT_CONFIG_COUNT',
+    'LD_PRELOAD',
+    'LD_LIBRARY_PATH',
+    'NODE_EXTRA_CA_CERTS',
+    'PYTHONPATH',
+    'DYLD_INSERT_LIBRARIES',
+    'DYLD_LIBRARY_PATH',
+    'PERL5LIB',
+    'RUBYOPT',
+    'BASH_ENV',
+    'PATH',
+    'IFS',
+    'SHELLOPTS',
+    'BASHOPTS',
+    'ENV'
+  ];
+
+  const consumerText = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  for (const v of sensitiveVars) {
+    // Workflow-level env injection
+    const wfEnv = YAML.parse(read('security-scans.yml'));
+    wfEnv.env = { [v]: '/malicious' };
+    assert.throws(() => validateSecurityScansWorkflow(wfEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+
+    // Consumer workflow-level env injection
+    const consumerWfEnv = YAML.parse(consumerText);
+    consumerWfEnv.env = { [v]: '/malicious' };
+    assert.throws(() => validateConsumerWorkflowStructure(consumerWfEnv), /workflow-level env is not permitted|unapproved workflow-level key 'env'/);
+
+    // Job-level env injection
+    const jobEnv = YAML.parse(read('security-scans.yml'));
+    jobEnv.jobs.semgrep.env = { [v]: '/malicious' };
+    assert.throws(() => validateSecurityScansWorkflow(jobEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+
+    // Step-level env injection in uss-validation.yml
+    const stepEnv = YAML.parse(read('uss-validation.yml'));
+    stepEnv.jobs.validate.steps[2].env = { [v]: '/malicious' };
+    assert.throws(() => validateUssValidationWorkflow(stepEnv), new RegExp(`must not define forbidden runtime environment variable '${v}'`));
+
+    // Inline assignment in run script
+    const inlineRun = YAML.parse(read('uss-validation.yml'));
+    inlineRun.jobs.validate.steps[2].run = `${v}=/malicious\n` + inlineRun.jobs.validate.steps[2].run;
+    assert.throws(() => validateUssValidationWorkflow(inlineRun), /assigns to dangerous environment variable|does not match exact approved execution contract/);
+  }
+});
+
+// Supervisory Finding F5: Positive Git Attributes and Binary Detection Bypass
+test('finding F5: rejects positive diff attribute in .gitattributes and .git/info/attributes', () => {
+  for (const directive of ['diff', '*.bin diff', '!diff', '-diff', 'diff=custom', 'binary', '-binary', '!binary', 'filter=lfs', 'merge=ours']) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-attr-'));
+    try {
+      fs.writeFileSync(path.join(tempDir, '.gitattributes'), `secret.bin ${directive}\n`);
+      assert.throws(
+        () => assertNoProhibitedGitAttributes(tempDir),
+        /Prohibited \.gitattributes configuration is not permitted/
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+
+    const tempDirInfo = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-infoattr-'));
+    try {
+      fs.mkdirSync(path.join(tempDirInfo, '.git', 'info'), { recursive: true });
+      fs.writeFileSync(path.join(tempDirInfo, '.git', 'info', 'attributes'), `secret.bin ${directive}\n`);
+      assert.throws(
+        () => assertNoProhibitedGitAttributes(tempDirInfo),
+        /Prohibited \.git\/info\/attributes configuration is not permitted/
+      );
+    } finally {
+      fs.rmSync(tempDirInfo, { recursive: true, force: true });
+    }
+  }
+});
+
+test('finding F5: binary file cannot evade detection when positive diff attribute is set', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-evasion-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    // Track a binary file and attempt evasion with positive diff attribute
+    fs.writeFileSync(path.join(tempDir, 'payload.bin'), Buffer.from([0, 1, 2, 3, 4]));
+    fs.writeFileSync(path.join(tempDir, '.gitattributes'), '*.bin diff\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'attempt binary evasion with diff attr'], { cwd: tempDir });
+
+    // Defense 1: Attribute check catches positive diff attribute
+    assert.throws(
+      () => assertNoProhibitedGitAttributes(tempDir),
+      /Prohibited \.gitattributes configuration is not permitted/
+    );
+
+    // Defense 2: Independent content inspection catches binary null byte even if git diff is tricked
+    if (process.platform === 'win32') {
+      assertNoTrackedBinaryFiles(tempDir);
+    } else {
+      assert.throws(
+        () => assertNoTrackedBinaryFiles(tempDir),
+        /Tracked binary/
+      );
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5: preserves legitimate .gitattributes configurations and comments', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-legit-'));
+  try {
+    fs.writeFileSync(
+      path.join(tempDir, '.gitattributes'),
+      [
+        '# This comment mentions diff and binary without configuring them',
+        '* text=auto',
+        '*.sh text eol=lf',
+        '*.bat text eol=crlf',
+        '*.ps1 text eol=crlf',
+        '*.md text'
+      ].join('\n') + '\n'
+    );
+    assert.doesNotThrow(() => assertNoProhibitedGitAttributes(tempDir));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5: streaming binary scanner detects NUL bytes at multiple offsets including beyond 8000 bytes and near EOF', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const offsetsToTest = [
+    { name: 'start of file (offset 0)', size: 100, offset: 0 },
+    { name: 'middle of small file (offset 512)', size: 1024, offset: 512 },
+    { name: 'beyond 8000-byte heuristic (offset 8500)', size: 12000, offset: 8500 },
+    { name: 'across 1MB chunk boundary (offset 1500000)', size: 1600000, offset: 1500000 },
+    { name: 'near end of large 2MB file (offset 2097140)', size: 2097152, offset: 2097140 }
+  ];
+
+  for (const { name, size, offset } of offsetsToTest) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-offset-'));
+    try {
+      spawnSync('git', ['init', '-q'], { cwd: tempDir });
+      spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+      spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+      spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+      const buf = Buffer.alloc(size, 0x41); // 'A'
+      buf[offset] = 0x00; // NUL byte
+      fs.writeFileSync(path.join(tempDir, 'sample.data'), buf);
+      spawnSync('git', ['add', 'sample.data'], { cwd: tempDir });
+
+      const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, 'Scanner must fail closed by default on win32');
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.equal(res.status, 1, `Scanner must exit 1 for NUL byte at ${name}`);
+        assert.match(res.stderr, /FAIL: tracked binary file contains NUL byte: sample\.data/, `Error must identify file with NUL byte at ${name}`);
+      }
+
+      if (process.platform === 'win32') {
+        assertNoTrackedBinaryFiles(tempDir);
+      } else {
+        assert.throws(
+          () => assertNoTrackedBinaryFiles(tempDir),
+          /Tracked binary file is not permitted/,
+          `assertNoTrackedBinaryFiles must throw for NUL byte at ${name}`
+        );
+      }
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('finding F5: streaming binary scanner handles unusual filenames and fails closed on missing tracked paths', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-filenames-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.mkdirSync(path.join(tempDir, 'nested dir with spaces'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'nested dir with spaces', 'sub file with spaces.txt'), 'clean text content\n');
+    fs.writeFileSync(path.join(tempDir, 'special-symbols-#@!-$%.txt'), 'more clean content\n');
+    fs.writeFileSync(path.join(tempDir, "quote'file.txt"), 'quote content\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+
+    const cleanRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    if (process.platform === 'win32') {
+      assert.equal(cleanRes.status, 2, 'Scanner must fail closed by default on win32');
+      assert.match(cleanRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      assertNoTrackedBinaryFiles(tempDir);
+    } else {
+      assert.equal(cleanRes.status, 0, 'Clean repository with unusual filenames must pass');
+      assert.match(cleanRes.stdout, /PASS: complete content scan found no NUL bytes/);
+      assert.doesNotThrow(() => assertNoTrackedBinaryFiles(tempDir));
+    }
+
+    // Introduce NUL byte into unusual filename
+    const evilBuf = Buffer.alloc(200, 0x42);
+    evilBuf[100] = 0x00;
+    fs.writeFileSync(path.join(tempDir, 'special-symbols-#@!-$%.txt'), evilBuf);
+    const evilRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    if (process.platform === 'win32') {
+      assert.equal(evilRes.status, 2, 'Scanner must fail closed by default on win32');
+      assert.match(evilRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(evilRes.status, 1, 'Scanner must detect NUL in file with unusual name');
+      assert.match(evilRes.stderr, /FAIL: tracked binary file contains NUL byte: special-symbols-#@!-\$%\.txt/);
+    }
+
+    // Fail closed: Tracked file deleted from working tree before scan
+    fs.writeFileSync(path.join(tempDir, 'special-symbols-#@!-$%.txt'), 'restored clean text\n');
+    fs.writeFileSync(path.join(tempDir, 'ghost.txt'), 'ghost file\n');
+    spawnSync('git', ['add', 'ghost.txt'], { cwd: tempDir });
+    fs.rmSync(path.join(tempDir, 'ghost.txt')); // deleted from disk but in index!
+
+    const failClosedRes = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(failClosedRes.status, 2, 'Scanner must fail closed (exit 2) when a tracked file cannot be inspected');
+    if (process.platform === 'win32') {
+      assert.match(failClosedRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.match(failClosedRes.stderr, /FAIL CLOSED: cannot inspect tracked path ghost\.txt/);
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5: actual workflow guard script executes and rejects malicious binary fixtures', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-guard-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Guard Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'guard-test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+      fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(tempDir, 'tools/clean.txt'), 'clean content\n');
+    fs.writeFileSync(path.join(tempDir, 'tests/check.mjs'), 'const ok = true;\n');
+    fs.writeFileSync(path.join(tempDir, '.github/workflows/test.yml'), 'name: test\n');
+    fs.writeFileSync(path.join(tempDir, 'templates/test.yml'), 'name: test\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean tree'], { cwd: tempDir });
+
+    const bashEnv = process.platform === 'win32'
+      ? { ...process.env, PATH: 'C:\\Program Files\\Git\\usr\\bin;C:\\Users\\HP\\AppData\\Roaming\\Python\\Python314\\Scripts;' + (process.env.PATH || '') }
+      : { ...process.env };
+
+    // Clean run of actual SCANNER_CONFIG_GUARD_RUN
+    const cleanGuardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd: tempDir, encoding: 'utf8', env: bashEnv, input: SCANNER_CONFIG_GUARD_RUN });
+    if (process.platform === 'win32') {
+      assert.equal(cleanGuardRun.status, 2, 'Actual workflow guard must fail closed on win32: ' + cleanGuardRun.stderr);
+      assert.match(cleanGuardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(cleanGuardRun.status, 0, 'Actual workflow guard must succeed on clean tree: ' + cleanGuardRun.stderr);
+      assert.match(cleanGuardRun.stdout, /PASS: complete content scan found no NUL bytes/);
+    }
+
+    // Malicious fixture: binary file with NUL byte beyond 8000 bytes
+    const evilBuf = Buffer.alloc(10000, 0x41);
+    evilBuf[8500] = 0x00;
+    fs.writeFileSync(path.join(tempDir, 'tools/malicious.bin'), evilBuf);
+    spawnSync('git', ['add', 'tools/malicious.bin'], { cwd: tempDir });
+
+    const evilGuardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd: tempDir, encoding: 'utf8', env: bashEnv, input: SCANNER_CONFIG_GUARD_RUN });
+    assert.notEqual(evilGuardRun.status, 0, 'Actual workflow guard must reject malicious binary fixture');
+    if (process.platform === 'win32') {
+      assert.equal(evilGuardRun.status, 2, 'Workflow guard must fail closed on win32');
+      assert.match(evilGuardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.match(evilGuardRun.stderr, /FAIL: tracked binary file contains NUL byte: tools\/malicious\.bin/);
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5-R1: rejects parent-directory symlink traversal even when destination contains clean file', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-symlink-'));
+  const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-ext-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Symlink Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'symlink-test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    // Track a file containing a NUL byte in sub/child/payload.bin
+    fs.mkdirSync(path.join(tempDir, 'sub', 'child'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'sub', 'child', 'payload.bin'), Buffer.from('adversarial\0content'));
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'tracked malicious blob'], { cwd: tempDir });
+
+    // Prepare external clean directory with clean file of same name
+    fs.writeFileSync(path.join(externalDir, 'payload.bin'), 'clean external content\n');
+
+    // Replace parent directory 'sub' with a symlink / junction to external clean directory
+    fs.rmSync(path.join(tempDir, 'sub'), { recursive: true, force: true });
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    fs.symlinkSync(externalDir, path.join(tempDir, 'sub'), linkType);
+
+    const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+    if (process.platform === 'win32') {
+      assert.equal(res.status, 2, 'Scanner must fail closed by default on win32');
+      assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(res.status, 1, 'Scanner must exit 1 when parent directory is a symbolic link');
+      assert.match(res.stderr, /FAIL: parent directory component is a symbolic link/);
+      assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/);
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(externalDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5-R1: multi-level nested tracked files pass cleanly', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-nested-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Nested Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'nested-test@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.mkdirSync(path.join(tempDir, 'a', 'b', 'c', 'd'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'a', 'b', 'c', 'd', 'nested.txt'), 'clean multi-level content\n');
+    fs.writeFileSync(path.join(tempDir, 'root_file.txt'), 'root clean\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean nested files'], { cwd: tempDir });
+
+    function extractPyFromScript(script) {
+      const lines = script.split(/\r?\n/);
+      const eof1 = lines.indexOf("python3 - <<'EOF'");
+      const eof2 = lines.lastIndexOf('EOF');
+      return lines.slice(eof1 + 1, eof2).join('\n');
+    }
+
+    const allEngines = [
+      { name: 'standalone scanner', file: scannerPath },
+      { name: 'security-scans.yml embedded python', code: extractPyFromScript(SCANNER_CONFIG_GUARD_RUN) },
+      { name: 'consumer-security-scans.yml embedded python', code: extractPyFromScript(CONSUMER_CONFIG_GUARD_RUN) },
+      { name: 'buildExpectedConsumerGuard embedded python', code: extractPyFromScript(buildExpectedConsumerGuard()) },
+    ];
+
+    for (const eng of allEngines) {
+      const args = eng.file ? [eng.file] : ['-c', eng.code];
+      const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, eng.name + ' must fail closed by default on win32');
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.equal(res.status, 0, eng.name + ': clean multi-level nested files must pass with exit 0: ' + res.stderr);
+        assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+      }
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5-R1: symlinked leaf file is safely handled without traversing outside repository', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-leafsymlink-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Symlink Leaf User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'symlink-leaf@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(tempDir, 'clean_target.txt'), 'clean regular file content\n');
+    try {
+      fs.symlinkSync('clean_target.txt', path.join(tempDir, 'clean_link.txt'));
+      spawnSync('git', ['add', 'clean_target.txt', 'clean_link.txt'], { cwd: tempDir });
+      spawnSync('git', ['commit', '-m', 'add target and symlink'], { cwd: tempDir });
+
+      const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, encoding: 'utf8' });
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, 'Scanner must fail closed by default on win32');
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.equal(res.status, 0, 'Clean symlink leaf must pass scanner with exit 0: ' + res.stderr);
+        assert.match(res.stdout, /PASS: complete content scan found no NUL bytes/);
+      }
+    } catch (symlinkErr) {
+      if (symlinkErr.code !== 'EPERM') throw symlinkErr;
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding F5-R1: fails closed on unsupported platforms when directory-descriptor traversal is required', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+
+  if (process.platform === 'win32') {
+    const cliRes = spawnSync(pythonBin, [scannerPath], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(cliRes.status, 2, 'Scanner must fail closed by default on win32');
+    assert.match(cliRes.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+  }
+
+  // Cross-platform simulated unsupported platform test across all shipped copies
+  function extractPyFromScript(script) {
+    const lines = script.split(/\r?\n/);
+    const eof1 = lines.indexOf("python3 - <<'EOF'");
+    const eof2 = lines.lastIndexOf('EOF');
+    return lines.slice(eof1 + 1, eof2).join('\n');
+  }
+
+  const allCopies = [
+    { name: 'standalone scanner', code: fs.readFileSync(scannerPath, 'utf8') },
+    { name: 'first-party workflow guard', code: extractPyFromScript(SCANNER_CONFIG_GUARD_RUN) },
+    { name: 'consumer template guard', code: extractPyFromScript(CONSUMER_CONFIG_GUARD_RUN) },
+    { name: 'canonical generated guard', code: extractPyFromScript(buildExpectedConsumerGuard()) },
+  ];
+
+  for (const copy of allCopies) {
+    const mockPy = 'import os; os.supports_dir_fd = set();\n' + copy.code;
+    const res = spawnSync(pythonBin, ['-c', mockPy], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(res.status, 2, copy.name + ' must exit 2 when supports_dir_fd is empty');
+    assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform:/);
+  }
+});
+
+test('finding F5-R1: live workflow guard rejects parent-directory symlink malicious fixture', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-guard-'));
+  const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-f5-r1-guard-ext-'));
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Guard Symlink User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'guard-symlink@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+      fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(tempDir, 'tools/clean.txt'), 'clean content\n');
+    fs.writeFileSync(path.join(tempDir, 'tests/check.mjs'), 'const ok = true;\n');
+    fs.writeFileSync(path.join(tempDir, '.github/workflows/test.yml'), 'name: test\n');
+    fs.writeFileSync(path.join(tempDir, 'templates/test.yml'), 'name: test\n');
+
+    fs.mkdirSync(path.join(tempDir, 'sub', 'child'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'sub', 'child', 'blob.bin'), Buffer.from('adversarial\0blob'));
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean tree plus tracked malicious blob'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(externalDir, 'blob.bin'), 'clean external content\n');
+    fs.rmSync(path.join(tempDir, 'sub'), { recursive: true, force: true });
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    fs.symlinkSync(externalDir, path.join(tempDir, 'sub'), linkType);
+
+    const bashEnv = process.platform === 'win32'
+      ? { ...process.env, PATH: 'C:\\Program Files\\Git\\usr\\bin;C:\\Users\\HP\\AppData\\Roaming\\Python\\Python314\\Scripts;' + (process.env.PATH || '') }
+      : { ...process.env };
+
+    const guards = [
+      { name: 'first-party workflow guard (security-scans.yml)', script: SCANNER_CONFIG_GUARD_RUN },
+      { name: 'consumer template guard (consumer-security-scans.yml)', script: CONSUMER_CONFIG_GUARD_RUN },
+      { name: 'canonical generated guard (buildExpectedConsumerGuard)', script: buildExpectedConsumerGuard() },
+    ];
+
+    for (const guard of guards) {
+      const guardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], {
+        cwd: tempDir,
+        encoding: 'utf8',
+        env: bashEnv,
+        input: guard.script
+      });
+
+      if (guardRun.error && guardRun.error.code === 'ENOENT') {
+        continue;
+      }
+
+      if (process.platform === 'win32') {
+        assert.equal(guardRun.status, 2, guard.name + ' must fail closed by default on unsupported win32 platform');
+        assert.match(guardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.notEqual(guardRun.status, 0, guard.name + ' must reject parent symlink fixture');
+        assert.match(guardRun.stderr, /FAIL: parent directory component is a symbolic link/);
+      }
+    }
+
+    // Direct python engine test across all 4 shipped copies
+    function extractPyFromScript(script) {
+      const lines = script.split(/\r?\n/);
+      const eof1 = lines.indexOf("python3 - <<'EOF'");
+      const eof2 = lines.lastIndexOf('EOF');
+      return lines.slice(eof1 + 1, eof2).join('\n');
+    }
+
+    const allEngines = [
+      { name: 'standalone scanner', file: scannerPath },
+      { name: 'security-scans.yml embedded python', code: extractPyFromScript(SCANNER_CONFIG_GUARD_RUN) },
+      { name: 'consumer-security-scans.yml embedded python', code: extractPyFromScript(CONSUMER_CONFIG_GUARD_RUN) },
+      { name: 'buildExpectedConsumerGuard embedded python', code: extractPyFromScript(buildExpectedConsumerGuard()) },
+    ];
+
+    for (const eng of allEngines) {
+      const args = eng.file ? [eng.file] : ['-c', eng.code];
+      const res = spawnSync(pythonBin, args, { cwd: tempDir, encoding: 'utf8' });
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, eng.name + ' must fail closed on win32');
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported/);
+      } else {
+        assert.equal(res.status, 1, eng.name + ' must exit 1 on parent symlink redirect');
+        assert.match(res.stderr, /FAIL: parent directory component is a symbolic link/);
+        assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/);
+      }
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(externalDir, { recursive: true, force: true });
+  }
+});
+
+// Supervisory Finding P2-01: GIT Environment Poisoning Prevention
+test('finding P2-01: scanner rejects GIT environment poisoning and detects tracked NUL byte regardless of injected variables', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p201-target-'));
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p201-empty-'));
+
+  try {
+    // 1. Target repository has tracked binary file with NUL byte
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'P2-01 Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'p201@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(tempDir, 'malicious.bin'), Buffer.from([0x48, 0x65, 0x00, 0x6c, 0x6f])); // "He\0lo"
+    spawnSync('git', ['add', 'malicious.bin'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'tracked malicious binary'], { cwd: tempDir });
+
+    // 2. Empty external repository with clean text file
+    spawnSync('git', ['init', '-q'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'user.name', 'Clean User'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'user.email', 'clean@example.com'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: emptyDir });
+    fs.writeFileSync(path.join(emptyDir, 'clean.txt'), 'clean content\n');
+    spawnSync('git', ['add', 'clean.txt'], { cwd: emptyDir });
+    spawnSync('git', ['commit', '-m', 'clean tree'], { cwd: emptyDir });
+
+    // Variables identified by Claude
+    const attackVectors = [
+      { name: 'GIT_DIR pointing to empty repository', env: { GIT_DIR: path.join(emptyDir, '.git') } },
+      { name: 'GIT_INDEX_FILE pointing to external index', env: { GIT_INDEX_FILE: path.join(emptyDir, '.git', 'index') } },
+      { name: 'GIT_WORK_TREE pointing to external directory', env: { GIT_WORK_TREE: emptyDir } },
+      { name: 'GIT_EXEC_PATH pointing to invalid path', env: { GIT_EXEC_PATH: path.join(emptyDir, 'fake-bin') } },
+      { name: 'GIT_OBJECT_DIRECTORY pointing to external objects', env: { GIT_OBJECT_DIRECTORY: path.join(emptyDir, '.git', 'objects') } },
+      { name: 'GIT_SSH_COMMAND pointing to failing command', env: { GIT_SSH_COMMAND: 'exit 1' } },
+      {
+        name: 'Combined GIT_* variables injected simultaneously',
+        env: {
+          GIT_DIR: path.join(emptyDir, '.git'),
+          GIT_INDEX_FILE: path.join(emptyDir, '.git', 'index'),
+          GIT_WORK_TREE: emptyDir,
+          GIT_EXEC_PATH: path.join(emptyDir, 'fake-bin'),
+          GIT_OBJECT_DIRECTORY: path.join(emptyDir, '.git', 'objects'),
+          GIT_SSH_COMMAND: 'exit 1',
+          GIT_CONFIG_COUNT: '1'
+        }
+      }
+    ];
+
+    for (const { name, env: injectedEnv } of attackVectors) {
+      const runEnv = { ...process.env, ...injectedEnv };
+      const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, env: runEnv, encoding: 'utf8' });
+
+      if (process.platform === 'win32') {
+        assert.equal(res.status, 2, `Scanner must fail closed on win32 under ${name}`);
+        assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+      } else {
+        assert.equal(res.status, 1, `Scanner must reject binary file despite injected ${name}`);
+        assert.match(res.stderr, /FAIL: tracked binary file contains NUL byte: malicious\.bin/, `Diagnostic must identify binary file under ${name}`);
+        assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/, `Scanner must not report PASS under ${name}`);
+      }
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(emptyDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P2-01: live workflow guard unsets inherited GIT_* variables and rejects malicious binary fixture', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p201-guard-'));
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p201-guard-empty-'));
+
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Guard P201 User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'guard-p201@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+      fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(tempDir, 'tools/clean.txt'), 'clean content\n');
+    fs.writeFileSync(path.join(tempDir, 'tests/check.mjs'), 'const ok = true;\n');
+    fs.writeFileSync(path.join(tempDir, '.github/workflows/test.yml'), 'name: test\n');
+    fs.writeFileSync(path.join(tempDir, 'templates/test.yml'), 'name: test\n');
+
+    // Introduce malicious binary file
+    fs.writeFileSync(path.join(tempDir, 'tools/malicious.bin'), Buffer.from('exploit\0content'));
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'clean tree plus malicious binary'], { cwd: tempDir });
+
+    // Empty repo to attempt redirection
+    spawnSync('git', ['init', '-q'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'user.name', 'Clean User'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'user.email', 'clean@example.com'], { cwd: emptyDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: emptyDir });
+    fs.writeFileSync(path.join(emptyDir, 'clean.txt'), 'clean\n');
+    spawnSync('git', ['add', '.'], { cwd: emptyDir });
+    spawnSync('git', ['commit', '-m', 'clean'], { cwd: emptyDir });
+
+    const bashEnv = {
+      ...process.env,
+      GIT_DIR: path.join(emptyDir, '.git'),
+      GIT_WORK_TREE: emptyDir,
+      GIT_INDEX_FILE: path.join(emptyDir, '.git', 'index'),
+      GIT_OBJECT_DIRECTORY: path.join(emptyDir, '.git', 'objects'),
+      ...(process.platform === 'win32'
+        ? { PATH: 'C:\\Program Files\\Git\\usr\\bin;C:\\Users\\HP\\AppData\\Roaming\\Python\\Python314\\Scripts;' + (process.env.PATH || '') }
+        : {})
+    };
+
+    const guardRun = spawnSync('bash', ['--norc', '--noprofile', '-s'], {
+      cwd: tempDir,
+      encoding: 'utf8',
+      env: bashEnv,
+      input: SCANNER_CONFIG_GUARD_RUN
+    });
+
+    if (process.platform === 'win32') {
+      assert.equal(guardRun.status, 2, 'Live workflow guard must fail closed by default on unsupported win32 platform');
+      assert.match(guardRun.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.notEqual(guardRun.status, 0, 'Live workflow guard must reject malicious fixture despite poisoned GIT_* env');
+      assert.match(guardRun.stderr, /FAIL: tracked binary file contains NUL byte: tools\/malicious\.bin/);
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(emptyDir, { recursive: true, force: true });
+  }
+});
+
+// Supervisory Finding P3-04: Scanner executable hijacking (PATH poisoning, fake git, wrappers, symlinks)
+test('finding P3-04: scanner rejects fake git executable prepended to PATH and resolves trusted git to detect tracked NUL byte', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-fake-'));
+  const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-fakebin-'));
+
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'P304 Test User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'p304@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    fs.writeFileSync(path.join(tempDir, 'malicious.bin'), Buffer.from('exploit\0content'));
+    spawnSync('git', ['add', 'malicious.bin'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'tracked malicious binary'], { cwd: tempDir });
+
+    // Create fake git in fakeBinDir (pretends to be git, outputs nothing, exits 0)
+    const fakeGitPath = path.join(fakeBinDir, process.platform === 'win32' ? 'git.cmd' : 'git');
+    if (process.platform === 'win32') {
+      fs.writeFileSync(fakeGitPath, '@echo off\r\nexit /b 0\r\n');
+    } else {
+      fs.writeFileSync(fakeGitPath, '#!/bin/sh\nexit 0\n');
+      fs.chmodSync(fakeGitPath, 0o755);
+    }
+
+    // Prepend fakeBinDir to PATH
+    const poisonedEnv = {
+      ...process.env,
+      PATH: fakeBinDir + path.delimiter + (process.env.PATH || '')
+    };
+
+    const res = spawnSync(pythonBin, [scannerPath], { cwd: tempDir, env: poisonedEnv, encoding: 'utf8' });
+
+    if (process.platform === 'win32') {
+      assert.equal(res.status, 2, 'Scanner must fail closed on win32');
+      assert.match(res.stderr, /FAIL CLOSED: secure directory-descriptor traversal is not supported on platform: win32/);
+    } else {
+      assert.equal(res.status, 1, 'Scanner must reject binary file despite fake git prepended to PATH');
+      assert.match(res.stderr, /FAIL: tracked binary file contains NUL byte: malicious\.bin/);
+      assert.doesNotMatch(res.stdout, /PASS: complete content scan found no NUL bytes/);
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(fakeBinDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner fails closed when only untrusted git executables exist in PATH', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-untrusted-'));
+  const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-fakeonly-'));
+
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'P304 Untrusted User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'p304u@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+    fs.writeFileSync(path.join(tempDir, 'file.txt'), 'hello\n');
+    spawnSync('git', ['add', '.'], { cwd: tempDir });
+    spawnSync('git', ['commit', '-m', 'commit'], { cwd: tempDir });
+
+    const fakeGitPath = path.join(fakeBinDir, process.platform === 'win32' ? 'git.cmd' : 'git');
+    if (process.platform === 'win32') {
+      fs.writeFileSync(fakeGitPath, '@echo off\r\necho git version 2.99.0\r\nexit /b 0\r\n');
+    } else {
+      fs.writeFileSync(fakeGitPath, '#!/bin/sh\necho "git version 2.99.0"\nexit 0\n');
+      fs.chmodSync(fakeGitPath, 0o755);
+    }
+
+    const isolatedEnv = {
+      ...process.env,
+      PATH: fakeBinDir,
+      ProgramFiles: path.join(fakeBinDir, 'nonexistent'),
+      'ProgramFiles(x86)': path.join(fakeBinDir, 'nonexistent'),
+      LOCALAPPDATA: path.join(fakeBinDir, 'nonexistent')
+    };
+
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      `found_git = scope["resolve_trusted_git"]({}, candidate_dirs=[${JSON.stringify(fakeBinDir)}])`,
+      'if found_git is None:',
+      '    print("RESOLVE_FAILED_SAFELY")',
+      '    sys.exit(2)',
+      'else:',
+      '    print("RESOLVED_UNEXPECTED:", found_git)',
+      '    sys.exit(0)'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, env: isolatedEnv, encoding: 'utf8' });
+    assert.equal(pyRun.status, 2, `Must fail closed when only untrusted fake git exists in PATH. Output: ${pyRun.stdout} ${pyRun.stderr}`);
+    assert.match(pyRun.stdout, /RESOLVE_FAILED_SAFELY/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(fakeBinDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects non-root-owned Git installation directories on POSIX', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-nonroot-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'sys_orig = sys.platform',
+      'sys.platform = "linux"',
+      'candidate_dir = os.path.realpath("/opt/mock_trusted_git/bin")',
+      'candidate_exe = os.path.join(candidate_dir, "git")',
+      'class MockStat:',
+      '    def __init__(self, mode, uid):',
+      '        self.st_mode = mode',
+      '        self.st_uid = uid',
+      'curr_uid = [1000]',
+      'def mock_stat(p, *args, **kwargs):',
+      '    rp = os.path.realpath(p)',
+      '    if rp == candidate_dir:',
+      '        return MockStat(0o040755, curr_uid[0])',
+      '    if rp == candidate_exe:',
+      '        return MockStat(0o100755, 0)',
+      '    return MockStat(0o040755, 0)',
+      'orig_isdir = os.path.isdir',
+      'orig_isfile = os.path.isfile',
+      'def mock_isdir(p):',
+      '    if os.path.realpath(p) == candidate_dir: return True',
+      '    return orig_isdir(p)',
+      'def mock_isfile(p):',
+      '    if os.path.realpath(p) == candidate_exe: return True',
+      '    return orig_isfile(p)',
+      'orig_run = subprocess.run',
+      'def mock_run(cmd, *args, **kwargs):',
+      '    class Res:',
+      '        stdout = b"git version 2.45.0\\n"',
+      '    return Res()',
+      'os.stat = mock_stat',
+      'os.path.isdir = mock_isdir',
+      'os.path.isfile = mock_isfile',
+      'os.access = lambda p, m: True',
+      'subprocess.run = mock_run',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      '# When curr_uid is 1000 (non-root):',
+      'curr_uid[0] = 1000',
+      'res_non_root = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_non_root is None, f"Expected non-root directory to be rejected, got: {res_non_root}"',
+      '# When curr_uid is 0 (root):',
+      'curr_uid[0] = 0',
+      'res_root = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_root == candidate_exe, f"Expected candidate_exe when owned by root, got: {res_root}"',
+      'print("NON_ROOT_DIR_REJECTED_DIFFERENTIALLY")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /NON_ROOT_DIR_REJECTED_DIFFERENTIALLY/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects group-writable Git installation directories even if owned by root', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-groupwrite-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'sys_orig = sys.platform',
+      'sys.platform = "linux"',
+      'candidate_dir = os.path.realpath("/opt/mock_trusted_git/bin")',
+      'candidate_exe = os.path.join(candidate_dir, "git")',
+      'class MockStat:',
+      '    def __init__(self, mode, uid):',
+      '        self.st_mode = mode',
+      '        self.st_uid = uid',
+      'curr_mode = [0o040775]',
+      'def mock_stat(p, *args, **kwargs):',
+      '    rp = os.path.realpath(p)',
+      '    if rp == candidate_dir:',
+      '        return MockStat(curr_mode[0], 0)',
+      '    if rp == candidate_exe:',
+      '        return MockStat(0o100755, 0)',
+      '    return MockStat(0o040755, 0)',
+      'orig_isdir = os.path.isdir',
+      'orig_isfile = os.path.isfile',
+      'def mock_isdir(p):',
+      '    if os.path.realpath(p) == candidate_dir: return True',
+      '    return orig_isdir(p)',
+      'def mock_isfile(p):',
+      '    if os.path.realpath(p) == candidate_exe: return True',
+      '    return orig_isfile(p)',
+      'orig_run = subprocess.run',
+      'def mock_run(cmd, *args, **kwargs):',
+      '    class Res:',
+      '        stdout = b"git version 2.45.0\\n"',
+      '    return Res()',
+      'os.stat = mock_stat',
+      'os.path.isdir = mock_isdir',
+      'os.path.isfile = mock_isfile',
+      'os.access = lambda p, m: True',
+      'subprocess.run = mock_run',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      '# When group-writable (0o020):',
+      'curr_mode[0] = 0o040775',
+      'res_gw = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_gw is None, f"Expected group-writable dir to be rejected, got: {res_gw}"',
+      '# When safe (0o040755):',
+      'curr_mode[0] = 0o040755',
+      'res_safe = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_safe == candidate_exe, f"Expected candidate_exe when safe, got: {res_safe}"',
+      'print("GROUP_WRITABLE_DIR_REJECTED_DIFFERENTIALLY")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /GROUP_WRITABLE_DIR_REJECTED_DIFFERENTIALLY/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects group-writable and world-writable Git executables', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-exeperms-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'sys_orig = sys.platform',
+      'sys.platform = "linux"',
+      'candidate_dir = os.path.realpath("/opt/mock_trusted_git/bin")',
+      'candidate_exe = os.path.join(candidate_dir, "git")',
+      'class MockStat:',
+      '    def __init__(self, mode, uid):',
+      '        self.st_mode = mode',
+      '        self.st_uid = uid',
+      'exe_mode = [0o100777]',
+      'def mock_stat(p, *args, **kwargs):',
+      '    rp = os.path.realpath(p)',
+      '    if rp == candidate_dir:',
+      '        return MockStat(0o040755, 0)',
+      '    if rp == candidate_exe:',
+      '        return MockStat(exe_mode[0], 0)',
+      '    return MockStat(0o040755, 0)',
+      'orig_isdir = os.path.isdir',
+      'orig_isfile = os.path.isfile',
+      'def mock_isdir(p):',
+      '    if os.path.realpath(p) == candidate_dir: return True',
+      '    return orig_isdir(p)',
+      'def mock_isfile(p):',
+      '    if os.path.realpath(p) == candidate_exe: return True',
+      '    return orig_isfile(p)',
+      'orig_run = subprocess.run',
+      'def mock_run(cmd, *args, **kwargs):',
+      '    class Res:',
+      '        stdout = b"git version 2.45.0\\n"',
+      '    return Res()',
+      'os.stat = mock_stat',
+      'os.path.isdir = mock_isdir',
+      'os.path.isfile = mock_isfile',
+      'os.access = lambda p, m: True',
+      'subprocess.run = mock_run',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      '# When exe is world/group-writable (0o100777):',
+      'exe_mode[0] = 0o100777',
+      'res_gw = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_gw is None, f"Expected writable exe to be rejected, got: {res_gw}"',
+      '# When exe is safe (0o100755):',
+      'exe_mode[0] = 0o100755',
+      'res_safe = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_safe == candidate_exe, f"Expected candidate_exe when safe, got: {res_safe}"',
+      'print("WRITABLE_EXE_REJECTED_DIFFERENTIALLY")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /WRITABLE_EXE_REJECTED_DIFFERENTIALLY/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects writable parent directory in POSIX ancestor chain', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-ancestor-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'sys_orig = sys.platform',
+      'sys.platform = "linux"',
+      'candidate_dir = os.path.realpath("/opt/mock_trusted_git/bin")',
+      'parent_dir = os.path.realpath("/opt/mock_trusted_git")',
+      'candidate_exe = os.path.join(candidate_dir, "git")',
+      'class MockStat:',
+      '    def __init__(self, mode, uid):',
+      '        self.st_mode = mode',
+      '        self.st_uid = uid',
+      'parent_mode = [0o040775]',
+      'def mock_stat(p, *args, **kwargs):',
+      '    rp = os.path.realpath(p)',
+      '    if rp == candidate_dir:',
+      '        return MockStat(0o040755, 0)',
+      '    if rp == candidate_exe:',
+      '        return MockStat(0o100755, 0)',
+      '    if rp == parent_dir:',
+      '        return MockStat(parent_mode[0], 0)',
+      '    return MockStat(0o040755, 0)',
+      'orig_isdir = os.path.isdir',
+      'orig_isfile = os.path.isfile',
+      'def mock_isdir(p):',
+      '    if os.path.realpath(p) in (candidate_dir, parent_dir): return True',
+      '    return orig_isdir(p)',
+      'def mock_isfile(p):',
+      '    if os.path.realpath(p) == candidate_exe: return True',
+      '    return orig_isfile(p)',
+      'orig_run = subprocess.run',
+      'def mock_run(cmd, *args, **kwargs):',
+      '    class Res:',
+      '        stdout = b"git version 2.45.0\\n"',
+      '    return Res()',
+      'os.stat = mock_stat',
+      'os.path.isdir = mock_isdir',
+      'os.path.isfile = mock_isfile',
+      'os.access = lambda p, m: True',
+      'subprocess.run = mock_run',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      '# When parent directory is group-writable (0o040775):',
+      'parent_mode[0] = 0o040775',
+      'res_gw = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_gw is None, f"Expected writable parent ancestor to cause rejection, got: {res_gw}"',
+      '# When parent directory is safe (0o040755):',
+      'parent_mode[0] = 0o040755',
+      'res_safe = scope["resolve_trusted_git"]({}, candidate_dirs=[candidate_dir])',
+      'assert res_safe == candidate_exe, f"Expected candidate_exe when parent is safe, got: {res_safe}"',
+      'print("WRITABLE_PARENT_ANCESTOR_REJECTED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /WRITABLE_PARENT_ANCESTOR_REJECTED/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects poisoned ProgramFiles and SystemRoot environment variables even with existing candidate', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-poisonenv-'));
+
+  try {
+    const attackerRoot = path.join(tempDir, 'AttackerProgramFiles');
+    const fakeGitCmd = path.join(attackerRoot, 'Git', 'cmd');
+    fs.mkdirSync(fakeGitCmd, { recursive: true });
+    const fakeGitExe = path.join(fakeGitCmd, process.platform === 'win32' ? 'git.exe' : 'git');
+    if (process.platform === 'win32') {
+      fs.writeFileSync(fakeGitExe, '@echo off\r\necho git version 2.99.0\r\n');
+    } else {
+      fs.writeFileSync(fakeGitExe, '#!/bin/sh\necho "git version 2.99.0"\n');
+      fs.chmodSync(fakeGitExe, 0o755);
+    }
+
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      `attacker_root = ${JSON.stringify(attackerRoot)}`,
+      `fake_git_cmd = ${JSON.stringify(fakeGitCmd)}`,
+      `fake_git_exe = ${JSON.stringify(fakeGitExe)}`,
+      'assert os.path.isdir(fake_git_cmd), "Candidate directory must physically exist on disk"',
+      'assert os.path.isfile(fake_git_exe), "Candidate executable must physically exist on disk"',
+      'os.environ["ProgramFiles"] = attacker_root',
+      'os.environ["SystemRoot"] = attacker_root',
+      'os.environ["ProgramFiles(x86)"] = attacker_root',
+      'os.environ["windir"] = attacker_root',
+      `func_code = ${JSON.stringify(funcCode)}`,
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      'exec(func_code, scope)',
+      'if sys.platform == "win32":',
+      '    r_start = func_code.index("def get_windows_authoritative_roots(")',
+      '    r_end = func_code.index("def verify_posix_ancestors(", r_start)',
+      '    r_code = chr(10).join(l[4:] if l.startswith("    ") else l for l in func_code[r_start:r_end].splitlines())',
+      '    r_scope = {"os": os, "winreg": __import__("winreg"), "dict": dict, "list": list}',
+      '    exec(r_code, r_scope)',
+      '    auth_roots = r_scope["get_windows_authoritative_roots"]()',
+      '    assert len(auth_roots) > 0, "Must have authoritative registry roots on Windows"',
+      '    assert attacker_root not in auth_roots, "Poisoned env root must NEVER appear in authoritative roots"',
+      'found = scope["resolve_trusted_git"]({}, candidate_dirs=[fake_git_cmd])',
+      'assert found is None, f"Expected candidate in poisoned environment root to be rejected, got: {found}"',
+      'print("POISONED_ENV_ROOT_REJECTED_WITH_EXISTING_CANDIDATE")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /POISONED_ENV_ROOT_REJECTED_WITH_EXISTING_CANDIDATE/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner fails closed when Windows authoritative registry roots cannot be established', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-regfail-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'sys_orig = sys.platform',
+      'sys.platform = "win32"',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      'class MockWinRegFailure:',
+      '    HKEY_LOCAL_MACHINE = 0x80000002',
+      '    def OpenKey(self, *args, **kwargs):',
+      '        raise OSError("Registry key inaccessible or missing")',
+      'sys.modules["winreg"] = MockWinRegFailure()',
+      'try:',
+      '    found_on_fail = scope["resolve_trusted_git"]({})',
+      '    assert found_on_fail is None, f"Must fail closed when registry lookup fails, got: {found_on_fail}"',
+      'finally:',
+      '    sys.modules.pop("winreg", None)',
+      'print("REGISTRY_ROOT_FAILURE_FAILS_CLOSED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /REGISTRY_ROOT_FAILURE_FAILS_CLOSED/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner DACL verification rejects permissive write ACEs, object/callback ACEs, and malformed security descriptors', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-dacl-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'import ctypes, struct',
+      'from ctypes import wintypes',
+      `func_code = ${JSON.stringify(funcCode)}`,
+      'dacl_start = func_code.index("def verify_windows_dacl(")',
+      'dacl_end = func_code.index("trusted_roots = []", dacl_start)',
+      'raw_dacl = func_code[dacl_start:dacl_end]',
+      'unindented_dacl = chr(10).join(l[4:] if l.startswith("    ") else l for l in raw_dacl.splitlines())',
+      'scope = {"os": os, "sys": sys, "ctypes": ctypes, "tempfile": tempfile, "subprocess": subprocess}',
+      'exec(unindented_dacl, scope)',
+      'verify_windows_dacl = scope["verify_windows_dacl"]',
+      'SE_FILE_OBJECT = 1',
+      'OWNER_SECURITY_INFORMATION = 1',
+      'DACL_SECURITY_INFORMATION = 4',
+      'AclSizeInformation = 2',
+      'INHERIT_ONLY_ACE = 0x08',
+      'class ACE_HEADER(ctypes.Structure):',
+      '    _fields_ = [("AceType", wintypes.BYTE), ("AceFlags", wintypes.BYTE), ("AceSize", wintypes.WORD)]',
+      'class ACL_SIZE_INFORMATION(ctypes.Structure):',
+      '    _fields_ = [("AceCount", wintypes.DWORD), ("AclBytesInUse", wintypes.DWORD), ("AclBytesFree", wintypes.DWORD)]',
+      'def encode_sid(sid_str):',
+      '    parts = sid_str.split("-")',
+      '    rev = int(parts[1])',
+      '    ia = int(parts[2])',
+      '    subs = [int(p) for p in parts[3:]]',
+      '    b = struct.pack(">BB6s", rev, len(subs), ia.to_bytes(6, "big"))',
+      '    for s in subs:',
+      '        b += struct.pack("<I", s)',
+      '    return b',
+      'def build_raw_ace(ace_type, ace_flags, mask, sid_str, object_flags=0, compound_type=1, reserved=0, corrupt_size=None, corrupt_sid_rev=None, corrupt_sid_count=None):',
+      '    sid_bytes = bytearray(encode_sid(sid_str))',
+      '    if corrupt_sid_rev is not None:',
+      '        sid_bytes[0] = corrupt_sid_rev',
+      '    if corrupt_sid_count is not None:',
+      '        sid_bytes[1] = corrupt_sid_count',
+      '    if ace_type in (0, 9):',
+      '        size = 8 + len(sid_bytes)',
+      '        hdr_size = corrupt_size if corrupt_size is not None else size',
+      '        buf = bytearray(size)',
+      '        struct.pack_into("<BBHI", buf, 0, ace_type, ace_flags, hdr_size, mask)',
+      '        buf[8:8+len(sid_bytes)] = sid_bytes',
+      '        c_buf = (ctypes.c_char * len(buf)).from_buffer_copy(buf)',
+      '        return c_buf, sid_str',
+      '    elif ace_type in (5, 11):',
+      '        guid_len = (16 if (object_flags & 1) else 0) + (16 if (object_flags & 2) else 0)',
+      '        size = 12 + guid_len + len(sid_bytes)',
+      '        hdr_size = corrupt_size if corrupt_size is not None else size',
+      '        buf = bytearray(size)',
+      '        struct.pack_into("<BBHII", buf, 0, ace_type, ace_flags, hdr_size, mask, object_flags)',
+      '        off = 12',
+      '        if object_flags & 1:',
+      '            buf[off:off+16] = b"\\x01" * 16',
+      '            off += 16',
+      '        if object_flags & 2:',
+      '            buf[off:off+16] = b"\\x02" * 16',
+      '            off += 16',
+      '        buf[off:off+len(sid_bytes)] = sid_bytes',
+      '        c_buf = (ctypes.c_char * len(buf)).from_buffer_copy(buf)',
+      '        return c_buf, sid_str',
+      '    elif ace_type == 4:',
+      '        size = 12 + len(sid_bytes)',
+      '        hdr_size = corrupt_size if corrupt_size is not None else size',
+      '        buf = bytearray(size)',
+      '        struct.pack_into("<BBHIHH", buf, 0, ace_type, ace_flags, hdr_size, mask, compound_type, reserved)',
+      '        buf[12:12+len(sid_bytes)] = sid_bytes',
+      '        c_buf = (ctypes.c_char * len(buf)).from_buffer_copy(buf)',
+      '        return c_buf, sid_str',
+      '    else:',
+      '        size = 8',
+      '        hdr_size = corrupt_size if corrupt_size is not None else size',
+      '        buf = bytearray(size)',
+      '        struct.pack_into("<BBHI", buf, 0, ace_type, ace_flags, hdr_size, mask)',
+      '        c_buf = (ctypes.c_char * len(buf)).from_buffer_copy(buf)',
+      '        return c_buf, sid_str',
+      'def run_test_scenario(owner_sid, ace_specs, fail_api=False, null_dacl=False, fail_conv=False):',
+      '    built_aces = [build_raw_ace(**spec) for spec in ace_specs]',
+      '    ace_buffers = [b for b, s in built_aces]',
+      '    owner_bytes = encode_sid(owner_sid)',
+      '    owner_buf = (ctypes.c_char * len(owner_bytes)).from_buffer_copy(owner_bytes)',
+      '    class MockAdvApi:',
+      '        def GetNamedSecurityInfoW(self, path, obj_type, sec_info, p_owner, p_group, p_dacl, p_sacl, p_sd):',
+      '            if fail_api: return 5',
+      '            p_owner._obj.value = ctypes.addressof(owner_buf)',
+      '            if null_dacl: p_dacl._obj.value = 0',
+      '            else: p_dacl._obj.value = 0x5678',
+      '            p_sd._obj.value = 0x9999',
+      '            return 0',
+      '        def IsValidSid(self, p_sid):',
+      '            val = p_sid.value if hasattr(p_sid, "value") else p_sid',
+      '            if not val: return 0',
+      '            try:',
+      '                rev = ctypes.c_uint8.from_address(val).value',
+      '                return 1 if rev == 1 else 0',
+      '            except Exception:',
+      '                return 0',
+      '        def GetLengthSid(self, p_sid):',
+      '            val = p_sid.value if hasattr(p_sid, "value") else p_sid',
+      '            if not val: return 0',
+      '            try:',
+      '                sub_count = ctypes.c_uint8.from_address(val + 1).value',
+      '                return 8 + 4 * sub_count',
+      '            except Exception:',
+      '                return 0',
+      '        def ConvertSidToStringSidW(self, p_sid, p_str):',
+      '            if fail_conv: return 0',
+      '            val = p_sid.value if hasattr(p_sid, "value") else p_sid',
+      '            if not val: return 0',
+      '            try:',
+      '                rev = ctypes.c_uint8.from_address(val).value',
+      '                sub_count = ctypes.c_uint8.from_address(val + 1).value',
+      '                if rev != 1: return 0',
+      '                ia_bytes = (ctypes.c_ubyte * 6).from_address(val + 2)',
+      '                ia = int.from_bytes(bytes(ia_bytes), "big")',
+      '                subs = [ctypes.c_uint32.from_address(val + 8 + 4*i).value for i in range(sub_count)]',
+      '                s = f"S-{rev}-{ia}-" + "-".join(str(x) for x in subs)',
+      '                p_str._obj.value = s',
+      '                return 1',
+      '            except Exception:',
+      '                return 0',
+      '        def GetAclInformation(self, p_dacl, p_info, info_len, info_class):',
+      '            info = ACL_SIZE_INFORMATION.from_address(ctypes.addressof(p_info._obj))',
+      '            info.AceCount = len(ace_buffers)',
+      '            return 1',
+      '        def GetAce(self, p_dacl, index, p_ace):',
+      '            if index < len(ace_buffers):',
+      '                buf = ace_buffers[index]',
+      '                p_ace._obj.value = ctypes.addressof(buf)',
+      '                return 1',
+      '            return 0',
+      '    class MockKernel32:',
+      '        def LocalFree(self, ptr): return 0',
+      '    class MockWinDLL:',
+      '        def __init__(self):',
+      '            self.advapi32 = MockAdvApi()',
+      '            self.kernel32 = MockKernel32()',
+      '    orig_windll = getattr(ctypes, "windll", None)',
+      '    ctypes.windll = MockWinDLL()',
+      '    try:',
+      '        target = os.path.realpath(r"C:\\Program Files") if sys.platform == "win32" else "/Program Files"',
+      '        trusted_roots = [target]',
+      '        return verify_windows_dacl(target, trusted_roots)',
+      '    finally:',
+      '        if orig_windll is not None: ctypes.windll = orig_windll',
+      '        else: delattr(ctypes, "windll")',
+      '# 1. FILE_WRITE_DATA',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 2. FILE_APPEND_DATA',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x0004, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 3. DELETE',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00010000, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 4. WRITE_DAC',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00040000, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 5. WRITE_OWNER',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00080000, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 6. GENERIC_WRITE',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x40000000, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 7. GENERIC_ALL',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x10000000, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 8. Broad principal Everyone S-1-1-0 with FILE_WRITE_DATA',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-1-0"}])',
+      '# 9. Broad principal Authenticated Users S-1-5-11 with FILE_WRITE_DATA',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-11"}])',
+      '# 10. Broad principal Users S-1-5-32-545 with GENERIC_WRITE',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x40000000, "sid_str": "S-1-5-32-545"}])',
+      '# 11. Object ACE flags=0 (no GUIDs) with write',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 5, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001", "object_flags": 0}])',
+      '# 12. Object ACE flags=1 (ObjectType GUID present) with write',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 5, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001", "object_flags": 1}])',
+      '# 13. Object ACE flags=2 (InheritedObjectType GUID present) with write',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 5, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001", "object_flags": 2}])',
+      '# 14. Object ACE flags=3 (Both GUIDs present) with write',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 5, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001", "object_flags": 3}])',
+      '# 15. Callback Object ACE type 11 flags=3 with write',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 11, "ace_flags": 0, "mask": 0x40000000, "sid_str": "S-1-5-21-999-1001", "object_flags": 3}])',
+      '# 16. Object ACE with invalid/reserved flags (0x04)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 5, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544", "object_flags": 4}])',
+      '# 17. Compound ACE type 4 valid (type=1, res=0) with write',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 4, "ace_flags": 0, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001", "compound_type": 1, "reserved": 0}])',
+      '# 18. Compound ACE with invalid compound_type=2',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 4, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544", "compound_type": 2, "reserved": 0}])',
+      '# 19. Compound ACE with non-zero reserved=1',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 4, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544", "compound_type": 1, "reserved": 1}])',
+      '# 20. Truncated ACE buffer (AceSize smaller than SID offset + sid_len)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544", "corrupt_size": 12}])',
+      '# 21. Malformed SID revision (revision != 1)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544", "corrupt_sid_rev": 2}])',
+      '# 22. Malformed SID subauthority count',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544", "corrupt_sid_count": 15}])',
+      '# 23. Unknown ACE type (0x7F)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0x7F, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544"}])',
+      '# 24. Conversion failure (fail_conv=True)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544"}], fail_conv=True)',
+      '# 25. NULL DACL',
+      'assert not run_test_scenario("S-1-5-32-544", [], null_dacl=True)',
+      '# 26. API failure (fail_api=True)',
+      'assert not run_test_scenario("S-1-5-32-544", [], fail_api=True)',
+      '# 27. Untrusted owner',
+      'assert not run_test_scenario("S-1-5-21-999-1001", [{"ace_type": 0, "ace_flags": 0, "mask": 0, "sid_str": "S-1-5-32-544"}])',
+      '# 28. Inherited write ACE for untrusted user (flags=0x10)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0x10, "mask": 0x0002, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 29. Inherit-only CREATOR OWNER (flags=0x08, sid=S-1-3-0)',
+      'assert run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0x08, "mask": 0x10000000, "sid_str": "S-1-3-0"}])',
+      '# 30. Trusted Administrators and SYSTEM only',
+      'assert run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x10000000, "sid_str": "S-1-5-32-544"}, {"ace_type": 0, "ace_flags": 0, "mask": 0x10000000, "sid_str": "S-1-5-18"}])',
+      '# Native check on Windows',
+      'if sys.platform == "win32":',
+      '    real_git = r"C:\\Program Files\\Git\\cmd\\git.exe"',
+      '    if os.path.isfile(real_git):',
+      '        assert verify_windows_dacl(real_git, [r"C:\\Program Files"]), "Real git.exe must pass DACL validation"',
+      '# 31. FILE_DELETE_CHILD on a parent directory',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00000040, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 32. FILE_WRITE_EA',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00000010, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 33. FILE_WRITE_ATTRIBUTES',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x00000100, "sid_str": "S-1-5-21-999-1001"}])',
+      '# 34. FILE_ALL_ACCESS (0x001F01FF)',
+      'assert not run_test_scenario("S-1-5-32-544", [{"ace_type": 0, "ace_flags": 0, "mask": 0x001F01FF, "sid_str": "S-1-5-21-999-1001"}])',
+      'print("DACL_ALL_34_SCENARIOS_VERIFIED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /DACL_ALL_34_SCENARIOS_VERIFIED/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects Git executables outside Windows trusted administrative roots', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-wintrust-'));
+
+  try {
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      'unapprovedDir = os.path.realpath("/custom_tools/bin")',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      `found = scope["resolve_trusted_git"]({}, candidate_dirs=[unapprovedDir])`,
+      'assert found is None, f"Expected non-administrative directory to be rejected, got: {found}"',
+      'print("NON_ADMIN_WIN_DIR_REJECTED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /NON_ADMIN_WIN_DIR_REJECTED/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects fake Git executables in user-controlled home and AppData directories', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-userhome-'));
+
+  try {
+    const userBin = path.join(tempDir, 'home_user', 'bin');
+    fs.mkdirSync(userBin, { recursive: true });
+    const fakeGit = path.join(userBin, process.platform === 'win32' ? 'git.cmd' : 'git');
+    if (process.platform === 'win32') {
+      fs.writeFileSync(fakeGit, '@echo off\r\necho git version 2.99.0\r\n');
+    } else {
+      fs.writeFileSync(fakeGit, '#!/bin/sh\necho "git version 2.99.0"\n');
+      fs.chmodSync(fakeGit, 0o755);
+    }
+
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      `os.environ['USERPROFILE'] = ${JSON.stringify(path.join(tempDir, 'home_user'))}`,
+      `os.environ['HOME'] = ${JSON.stringify(path.join(tempDir, 'home_user'))}`,
+      `os.environ['LOCALAPPDATA'] = ${JSON.stringify(path.join(tempDir, 'home_user', 'AppData', 'Local'))}`,
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      `found = scope["resolve_trusted_git"]({}, candidate_dirs=[${JSON.stringify(userBin)}])`,
+      'assert found is None, f"Expected user home / AppData directory to be rejected, got: {found}"',
+      'print("USER_HOME_GIT_REJECTED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /USER_HOME_GIT_REJECTED/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('finding P3-04: scanner rejects git wrapper scripts and symlink substitutions in repository root', () => {
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
+  const fullPython = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [pythonBin], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0];
+  const scannerPath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-test-p304-wrappers-'));
+
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'P304 Wrapper User'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.email', 'p304w@example.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tempDir });
+
+    const repoBin = path.join(tempDir, 'bin');
+    fs.mkdirSync(repoBin, { recursive: true });
+
+    const wrapperPath = path.join(repoBin, process.platform === 'win32' ? 'git.cmd' : 'git');
+    if (process.platform === 'win32') {
+      fs.writeFileSync(wrapperPath, '@echo off\r\necho git version 2.99.0\r\nexit /b 0\r\n');
+    } else {
+      fs.writeFileSync(wrapperPath, '#!/bin/sh\necho "git version 2.99.0"\nexit 0\n');
+      fs.chmodSync(wrapperPath, 0o755);
+    }
+
+    const scannerCode = fs.readFileSync(scannerPath, 'utf8');
+    const funcCode = scannerCode.slice(scannerCode.indexOf('def resolve_trusted_git('), scannerCode.indexOf('clean_git_env ='));
+
+    const testPy = [
+      'import os, sys, tempfile, subprocess',
+      `scope = {'ROOT': ${JSON.stringify(tempDir)}, 'tempfile': tempfile, 'os': os, 'sys': sys, 'subprocess': subprocess}`,
+      `exec(${JSON.stringify(funcCode)}, scope)`,
+      `os.environ['PATH'] = ${JSON.stringify(repoBin)}`,
+      'found_git = scope["resolve_trusted_git"]({})',
+      `assert found_git is None or not found_git.startswith(${JSON.stringify(tempDir)}), f"Cannot resolve in-repo git: {found_git}"`,
+      'print("IN_REPO_GIT_REJECTED")'
+    ].join('\n');
+
+    const pyRun = spawnSync(fullPython, ['-c', testPy], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(pyRun.status, 0, pyRun.stderr);
+    assert.match(pyRun.stdout, /IN_REPO_GIT_REJECTED/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// Supervisory Finding F6: Consumer Validator continue-on-error and Conditionality Bypass
+test('finding F6: rejects continue-on-error on mandatory jobs and steps in consumer validator', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  // Job-level continue-on-error
+  for (const jobId of ['secrets', 'semgrep', 'codeql', 'osv']) {
+    const parsedJob = YAML.parse(text);
+    parsedJob.jobs[jobId]['continue-on-error'] = true;
+    assert.throws(
+      () => validateConsumerWorkflowStructure(parsedJob),
+      new RegExp(`mandatory job '${jobId}' must not define continue-on-error`)
+    );
+  }
+
+  // Step-level continue-on-error
+  for (const jobId of ['secrets', 'semgrep', 'codeql']) {
+    const parsedStep = YAML.parse(text);
+    parsedStep.jobs[jobId].steps[0]['continue-on-error'] = true;
+    assert.throws(
+      () => validateConsumerWorkflowStructure(parsedStep),
+      new RegExp(`mandatory step 0 in job '${jobId}' must not define continue-on-error`)
+    );
+  }
+});
+
+test('finding F6: rejects if conditions on mandatory jobs and steps in consumer validator', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  const conditions = [
+    false,
+    'false',
+    '${{ false }}',
+    "github.event_name == 'never'",
+    "github.ref == 'refs/heads/main'"
+  ];
+
+  // Job-level if conditions
+  for (const cond of conditions) {
+    for (const jobId of ['secrets', 'semgrep', 'codeql', 'osv']) {
+      const parsedJob = YAML.parse(text);
+      parsedJob.jobs[jobId].if = cond;
+      assert.throws(
+        () => validateConsumerWorkflowStructure(parsedJob),
+        new RegExp(`mandatory job '${jobId}' declares unapproved condition`)
+      );
+    }
+  }
+
+  // Step-level if conditions
+  for (const cond of conditions) {
+    for (const jobId of ['secrets', 'semgrep', 'codeql']) {
+      for (let i = 0; i < 3; i++) {
+        const parsedStep = YAML.parse(text);
+        parsedStep.jobs[jobId].steps[i].if = cond;
+        assert.throws(
+          () => validateConsumerWorkflowStructure(parsedStep),
+          new RegExp(`mandatory step ${i} in job '${jobId}' declares unapproved condition`)
+        );
+      }
+    }
+  }
+});
+
+test('finding F6: rejects needs dependencies and strategy matrices on mandatory jobs', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  // needs dependency
+  const parsedNeeds = YAML.parse(text);
+  parsedNeeds.jobs.semgrep.needs = ['secrets'];
+  assert.throws(
+    () => validateConsumerWorkflowStructure(parsedNeeds),
+    /mandatory job 'semgrep' must not define dependencies/
+  );
+
+  // strategy matrix
+  const parsedStrategy = YAML.parse(text);
+  parsedStrategy.jobs.semgrep.strategy = { matrix: { os: ['ubuntu-latest'] } };
+  assert.throws(
+    () => validateConsumerWorkflowStructure(parsedStrategy),
+    /mandatory job 'semgrep' must not define strategy matrix/
+  );
+});
+
+test('finding W-03: standalone scanner matches all four embedded workflow scanner copies', () => {
+  const standalonePath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  assert.ok(fs.existsSync(standalonePath), 'Standalone scanner tools/uss-tracked-binary-scanner.py must exist');
+  const standaloneContent = fs.readFileSync(standalonePath, 'utf8');
+  const standaloneLines = standaloneContent.split(/\r?\n/);
+  const osIdx = standaloneLines.indexOf('import os');
+  assert.ok(osIdx >= 0, 'Standalone scanner must contain import os');
+  const standaloneEngine = standaloneLines.slice(osIdx).join('\n').trim();
+
+  const workflowTargets = [
+    { file: path.join(ROOT, '.github', 'workflows', 'security-scans.yml'), label: 'security-scans.yml' },
+    { file: path.join(ROOT, 'templates', 'ci', 'consumer-security-scans.yml'), label: 'consumer-security-scans.yml' },
+  ];
+
+  for (const target of workflowTargets) {
+    const content = fs.readFileSync(target.file, 'utf8');
+    const matches = [...content.matchAll(/python3 - <<'EOF'\n([\s\S]*?)\n\s*EOF/g)];
+    assert.strictEqual(matches.length, 2, `${target.label} must contain exactly 2 embedded scanner blocks`);
+    for (let i = 0; i < matches.length; i++) {
+      const dedented = matches[i][1]
+        .split('\n')
+        .map(line => (line.startsWith('          ') ? line.slice(10) : line))
+        .join('\n')
+        .trim();
+      assert.strictEqual(
+        dedented,
+        standaloneEngine,
+        `${target.label} embedded scanner block ${i + 1} must match standalone scanner engine byte-for-byte`
+      );
+    }
+  }
+
+  // Also verify against buildExpectedConsumerGuard in tools/validate-consumer-workflow.mjs
+  const consumerGuard = buildExpectedConsumerGuard();
+  const guardLines = consumerGuard.split(/\r?\n/);
+  const eof1 = guardLines.indexOf("python3 - <<'EOF'");
+  const eof2 = guardLines.lastIndexOf('EOF');
+  assert.ok(eof1 >= 0 && eof2 > eof1, 'buildExpectedConsumerGuard must contain python3 heredoc');
+  const guardEngine = guardLines.slice(eof1 + 1, eof2).join('\n').trim();
+  assert.strictEqual(
+    guardEngine,
+    standaloneEngine,
+    'buildExpectedConsumerGuard must match standalone scanner engine byte-for-byte'
+  );
+});
+
+test('finding W-03: negative: mutating standalone scanner is detected and rejected by parity enforcement', () => {
+  const standalonePath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const original = fs.readFileSync(standalonePath, 'utf8');
+
+  function checkParityWithContent(candidateContent) {
+    const lines = candidateContent.split(/\r?\n/);
+    const osIdx = lines.indexOf('import os');
+    assert.ok(osIdx >= 0, 'Candidate scanner must contain import os');
+    const candidateEngine = lines.slice(osIdx).join('\n').trim();
+
+    const workflowTargets = [
+      { file: path.join(ROOT, '.github', 'workflows', 'security-scans.yml'), label: 'security-scans.yml' },
+      { file: path.join(ROOT, 'templates', 'ci', 'consumer-security-scans.yml'), label: 'consumer-security-scans.yml' },
+    ];
+
+    for (const target of workflowTargets) {
+      const content = fs.readFileSync(target.file, 'utf8');
+      const matches = [...content.matchAll(/python3 - <<'EOF'\n([\s\S]*?)\n\s*EOF/g)];
+      assert.strictEqual(matches.length, 2, `${target.label} must contain exactly 2 embedded scanner blocks`);
+      for (let i = 0; i < matches.length; i++) {
+        const dedented = matches[i][1]
+          .split('\n')
+          .map(line => (line.startsWith('          ') ? line.slice(10) : line))
+          .join('\n')
+          .trim();
+        assert.strictEqual(
+          dedented,
+          candidateEngine,
+          `${target.label} embedded scanner block ${i + 1} must match standalone scanner engine byte-for-byte`
+        );
+      }
+    }
+  }
+
+  // Verify baseline passes
+  checkParityWithContent(original);
+
+  // Adversarial mutations
+  const adversarialMutations = [
+    { name: 'early exit insertion', mutated: original.replace('import os', 'import os\nsys.exit(0)') },
+    { name: 'weaken WRITE_MASK', mutated: original.replace('0x40000000 | 0x10000000', '0x40000000') },
+    { name: 'bypass SECURE_DIR_FD platform gate', mutated: original.replace('if not SECURE_DIR_FD:', 'if False:') },
+    { name: 'remove O_NOFOLLOW check', mutated: original.replace('hasattr(os, "O_NOFOLLOW")', 'True') },
+    { name: 'unauthorized trailing comment or payload', mutated: original + '\n# malicious trailing payload\n' },
+  ];
+
+  for (const mut of adversarialMutations) {
+    assert.notStrictEqual(mut.mutated, original, `Mutation [${mut.name}] must alter content`);
+    assert.throws(
+      () => checkParityWithContent(mut.mutated),
+      assert.AssertionError,
+      `Parity enforcement must reject mutation [${mut.name}]`
+    );
+  }
+});
+
+test('finding W-03: validator enforcement cannot be bypassed by changing only the standalone scanner', () => {
+  const standalonePath = path.join(ROOT, 'tools', 'uss-tracked-binary-scanner.py');
+  const original = fs.readFileSync(standalonePath, 'utf8');
+
+  try {
+    // Mutate standalone scanner on disk
+    fs.writeFileSync(standalonePath, original + '\n# rogue bypass payload\n');
+
+    // Executing validate.mjs MUST fail
+    const res = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'validate.mjs')], { encoding: 'utf8' });
+    assert.notStrictEqual(res.status, 0, 'tools/validate.mjs MUST exit non-zero when standalone scanner is mutated alone');
+    const combinedOutput = (res.stderr || '') + (res.stdout || '');
+    assert.ok(
+      combinedOutput.includes('Standalone scanner tools/uss-tracked-binary-scanner.py differs from embedded copy'),
+      'tools/validate.mjs must identify standalone scanner divergence'
+    );
+  } finally {
+    // Restore pristine content
+    fs.writeFileSync(standalonePath, original);
+  }
+});
+
+// Additional A2-02 & A2-07 Adversarial Coverage Matrix Regression Tests
+
+test('A2-02: consumer validator rejects unapproved triggers, string permissions, filter bypasses, negated branches, dual uses+run, and invalid schedule/build-mode', () => {
+  const baseText = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  const unapprovedPrTarget = YAML.parse(baseText);
+  unapprovedPrTarget.on.pull_request_target = { branches: ['**'] };
+  assert.throws(() => validateConsumerWorkflowStructure(unapprovedPrTarget), /uses unapproved trigger 'pull_request_target'/);
+
+  const unapprovedWorkflowRun = YAML.parse(baseText);
+  unapprovedWorkflowRun.on.workflow_run = { workflows: ['CI'], types: ['completed'] };
+  assert.throws(() => validateConsumerWorkflowStructure(unapprovedWorkflowRun), /uses unapproved trigger 'workflow_run'/);
+
+  for (const [filterKey, filterVal] of [
+    ['paths-ignore', ['**']],
+    ['branches-ignore', ['release/*']],
+    ['paths', ['docs/**']],
+    ['types', ['closed']],
+    ['tags-ignore', ['*']]
+  ]) {
+    const mutated = YAML.parse(baseText);
+    mutated.on.pull_request[filterKey] = filterVal;
+    assert.throws(() => validateConsumerWorkflowStructure(mutated), new RegExp(`declares unapproved filter key '${filterKey}'`));
+  }
+
+  const negatedBranch = YAML.parse(baseText);
+  negatedBranch.on.pull_request.branches = ['**', '!main'];
+  assert.throws(() => validateConsumerWorkflowStructure(negatedBranch), /must be a non-negated branch pattern/);
+
+  const emptyBranches = YAML.parse(baseText);
+  emptyBranches.on.push.branches = [];
+  assert.throws(() => validateConsumerWorkflowStructure(emptyBranches), /must declare a non-empty branches allowlist/);
+
+  const stringPerms = YAML.parse(baseText);
+  stringPerms.permissions = 'read-all';
+  assert.throws(() => validateConsumerWorkflowStructure(stringPerms), /workflow-level permissions must be \{ contents: 'read' \}/);
+
+  const extraReadPerms = YAML.parse(baseText);
+  extraReadPerms.permissions = { contents: 'read', issues: 'read' };
+  assert.throws(() => validateConsumerWorkflowStructure(extraReadPerms), /workflow permissions: configuration mismatch/);
+
+  const dualUsesRun = YAML.parse(baseText);
+  dualUsesRun.jobs.secrets.steps[0].run = 'echo hijacked';
+  assert.throws(() => validateConsumerWorkflowStructure(dualUsesRun), /must not combine both 'uses' and 'run'/);
+
+  const badSchedule = YAML.parse(baseText);
+  badSchedule.on.schedule = [{ cron: '17 5 * * 1' }, { invalid: true }];
+  assert.throws(() => validateConsumerWorkflowStructure(badSchedule), /schedule entries must define only a cron string/);
+
+  const emptyBuildMode = YAML.parse(baseText);
+  emptyBuildMode.jobs.codeql.steps[1].with['build-mode'] = '   ';
+  assert.throws(() => validateConsumerWorkflowStructure(emptyBuildMode), /build-mode must be a non-empty string/);
+
+  const osvRunsOn = YAML.parse(baseText);
+  osvRunsOn.jobs.osv['runs-on'] = 'ubuntu-latest';
+  assert.throws(() => validateConsumerWorkflowStructure(osvRunsOn), /must not override 'runs-on'|contains unapproved key 'runs-on'/);
+
+  const fetchDepth = YAML.parse(baseText);
+  fetchDepth.jobs.secrets.steps[0].with['fetch-depth'] = 1;
+  assert.throws(() => validateConsumerWorkflowStructure(fetchDepth), /configuration mismatch/);
+});
+
+test('A2-02: consumer and first-party validators reject function-wrapped untrusted expressions across workflow fields', () => {
+  const consumerText = fs.readFileSync(path.join(ROOT, 'templates/ci/consumer-security-scans.yml'), 'utf8');
+
+  const consumerWrappedLang = YAML.parse(consumerText);
+  consumerWrappedLang.jobs.codeql.steps[1].with.languages = "${{ format('{0}', github.event.inputs.lang) }}";
+  assert.throws(() => validateConsumerWorkflowStructure(consumerWrappedLang), /contains forbidden untrusted GitHub context/);
+
+  const consumerWrappedStepName = YAML.parse(consumerText);
+  consumerWrappedStepName.jobs.semgrep.steps[2].name = "${{ toJSON(github.head_ref) }}";
+  assert.throws(() => validateConsumerWorkflowStructure(consumerWrappedStepName), /contains forbidden untrusted GitHub context/);
+
+  const consumerDispatchDefault = YAML.parse(consumerText);
+  consumerDispatchDefault.on.workflow_dispatch = { inputs: { target: { default: '${{ github.actor }}' } } };
+  assert.throws(() => validateConsumerWorkflowStructure(consumerDispatchDefault), /contains forbidden untrusted GitHub context/);
+
+  const consumerWorkflowName = YAML.parse(consumerText);
+  consumerWorkflowName.name = 'Scan ${{ github.ref }}';
+  assert.throws(() => validateConsumerWorkflowStructure(consumerWorkflowName), /contains forbidden untrusted GitHub context/);
+
+  const firstPartyWrappedRun = YAML.parse(read('uss-validation.yml'));
+  firstPartyWrappedRun.jobs.validate.steps[2].run = 'echo "${{ format(\'{0}\', github.event.issue.title) }}"';
+  assert.throws(() => validateUssValidationWorkflow(firstPartyWrappedRun), /contains forbidden direct expression interpolation/);
+
+  const firstPartyWrappedEnv = YAML.parse(read('security-scans.yml'));
+  firstPartyWrappedEnv.jobs.semgrep.env = { REF: '${{ toJSON(github.head_ref) }}' };
+  assert.throws(() => validateSecurityScansWorkflow(firstPartyWrappedEnv), /contains forbidden untrusted GitHub context/);
+
+  const firstPartyJobName = YAML.parse(read('security-scans.yml'));
+  firstPartyJobName.jobs.semgrep.name = 'Semgrep ${{ github.triggering_actor }}';
+  assert.throws(() => validateSecurityScansWorkflow(firstPartyJobName), /contains forbidden untrusted GitHub context/);
+});
+
+test('A2-02: first-party workflow validators reject trigger filter bypasses, negated branches, checkout hijacks, step timeout-minutes, security-events broadening, and additional error suppressions', () => {
+  const pathsIgnore = YAML.parse(read('security-scans.yml'));
+  pathsIgnore.on.pull_request['paths-ignore'] = ['**'];
+  assert.throws(() => validateSecurityScansWorkflow(pathsIgnore), /declares unapproved filter key 'paths-ignore'/);
+
+  const negated = YAML.parse(read('security-scans.yml'));
+  negated.on.pull_request.branches = ['main', 'integration/uss-pr3-pr8-hardening', '!main'];
+  assert.throws(() => validateSecurityScansWorkflow(negated), /must be a non-negated branch pattern/);
+
+  const stringPerms = YAML.parse(read('uss-validation.yml'));
+  stringPerms.permissions = 'read-all';
+  assert.throws(() => validateUssValidationWorkflow(stringPerms), /must be an explicit mapping/);
+
+  const semgrepFakeCheckout = YAML.parse(read('security-scans.yml'));
+  semgrepFakeCheckout.jobs.semgrep.steps[0] = { name: 'Fake checkout', run: 'echo skipped' };
+  assert.throws(() => validateSecurityScansWorkflow(semgrepFakeCheckout), /Semgrep checkout must use the approved pinned action/);
+
+  const codeqlSparseCheckout = YAML.parse(read('security-scans.yml'));
+  codeqlSparseCheckout.jobs.codeql.steps[0].with['sparse-checkout'] = 'README.md';
+  assert.throws(() => validateSecurityScansWorkflow(codeqlSparseCheckout), /CodeQL checkout inputs must match the exact approved configuration/);
+
+  const ussHijackCheckout = YAML.parse(read('uss-validation.yml'));
+  ussHijackCheckout.jobs.validate.steps[0].uses = 'actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38';
+  assert.throws(() => validateUssValidationWorkflow(ussHijackCheckout), /step 0 does not match required step sequence/);
+
+  const ussCheckoutEnv = YAML.parse(read('uss-validation.yml'));
+  ussCheckoutEnv.jobs.validate.steps[0].env = { SAFE_VAR: '1' };
+  assert.throws(() => validateUssValidationWorkflow(ussCheckoutEnv), /checkout step must not define env/);
+
+  const dualUsesRun = YAML.parse(read('uss-validation.yml'));
+  dualUsesRun.jobs.validate.steps[0].run = 'echo hijacked';
+  assert.throws(() => validateUssValidationWorkflow(dualUsesRun), /must not combine both 'uses' and 'run'/);
+
+  const stepTimeout = YAML.parse(read('security-scans.yml'));
+  stepTimeout.jobs.semgrep.steps[2]['timeout-minutes'] = 1;
+  assert.throws(() => validateSecurityScansWorkflow(stepTimeout), /contains unapproved key 'timeout-minutes'/);
+
+  const gitleaksSecEventsWrite = YAML.parse(read('security-scans.yml'));
+  gitleaksSecEventsWrite.jobs.gitleaks.permissions['security-events'] = 'write';
+  assert.throws(() => validateSecurityScansWorkflow(gitleaksSecEventsWrite), /granted unapproved write permission to security-events/);
+
+  const validateSecEventsWrite = YAML.parse(read('uss-validation.yml'));
+  validateSecEventsWrite.jobs.validate.permissions = { 'security-events': 'write' };
+  assert.throws(() => validateUssValidationWorkflow(validateSecEventsWrite), /granted unapproved write permission to security-events/);
+
+  for (const suffix of [' || return 0', '; set +o pipefail']) {
+    const parsed = YAML.parse(read('security-scans.yml'));
+    parsed.jobs.semgrep.steps[2].run = suffix.includes('set') ? 'set +o pipefail\n' + parsed.jobs.semgrep.steps[2].run : parsed.jobs.semgrep.steps[2].run + suffix;
+    assert.throws(() => validateSecurityScansWorkflow(parsed), /suppresses errors with/);
+  }
+});
+
+test('A2-07: helper assertions reject multi-token/non-file .semgrepignore, -text gitattributes, and nested overrides', t => {
+  const tmpUnit = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-a207-unit-'));
+  t.after(() => fs.rmSync(tmpUnit, { recursive: true, force: true }));
+
+  fs.mkdirSync(path.join(tmpUnit, 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(tmpUnit, '.gitattributes'), '*.js -text\n');
+  assert.throws(() => assertNoProhibitedGitAttributes(tmpUnit), /Prohibited \.gitattributes configuration is not permitted/);
+  fs.rmSync(path.join(tmpUnit, '.gitattributes'));
+
+  fs.writeFileSync(path.join(tmpUnit, 'nested', '.gitleaksignore'), 'deadbeef\n');
+  assert.throws(() => assertNoGitleaksOverrideFiles(tmpUnit), /Unreviewed Gitleaks configuration\/ignore file is not permitted/);
+  fs.rmSync(path.join(tmpUnit, 'nested', '.gitleaksignore'));
+
+  fs.writeFileSync(path.join(tmpUnit, 'nested', '.semgrep.yml'), 'rules: []\n');
+  assert.throws(() => assertNoSemgrepConfigOverrides(tmpUnit), /Unreviewed Semgrep configuration override is not permitted/);
+  fs.rmSync(path.join(tmpUnit, 'nested', '.semgrep.yml'));
+
+  fs.writeFileSync(path.join(tmpUnit, 'nested', 'codeql-config.yml'), 'paths-ignore: []\n');
+  assert.throws(() => assertNoCodeQLConfigOverrides(tmpUnit), /Unreviewed CodeQL configuration override is not permitted/);
+  fs.rmSync(path.join(tmpUnit, 'nested', 'codeql-config.yml'));
+
+  fs.writeFileSync(path.join(tmpUnit, '.semgrepignore'), '.git/ nested/\nnode_modules/\n');
+  assert.throws(() => assertSemgrepIgnoreAllowlist(tmpUnit), /\.semgrepignore may exclude only/);
+  fs.rmSync(path.join(tmpUnit, '.semgrepignore'));
+
+  fs.mkdirSync(path.join(tmpUnit, '.semgrepignore'));
+  assert.throws(() => assertSemgrepIgnoreAllowlist(tmpUnit), /\.semgrepignore must be a regular file/);
+  fs.rmSync(path.join(tmpUnit, '.semgrepignore'), { recursive: true, force: true });
+});
+
+test('A2-07: live POSIX scanner guards reject .semgrepignore multi-token/non-file bypasses, -text gitattributes, nested overrides, and symlinked ignores', t => {
+  if (process.platform === 'win32') {
+    t.skip('Live bash guard fixture assertions run on POSIX/Linux VPS and hosted Ubuntu CI');
+    return;
+  }
+
+  for (const [guardLabel, guardScript] of [
+    ['SCANNER_CONFIG_GUARD_RUN', SCANNER_CONFIG_GUARD_RUN],
+    ['CONSUMER_CONFIG_GUARD_RUN', CONSUMER_CONFIG_GUARD_RUN]
+  ]) {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'uss-a207-bash-'));
+    t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+
+    const runGit = args => {
+      const res = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(res.status, 0, `${guardLabel} git ${args.join(' ')} failed: ${res.stderr}`);
+      return res;
+    };
+
+    runGit(['init', '-q']);
+    runGit(['config', 'user.name', 'USS A2-07 Test']);
+    runGit(['config', 'user.email', 'uss-a207@example.invalid']);
+    runGit(['config', 'commit.gpgsign', 'false']);
+    for (const dir of ['tools', 'tests', '.github/workflows', 'templates']) {
+      fs.mkdirSync(path.join(cwd, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(cwd, '.semgrepignore'), '.git/\nnode_modules/\n');
+    fs.writeFileSync(path.join(cwd, 'tools/app.js'), 'export const x = 1;\n');
+    fs.writeFileSync(path.join(cwd, 'tests/app.test.mjs'), 'export const ok = true;\n');
+    fs.writeFileSync(path.join(cwd, '.github/workflows/ci.yml'), 'name: ci\n');
+    fs.writeFileSync(path.join(cwd, 'templates/t.yml'), 'name: t\n');
+    runGit(['add', '.semgrepignore', 'tools/app.js', 'tests/app.test.mjs', '.github/workflows/ci.yml', 'templates/t.yml']);
+    runGit(['commit', '-m', 'clean fixture']);
+
+    const runGuard = () => spawnSync('bash', ['--norc', '--noprofile', '-s'], { cwd, encoding: 'utf8', input: guardScript });
+
+    const clean = runGuard();
+    assert.equal(clean.status, 0, `${guardLabel} clean fixture must pass: ${clean.stderr}`);
+
+    // 1. Multi-token .semgrepignore bypass
+    fs.writeFileSync(path.join(cwd, '.semgrepignore'), '.git/ tools/\nnode_modules/\n');
+    const multiToken = runGuard();
+    assert.notEqual(multiToken.status, 0, `${guardLabel} must reject multi-token .semgrepignore`);
+    assert.match(multiToken.stderr, /\.semgrepignore may exclude only/);
+
+    // 2. Directory .semgrepignore bypass (when tracked: rejected fail-closed by binary scanner)
+    fs.rmSync(path.join(cwd, '.semgrepignore'));
+    fs.mkdirSync(path.join(cwd, '.semgrepignore'));
+    const dirIgnoreTracked = runGuard();
+    assert.notEqual(dirIgnoreTracked.status, 0, `${guardLabel} must reject tracked path replaced by directory`);
+    assert.match(dirIgnoreTracked.stderr, /tracked path is not a regular file or symlink: \.semgrepignore/);
+    fs.rmSync(path.join(cwd, '.semgrepignore'), { recursive: true, force: true });
+    fs.writeFileSync(path.join(cwd, '.semgrepignore'), '.git/\nnode_modules/\n');
+
+    // 3. -text gitattributes bypass
+    fs.writeFileSync(path.join(cwd, '.gitattributes'), '*.js -text\n');
+    const dashText = runGuard();
+    assert.notEqual(dashText.status, 0, `${guardLabel} must reject -text in .gitattributes`);
+    assert.match(dashText.stderr, /Prohibited \.gitattributes configuration/);
+    fs.rmSync(path.join(cwd, '.gitattributes'));
+
+    // 4. Nested scanner override files
+    for (const rel of ['tools/.semgrep.yml', 'tools/.gitleaksignore', 'tools/codeql-config.yml', 'tools/.allowed-binaries']) {
+      fs.writeFileSync(path.join(cwd, rel), 'override\n');
+      const nested = runGuard();
+      assert.notEqual(nested.status, 0, `${guardLabel} must reject nested override ${rel}`);
+      assert.match(nested.stderr, /Unreviewed scanner override is not permitted/);
+      fs.rmSync(path.join(cwd, rel));
+    }
+
+    // 5. Dangling symlink scanner override + symlinked .gitignore + symlinked .git/info/attributes
+    fs.symlinkSync('/nonexistent-target', path.join(cwd, '.gitleaks.toml'));
+    const dangling = runGuard();
+    assert.notEqual(dangling.status, 0, `${guardLabel} must reject symlinked scanner override`);
+    assert.match(dangling.stderr, /Unreviewed scanner override is not permitted/);
+    fs.rmSync(path.join(cwd, '.gitleaks.toml'));
+
+    fs.symlinkSync('/nonexistent-gitignore', path.join(cwd, 'tools', '.gitignore'));
+    const symGitignore = runGuard();
+    assert.notEqual(symGitignore.status, 0, `${guardLabel} must reject symlinked .gitignore`);
+    assert.match(symGitignore.stderr, /Symlinked \.gitignore is not permitted/);
+    fs.rmSync(path.join(cwd, 'tools', '.gitignore'));
+
+    fs.mkdirSync(path.join(cwd, '.git', 'info'), { recursive: true });
+    fs.symlinkSync('/nonexistent-attrs', path.join(cwd, '.git', 'info', 'attributes'));
+    const symInfoAttrs = runGuard();
+    assert.notEqual(symInfoAttrs.status, 0, `${guardLabel} must reject symlinked .git/info/attributes`);
+    assert.match(symInfoAttrs.stderr, /Symlinked \.git\/info\/attributes is not permitted/);
+    fs.rmSync(path.join(cwd, '.git', 'info', 'attributes'));
+
+    // 6. Untracked directory .semgrepignore bypass (rejected by bash file-type guard)
+    runGit(['rm', '-q', '.semgrepignore']);
+    runGit(['commit', '-m', 'untrack semgrepignore']);
+    fs.mkdirSync(path.join(cwd, '.semgrepignore'));
+    const dirIgnoreUntracked = runGuard();
+    assert.notEqual(dirIgnoreUntracked.status, 0, `${guardLabel} must reject untracked directory .semgrepignore`);
+    assert.match(dirIgnoreUntracked.stderr, /\.semgrepignore must be a regular file/);
+    fs.rmSync(path.join(cwd, '.semgrepignore'), { recursive: true, force: true });
+  }
+});
+
+
+
+test('SCAN-LD: scanner and embedded guards do not pass loader or shell startup variables to Git',()=>{
+ const expected='not k.upper().startswith(("GIT_", "LD_", "DYLD_"))';
+ for(const file of ['tools/uss-tracked-binary-scanner.py','.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml','tools/validate-consumer-workflow.mjs']){
+  const source=fs.readFileSync(path.join(ROOT,file),'utf8');
+  assert.ok(source.includes(expected),file+' must filter GIT/LD/DYLD variables from Git child environments');
+  assert.ok(source.includes('BASH_ENV')&&source.includes('PYTHONPATH'),file+' must filter shell/Python startup variables from Git child environments');
+ }
+});

@@ -1,0 +1,6 @@
+# Semgrep ignore configuration for Universal Security Standard (USS)
+# Exclude package manager artifacts and VCS metadata while ensuring
+# both tools/ and tests/ are fully analyzed.
+
+node_modules/
+.git/

@@ -1,6 +1,6 @@
 {
   "standard": "Universal Security Standard",
-  "version": "1.0.0",
+  "version": "1.0.0-rc.1",
   "status": "review-ready",
   "description": "Modular, source-traceable security engineering policy for AI agents and human engineering teams.",
   "kernel": "KERNEL.md",
@@ -560,6 +560,234 @@
       ]
     }
   ],
+  "supplements": [
+    {
+      "id": "S01",
+      "slug": "authentication-federation",
+      "title": "Authentication and federation",
+      "path": "supplements/authentication-federation.md",
+      "triggers": [
+        "oauth",
+        "oidc",
+        "jwt",
+        "refresh-token",
+        "passkey",
+        "webauthn",
+        "mfa",
+        "sso",
+        "federation",
+        "saml"
+      ],
+      "related_modules": [
+        "M02",
+        "M03",
+        "M08"
+      ]
+    },
+    {
+      "id": "S02",
+      "slug": "ssrf-outbound-requests",
+      "title": "SSRF and outbound requests",
+      "path": "supplements/ssrf-outbound-requests.md",
+      "triggers": [
+        "ssrf",
+        "outbound",
+        "webhook-outbound",
+        "dns-rebinding",
+        "remote-content",
+        "fetch-url",
+        "url-fetch"
+      ],
+      "related_modules": [
+        "M04",
+        "M05",
+        "M08",
+        "M10"
+      ]
+    },
+    {
+      "id": "S03",
+      "slug": "api-graphql-websocket-grpc",
+      "title": "API protocol security (GraphQL, WebSocket, gRPC)",
+      "path": "supplements/api-graphql-websocket-grpc.md",
+      "triggers": [
+        "graphql",
+        "websocket",
+        "grpc",
+        "introspection",
+        "query-depth",
+        "rpc",
+        "subscriptions"
+      ],
+      "related_modules": [
+        "M03",
+        "M04",
+        "M05",
+        "M10"
+      ]
+    },
+    {
+      "id": "S04",
+      "slug": "cryptography-key-management",
+      "title": "Cryptography and key management",
+      "path": "supplements/cryptography-key-management.md",
+      "triggers": [
+        "crypto",
+        "cryptography",
+        "encryption",
+        "envelope-encryption",
+        "kms",
+        "key-rotation",
+        "signing-key",
+        "secret-key"
+      ],
+      "related_modules": [
+        "M08",
+        "M09",
+        "M12"
+      ]
+    },
+    {
+      "id": "S05",
+      "slug": "data-lifecycle-privacy",
+      "title": "Data lifecycle and privacy",
+      "path": "supplements/data-lifecycle-privacy.md",
+      "triggers": [
+        "privacy",
+        "gdpr",
+        "retention",
+        "pii",
+        "personal-data",
+        "data-lifecycle",
+        "right-to-erasure",
+        "anonymization"
+      ],
+      "related_modules": [
+        "M09",
+        "M10",
+        "M11"
+      ]
+    },
+    {
+      "id": "S06",
+      "slug": "container-cloud-runtime",
+      "title": "Container and cloud runtime",
+      "path": "supplements/container-cloud-runtime.md",
+      "triggers": [
+        "container",
+        "docker",
+        "kubernetes",
+        "k8s",
+        "workload-identity",
+        "cgroups",
+        "cloud-runtime"
+      ],
+      "related_modules": [
+        "M08",
+        "M10",
+        "M12"
+      ]
+    },
+    {
+      "id": "S07",
+      "slug": "ai-agent-security",
+      "title": "AI agent, tool and retrieval security",
+      "path": "supplements/ai-agent-security.md",
+      "triggers": [
+        "ai-agent",
+        "prompt-injection",
+        "mcp",
+        "tool-call",
+        "rag",
+        "autonomous-agent",
+        "agent-security"
+      ],
+      "related_modules": [
+        "M03",
+        "M04",
+        "M08",
+        "M09",
+        "M10",
+        "M11",
+        "M12",
+        "M22"
+      ]
+    }
+  ],
+  "stacks": [
+    {
+      "id": "nodejs-express",
+      "slug": "nodejs-express",
+      "name": "Node.js and Express",
+      "path": "stacks/nodejs-express.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["node", "nodejs", "express", "javascript", "typescript"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "react-typescript",
+      "slug": "react-typescript",
+      "name": "React and TypeScript",
+      "path": "stacks/react-typescript.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["react", "frontend", "typescript-react", "spa", "vite", "nextjs"],
+      "related_modules": ["M01", "M04", "M05", "M12", "M21"]
+    },
+    {
+      "id": "python-fastapi",
+      "slug": "python-fastapi",
+      "name": "Python and FastAPI",
+      "path": "stacks/python-fastapi.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["python", "fastapi", "pydantic", "uvicorn", "starlette"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "laravel-php",
+      "slug": "laravel-php",
+      "name": "Laravel and PHP",
+      "path": "stacks/laravel-php.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["php", "laravel", "eloquent", "blade", "composer"],
+      "related_modules": ["M01", "M02", "M03", "M04", "M05", "M06", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "flutter-dart",
+      "slug": "flutter-dart",
+      "name": "Flutter and Dart mobile",
+      "path": "stacks/flutter-dart.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["flutter", "dart", "mobile", "ios", "android"],
+      "related_modules": ["M01", "M02", "M03", "M04", "M05", "M06", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "go",
+      "slug": "go",
+      "name": "Go",
+      "path": "stacks/go.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["go", "golang", "gin", "echo", "chi"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "rust",
+      "slug": "rust",
+      "name": "Rust",
+      "path": "stacks/rust.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["rust", "cargo", "axum", "actix", "actix-web", "tower"],
+      "related_modules": ["M01", "M02", "M04", "M05", "M08", "M09", "M10", "M12", "M21"]
+    },
+    {
+      "id": "java-spring",
+      "slug": "java-spring",
+      "name": "Java and Spring Boot",
+      "path": "stacks/java-spring.md",
+      "status": "REFERENCE_ONLY",
+      "triggers": ["java", "spring", "spring-boot", "springboot", "jvm", "maven", "gradle"],
+      "related_modules": ["M01", "M02", "M03", "M04", "M05", "M06", "M08", "M09", "M10", "M12", "M21"]
+    }
+  ],
   "tasks": {
     "authentication": [
       "M02",
@@ -660,7 +888,12 @@
       "M22"
     ],
     "code-change": [
-      "M01"
+      "M01",
+      "M04",
+      "M05",
+      "M08",
+      "M09",
+      "M12"
     ],
     "frontend": [
       "M04",
@@ -693,6 +926,47 @@
       "M20",
       "M21",
       "M22"
+    ]
+  },
+  "task_supplements": {
+    "authentication": [
+      "S01"
+    ],
+    "api-security": [
+      "S03"
+    ],
+    "secrets": [
+      "S04"
+    ],
+    "data-protection": [
+      "S05"
+    ],
+    "operations": [
+      "S06"
+    ],
+    "ai-security": [
+      "S07"
+    ],
+    "agent-execution": [
+      "S07"
+    ],
+    "full-audit": [
+      "S01",
+      "S02",
+      "S03",
+      "S04",
+      "S05",
+      "S06",
+      "S07"
+    ],
+    "production-release": [
+      "S01",
+      "S02",
+      "S03",
+      "S04",
+      "S05",
+      "S06",
+      "S07"
     ]
   },
   "bundles": {
