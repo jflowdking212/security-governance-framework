@@ -68,7 +68,9 @@ function isPlaceholderToken(value){
  let decoded;
  try{decoded=decodeURIComponent(value);}catch{return true;}
  const norm=decoded.trim().toLowerCase().replace(/\s+/g,' ');
- return ['n/a','na','none','unknown','tbd','todo','pending','placeholder','example','sample','null','undefined','x','-','--'].includes(norm)||/^-+$/.test(norm);
+ const stem=norm.split('.')[0];
+ const placeholders=['n/a','na','none','unknown','tbd','todo','pending','placeholder','example','sample','null','undefined','x','-','--'];
+ return placeholders.includes(norm)||placeholders.includes(stem)||/^-+$/.test(norm);
 }
 
 function validEvidenceReference(value){
