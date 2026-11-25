@@ -1,14 +1,15 @@
 # Agent Engineering Handover Record
 
-**Repository:** `https://github.com/jflowdking212/security-governance-framework.git`  
-**Base Authoritative Commit:** `58afa246b2c0d0601a5f3945d72bc3243e657c01` (on `integration/uss-pr3-pr8-hardening`)  
-**Current Working Branch:** `fix/uss-final-audit-remediation`  
-**Current Milestone:** USS v1.0.0-rc.1 Independent Audit Findings Remediation  
-**Last Update:** 2026-11-20 (latest supervisory review; see Section 6)  
-**Implementation Engineer:** Gemini  
-**Supervisory Reviewer:** ChatGPT  
-**Independent Reviewer:** Claude  
-**Project Owner:** Jude O. Richard / Jay Bliss Tech Limited  
+- **Repository:** `https://github.com/jflowdking212/security-governance-framework.git`
+- **Current `main` HEAD (2026-11-25):** `53d45c2fee0fa2664fdc4e4c3372ac8971ed959d` (PR #11 `1bb8a6ef...`, PR #12 `23d1047a...`, PR #13 `53d45c2f...`)
+- **Current Release-Readiness Branch (2026-11-25):** `gemini/v1-release-readiness` (technical closure at `68c373f2e0eb0474c718ceb03cae4a8b5cb53ab3`; documentation reconciliation follows — see Section 27)
+- **Historical Nov 20 Base Commit:** `58afa246b2c0d0601a5f3945d72bc3243e657c01` (on pre-merge `integration/uss-pr3-pr8-hardening`)
+- **Current Milestone:** USS v1.0.0 Final Release Readiness Closure (F-1 through F-7)
+- **Last Update:** 2026-11-25 (Gemini final release-readiness pass; see Section 27)
+- **Implementation Engineer:** Gemini
+- **Supervisory Reviewer:** ChatGPT
+- **Independent Reviewer:** Claude
+- **Project Owner:** Jude O. Richard / Jay Bliss Tech Limited
 
 ---
 
@@ -1520,3 +1521,45 @@ The existing ChatGPT scratch candidate is based on the earlier Gemini SHA `6d33d
 4. Close any remaining P1/P2 findings. Then request the owner's A2-05, U-01, release-evidence and merge/deploy decisions separately.
 
 **Disposition:** The working candidate has passed hosted validation and all four hosted security jobs. It is ready for clean-squash construction and final independent audit, but is **not yet release-approved or production-deployed**.
+
+---
+
+## 27. Gemini Final Release Readiness Closure (2026-11-25 — F-1..F-7, Signing Dry Run, Ruleset Analysis & Docs Reconciliation)
+
+- **Branch:** `gemini/v1-release-readiness` (branched from `origin/main` `53d45c2fee0fa2664fdc4e4c3372ac8971ed959d`)
+- **Author identity:** `Gemini <gemini@jayblisstech.com>` (no owner impersonation, no fake signing, no release tag creation)
+- **Technical implementation closure SHA:** `68c373f2e0eb0474c718ceb03cae4a8b5cb53ab3` (documentation reconciliation follows in this handoff commit)
+
+### 27.1 GitHub Main & Open PR Reconciliation (Observed 2026-11-25)
+
+- `main` (`53d45c2fee0fa2664fdc4e4c3372ac8971ed959d`) already incorporates:
+  - PR #11 (`1bb8a6ef04006b0030c989ca8029f2a0d4f70407`, squash of `86a0e206...`, merged `2026-11-25T10:33:00Z`)
+  - PR #12 (`23d1047add2c52eab4a0c84f6760d30a8a8fd17a`, operational activation, hosted `USS validation` run `45597270597` / `USS security scans` run `45597270830` SUCCESS)
+  - PR #13 (`53d45c2fee0fa2664fdc4e4c3372ac8971ed959d`, Assurance Pulse, hosted `USS validation` run `45598306667` / `USS security scans` run `45598307399` SUCCESS; PR runs `45597772700` & `45597773063` SUCCESS)
+- Open PRs requiring owner disposition: `#3` (draft, `ebed5e55...`), `#8` (draft, `da2a91c9...`), `#9` (`933eacd9...`, legacy integration PR pre-dating PR #11), `#6` (Dependabot `actions/checkout` 7.0.1), `#7` (Dependabot `actions/setup-node` 7.1.0). PR `#10` is CLOSED without merge. No tags exist (`0` tags). Open code-scanning, Dependabot, and secret-scanning alerts: `0` across all three APIs.
+
+### 27.2 Findings F-1 through F-7 Implementation & Verification
+
+| Finding | Commit SHA | Summary of Closure |
+|---|---|---|
+| **F-1 / F-2** | `3e6ce6946f807749b753f58a84b1b27f9190e576` | Closed `SCAN-S6` (`git ls-files -s -z`, stage-0, mode allowlist `100644`/`100755`/`120000`, regular-to-symlink fail-closed check) and `W-02`/`W-03` across all 5 scanner copies (`tools/uss-tracked-binary-scanner.py`, 2 in `.github/workflows/security-scans.yml`, 2 in `templates/ci/consumer-security-scans.yml`) + `tools/validate-consumer-workflow.mjs` + `tools/validate.mjs` parity check + isolated regression/mutation tests. Linux VPS `3e6ce69`: `311/311` pass. |
+| **F-3** | `84afc0811543df6deaefe4ab5ab24556d79fa0f0` | Strengthened `tests/checksums.test.mjs` with `PATH`-inheritance, multi-level parent-chain traversal, `core.hooksPath`, `GIT_CONFIG_GLOBAL`/`HOME`/`XDG_CONFIG_HOME` isolation, and fail-closed non-Linux runtime integration tests without weakening `tools/checksums.mjs`. Linux VPS `tests/checksums.test.mjs`: `41/41` pass; Windows full `npm test` (`84afc08`): `316` tests (`277` pass, `0` fail, `39` non-Linux skips). |
+| **F-4 / F-5** | `ffe71058d48876d692b1ab05b0c8e0becf12318e` | Updated `tools/validate-evidence.mjs` public HTTPS diagnostic wording (no immutability claim) and removed `/i` on `^run:([1-9]\d{0,19})$` while keeping `BigInt` unsigned-64 validation. Added uppercase `RUN:` rejection & F-4 wording assertions (`34/34` pass in `tests/evidence.test.mjs`). |
+| **F-7** | `330cb4ed9f17ece12f367a8ee971baae238f7821` | Corrected Firefox ESR LNA target from `ESR 145` to `ESR 153` in `tools/build-modules.mjs` and regenerated `modules/m21-cors-browser-boundary.md` (zero drift). Assertion added in commit `68c373f...`. |
+| **F-6** | `68c373f2e0eb0474c718ceb03cae4a8b5cb53ab3` | Audited `stacks/rust.md`, `stacks/nodejs-express.md`, `stacks/python-fastapi.md`, and `stacks/java-spring.md` against primary sources checked `2026-11-25` (`spring.io` Boot `3.5.x` / Security `6.5.x` OSS ended `2026-06-30`; `pypi.org` FastAPI `0.165.0` `>=3.11`; `devguide.python.org` Python `3.10` EOL Oct 2026; `nodejs.org` `22`/`24`/`26` LTS; `rust-lang.org` 2024 edition in `1.85.0`, nightly `-Zsanitizer`). Marked unverified consuming/runtime claims `NOT VERIFIED`; added regression tests in `tests/documentation.test.mjs`. |
+
+### 27.3 Cross-Platform & Disposable Signing Dry-Run Evidence (At `68c373f`)
+
+- **Linux VPS (`BlissHosts`, Node `v22.22.2`):** Clean isolated clone ran `npm ci --ignore-scripts --no-audit --no-fund`, `build-modules`, `build-indexes`, `build-bundles`, `git diff --exit-code`, `validate.mjs`, `validate-consumer-workflow.mjs`, `validate-evidence.mjs --file templates/security-evidence.example.json`, and full `npm test` -> **`317 passed, 0 failed, 0 skipped`** (`exit 0`).
+- **Section 8 Disposable-Key Dry Run (`~/uss-verify/signing-dryrun`, outside tracked tree, cleaned up on exit):** Verified `tools/checksums.mjs create/verify` (135 tracked files), `ssh-keygen -Y sign`/`verify` (`USS-SHA256SUMS`), tampered manifest rejection, bundle manifest `create --root dist/bundles --filesystem`/`verify` (5 files), and disposable `git commit -S` + `git tag -s` verification (`exit 0`). Zero private owner keys accessed; zero temporary signatures committed.
+
+### 27.4 Ruleset Analysis (`Protect Main` ID `27612394`) & Outstanding Owner Actions
+
+- `Protect Main` currently enforces `deletion`, `non_fast_forward`, and `pull_request` (`required_approving_review_count: 0`, `required_review_thread_resolution: true`), with NO `required_status_checks`.
+- Exact required check contexts under GitHub Actions (`integration_id: 15368`) ready for owner application in `OWNER-ACTIONS.md` Section 7 (preserving `required_approving_review_count: 0`):
+  - `validate`
+  - `Secret scan (commit range on push/PR, full history on schedule)`
+  - `Semgrep static analysis`
+  - `CodeQL JavaScript/TypeScript and GitHub Actions analysis`
+  - `OSV dependency vulnerability scan / osv-scan`
+- **Disposition summary:** F-1..F-7 code/docs/tests = **IMPLEMENTED & VERIFIED** (`68c373f`); consuming app conformance / shipped Safari LNA / post-doc final hosted CI prior to push = **NOT VERIFIED**; P3 backlog & single-owner 0-approval rule & M20 archival note & manifest filesystem metadata limits = **ACCEPTED RISK**; PR merge, legacy PR closure, ruleset status checks (`U-08`), and workstation SSH signing/tagging (`U-01`) = **OWNER ACTION REQUIRED**.

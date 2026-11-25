@@ -1,8 +1,15 @@
 # Claude review correction log
 
-**Review correction branch:** integration/uss-pr3-pr8-hardening  
-**Status date:** 2026-11-20  
-**Merge status:** Integration branch candidate. Nothing in this correction series has been merged into main.
+- **Current status date:** 2026-11-25
+- **Current `main` HEAD:** `53d45c2fee0fa2664fdc4e4c3372ac8971ed959d` (PR #11 `1bb8a6ef...`, PR #12 `23d1047a...`, PR #13 `53d45c2f...`)
+- **Current release-readiness branch:** `gemini/v1-release-readiness` (technical code/test closure at `68c373f2e0eb0474c718ceb03cae4a8b5cb53ab3`; documentation reconciliation commits follow — see Section "2026-11-25 Final Release Readiness Reconciliation" below).
+- **Release approval posture:** NOT RELEASE-SIGNED OR APPROVED. Owner PR merge, ruleset status-check update (`U-08`), and workstation SSH signing ceremony (`U-01`) remain pending.
+
+---
+
+## Historical 2026-11-20 Audit & Remediation Snapshot (`integration/uss-pr3-pr8-hardening`)
+
+> **Historical archival record (pre-PR #11 snapshot):** At the time of this 2026-11-20 snapshot on `integration/uss-pr3-pr8-hardening`, "Nothing in this correction series has been merged into main." That historical statement was later superseded on 2026-11-25 when PR #11 (`1bb8a6ef...`), PR #12 (`23d1047a...`), and PR #13 (`53d45c2f...`) merged into `main`. All Nov 18–20 findings and remediation tables below are preserved verbatim for historical traceability.
 
 This log tracks the findings as summarised during the Claude review discussion, updated with implementation and verification evidence across the unified candidate.
 
@@ -172,3 +179,52 @@ At this exact head, all 7 reported GitHub check runs completed successfully:
 - USS validation run `44714438971`, job `136214089559`: 155/155 tests passed, 0 failed, 0 skipped. The three new checksum adversarial tests passed.
 - Security scans run `44714439491`: Gitleaks job `136214091207` reported no leaks; Semgrep job `136214090698` scanned 26 tracked targets with 237 rules, 0 findings and no skipped files; CodeQL job `136214091187` scanned 18/18 JavaScript and 2/2 GitHub Actions files; OSV job `136214091438` reported no issues.
 - PR #9 remains OPEN and NOT APPROVED FOR RELEASE. Gemini's additional mutation-guard corrections and Claude's implementation handback remain pending.
+
+---
+
+## 2026-11-25 Final Release Readiness Reconciliation (Post-Merge `main` & F-1 through F-7)
+
+- **Reconciliation branch:** `gemini/v1-release-readiness`
+- **Branched from `origin/main`:** `53d45c2fee0fa2664fdc4e4c3372ac8971ed959d`
+- **Verified technical candidate commit (F-1..F-7):** `68c373f2e0eb0474c718ceb03cae4a8b5cb53ab3` (documentation reconciliation follows)
+
+### A. Actual `main` & PR State on GitHub (Verified 2026-11-25)
+
+| Ref / PR | Head / Merge SHA | State | Hosted CI / Disposition |
+|---|---|---|---|
+| `main` (`PR #11` squash) | `1bb8a6ef04006b0030c989ca8029f2a0d4f70407` (PR head `86a0e206...`) | **MERGED** `2026-11-25T10:33:00Z` | Merged earlier integration baseline before F-1..F-7 fixes. |
+| `main` (`PR #12` operational activation) | `23d1047add2c52eab4a0c84f6760d30a8a8fd17a` (PR head `364537c9...`) | **MERGED** `2026-11-25` | `USS validation` run `45597270597` & `USS security scans` run `45597270830` SUCCESS. |
+| `main` (`PR #13` Assurance Pulse) | `53d45c2fee0fa2664fdc4e4c3372ac8971ed959d` (PR head `7ecdcc75...`) | **MERGED** `2026-11-25T10:47:14Z` | `USS validation` run `45598306667` & `USS security scans` run `45598307399` SUCCESS; PR checks `45597772700` & `45597773063` SUCCESS. |
+| `PR #10` (scratch six-file port) | `6d31a650fc6409d49887a67abfae60942371dd7a` | **CLOSED (not merged)** | Ported into scratch integration line earlier; later superseded on `gemini/v1-release-readiness`. |
+| `PR #3`, `PR #8`, `PR #9` | `ebed5e55...`, `da2a91c9...`, `933eacd9...` | **OPEN (legacy/superseded)** | **OWNER ACTION REQUIRED:** close or archive after `gemini/v1-release-readiness` lands on `main`. |
+| `PR #6`, `PR #7` (Dependabot) | `34653256...`, `22d596c7...` | **OPEN** | **OWNER ACTION REQUIRED:** review & merge or close independently (`actions/checkout` `7.0.1`, `actions/setup-node` `7.1.0`). |
+
+### B. Claude November 25 Findings F-1 through F-7 Closure Ledger
+
+| Finding | Description | Exact Implementation SHA | Status | Verification Evidence |
+|---|---|---|---|---|
+| **F-1** | `SCAN-S6` indexed regular file replaced by worktree symlink bypass + W-02/W-03 parity across all 5 scanner copies | `3e6ce6946f807749b753f58a84b1b27f9190e576` | **IMPLEMENTED & VERIFIED** | Enforces `git ls-files -s -z`, stage-0, mode allowlist (`100644`/`100755`/`120000`), fail-closed worktree symlink vs regular-file checks in standalone scanner, 2 `.github/workflows/security-scans.yml` copies, 2 `templates/ci/consumer-security-scans.yml` copies, and `tools/validate-consumer-workflow.mjs` generator. Parity enforced by `tools/validate.mjs`. |
+| **F-2** | Adversarial regression tests for `SCAN-S6` regular-to-symlink, valid indexed symlink, parity mutation, and fail-closed platform checks | `3e6ce6946f807749b753f58a84b1b27f9190e576` | **IMPLEMENTED & VERIFIED** | Verified on Linux VPS (`311/311` passed on `3e6ce69`) and Windows (`140` focused tests: `137` passed, `0` failed, `3` POSIX skips). |
+| **F-3** | Checksum adversarial integration tests (`PATH` inheritance, multi-level parent traversal, `core.hooksPath`, `GIT_CONFIG_GLOBAL` isolation) | `84afc0811543df6deaefe4ab5ab24556d79fa0f0` | **IMPLEMENTED & VERIFIED** | Linux VPS `tests/checksums.test.mjs`: `41/41` passed, `0` skipped; Windows full `npm test`: `316` total (`277` passed, `0` failed, `39` non-Linux fail-closed skips). Guards remain unweakened. |
+| **F-4** | Evidence validator HTTPS URL immutability wording inaccuracy | `ffe71058d48876d692b1ab05b0c8e0becf12318e` | **IMPLEMENTED & VERIFIED** | Updated `tools/validate-evidence.mjs` diagnostic to state target immutability is not established by syntax alone; regression test added in `tests/evidence.test.mjs`. |
+| **F-5** | Run-ID canonicalisation (`RUN:1` accepted due to `/i` flag) | `ffe71058d48876d692b1ab05b0c8e0becf12318e` | **IMPLEMENTED & VERIFIED** | Removed `/i` flag in `^run:([1-9]\d{0,19})$`, preserving unsigned 64-bit `BigInt` bounds; `tests/evidence.test.mjs` `34/34` passed. |
+| **F-6** | Stack profile primary-source verification (Rust, Node/Express, FastAPI, Spring Boot 3.5.x, Spring Security) | `68c373f2e0eb0474c718ceb03cae4a8b5cb53ab3` | **IMPLEMENTED & VERIFIED** (`consuming claims NOT VERIFIED`) | Verified `2026-11-25` primary sources (`spring.io` Spring Boot `3.5.x`/`6.5.x` OSS ended `2026-06-30`; `pypi.org` FastAPI `0.165.0` `requires-python >= 3.11`; `devguide.python.org` Python `3.10` EOL Oct 2026; `nodejs.org` Node `22`/`24`/`26` LTS; `rust-lang.org` Rust 2024 in `1.85.0`, nightly `-Zsanitizer`). All unverified consuming-app items explicitly marked `NOT VERIFIED`. |
+| **F-7** | Firefox ESR LocalNetworkAccess target (`ESR 145` -> `ESR 153`) | `330cb4ed9f17ece12f367a8ee971baae238f7821` (test `68c373f...`) | **IMPLEMENTED & VERIFIED** | Updated `tools/build-modules.mjs` and regenerated `modules/m21-cors-browser-boundary.md` with zero drift; asserted in `tests/documentation.test.mjs`. |
+
+### C. Explicit Status Classification (2026-11-25)
+
+- **IMPLEMENTED & VERIFIED (Technical Suite at `68c373f`):** Linux VPS clean clone executed `build-modules`, `build-indexes`, `build-bundles`, `git diff --exit-code`, `validate.mjs`, `validate-consumer-workflow.mjs`, `validate-evidence.mjs`, full `npm test` (`317 passed, 0 failed, 0 skipped`), and disposable-key Section 8 SSH signing dry run (`0` errors, temp workspace destroyed).
+- **NOT VERIFIED:**
+  - Consuming-application conformance (`stacks/*.md` remain `REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION`).
+  - Shipped Safari release status for WebKit LNA changes.
+  - Hosted GitHub Actions (`USS validation` and `USS security scans`) on the post-documentation final commit of `gemini/v1-release-readiness` until pushed and observed complete.
+  - Independent third-party sign-off on `gemini/v1-release-readiness` after push.
+- **ACCEPTED RISK (Documented Scope):**
+  - P3 polish items (`REVIEW-CLAUDE.md` P3-1..P3-5).
+  - Non-blocking single-owner ruleset setting (`required_approving_review_count: 0`) preserving single-maintainer merges per owner directive.
+  - Preserved source Section 19.8 archival text annotated with explicit `OWNER POLICY OVERRIDE` / `SUPERSEDED` clause in M20.
+  - Documented `SHA256SUMS` scope exclusions (`chmod` bits, empty directories, ownership/timestamps).
+- **OWNER ACTION REQUIRED:**
+  - Review & merge `gemini/v1-release-readiness` into `main` (and dispose of PRs `#3`, `#6`, `#7`, `#8`, `#9`).
+  - Apply `Protect Main` (`27612394`) `required_status_checks` JSON with the 5 GitHub Actions job contexts (`integration_id: 15368`, preserving `0` approvals).
+  - Execute `U-01` production signing ceremony on owner workstation (`SHA256SUMS`, `dist/bundles/SHA256SUMS`, `.sig` files, `git commit -S`, `git tag -s v1.0.0`, GitHub Release publication).
