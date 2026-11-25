@@ -1,7 +1,7 @@
 # Go reference profile
 
 **Profile status:** REFERENCE ONLY - NOT VERIFIED AGAINST A CONSUMING APPLICATION  
-**Framework scope:** Backend services using supported Go releases (1.25-1.27 as of 2026-11-20), with `net/http`, Gin, Echo or Chi  
+**Framework scope:** Backend services using supported Go releases (1.26-1.27 as of 2026-11-25), with `net/http`, Gin, Echo or Chi  
 **Related modules:** M01, M02, M04, M05, M08, M09, M10, M12, M21  
 **Companion supplements:** Cryptography and key management; API protocol security; container and cloud runtime  
 
@@ -53,7 +53,7 @@ This profile defines security standards for services built with Go, addressing H
 
 ## Verification record required before marking this profile validated
 
-Record the consuming repository and exact commit, `go version`, `go.mod`/toolchain version, framework and dependency versions, CGO and build flags, container/runtime assumptions, TLS and proxy settings, test/fuzz/race commands and results, vulnerability scan output and independent reviewer identity. Go's official policy supports a release until two newer major releases exist; as of this review, 1.25-1.27 are the supported release lines. Re-check the official release history before adoption.
+Record the consuming repository and exact commit, `go version`, `go.mod`/toolchain version, framework and dependency versions, CGO and build flags, container/runtime assumptions, TLS and proxy settings, test/fuzz/race commands and results, vulnerability scan output and independent reviewer identity. Go's official policy supports a release until two newer major releases exist; as of 2026-11-25, 1.26 and 1.27 are the supported release lines. Re-check the official release history before adoption.
 
 ## Primary references
 

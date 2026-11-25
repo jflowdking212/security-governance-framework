@@ -93,3 +93,11 @@ test('Laravel and Flutter profiles cover the previously identified stack-specifi
  const flutter=read('stacks/flutter-dart.md');
  for(const term of ['WebView','addJavascriptInterface','FCM','android:exported','allowBackup','Play Integrity','App Attest','Keychain','PKCE','ThisDeviceOnly','M03','M06','M10'])assert.ok(flutter.includes(term),'Flutter profile missing '+term);
 });
+
+
+test('Go profile reflects the two newest supported release lines as of 2026-11-25',()=>{
+ const profile=read('stacks/go.md');
+ assert.match(profile,/supported Go releases \(1\.26-1\.27 as of 2026-11-25\)/);
+ assert.match(profile,/1\.26 and 1\.27 are the supported release lines/);
+ assert.doesNotMatch(profile,/1\.25-1\.27 are the supported release lines/);
+});
