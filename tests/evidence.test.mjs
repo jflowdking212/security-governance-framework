@@ -275,7 +275,7 @@ test('evidence validator rejects malformed top-level input safely',()=>{
 });
 
 
-test('evidence references accept only immutable URL, path-anchor or run-ID forms',()=>{
+test('evidence references accept only public HTTPS URL (immutability unestablished), path-anchor or canonical lowercase run-ID forms',()=>{
  const valid=[
   'https://github.com/jflowdking212/security-governance-framework/actions/runs/44735907958',
   'tests/evidence.test.mjs#fixture',
@@ -288,6 +288,8 @@ test('evidence references accept only immutable URL, path-anchor or run-ID forms
  for(const reference of ['http://example.org/evidence','https://','tests/evidence.test.mjs','../secret.txt#L1','/etc/passwd#L1','file:///tmp/evidence#L1','https://example.org/audit/evidence/123']){
   expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
  }
+ // F-4: reject invalid reference with accurate wording noting HTTPS target immutability is not established
+ expectInvalid(r=>{r.controls[0].evidence[0].reference='not-a-valid-reference';},/public HTTPS URL \(target immutability not established by syntax alone\), repository-relative path#anchor, or canonical lowercase run:<id> reference/);
 });
 
 test('evidence commit must be a full 40-character SHA and release evidence must match the expected audited commit',()=>{
@@ -339,12 +341,12 @@ test('validator does not invent a maximum evidence age or risk-acceptance durati
 });
 
 
-test('run evidence IDs enforce the exact unsigned 64-bit boundary',()=>{
+test('run evidence IDs require canonical lowercase run: prefix and enforce the exact unsigned 64-bit boundary',()=>{
  for(const reference of ['run:1','run:42','run:18446744073709551615']){
   const fixture=withReport(r=>{markAllPass(r);r.controls[0].evidence[0].reference=reference;});
   try{const result=run(fixture.file);assert.equal(result.status,0,reference+': '+result.stderr);}finally{fixture.cleanup();}
  }
- for(const reference of ['run:0','run:01','run:-1','run:1.0','run:18446744073709551616','run:99999999999999999999']){
+ for(const reference of ['RUN:1','Run:42','rUn:18446744073709551615','RUN:18446744073709551615','run:0','run:01','run:-1','run:1.0','run:18446744073709551616','run:99999999999999999999']){
   expectInvalid(r=>{r.controls[0].evidence[0].reference=reference;},/evidence reference/);
  }
 });

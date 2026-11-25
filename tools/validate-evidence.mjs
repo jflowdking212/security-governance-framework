@@ -60,7 +60,7 @@ function isPlaceholderReference(value){
 
 const MAX_UNSIGNED_64 = 18446744073709551615n;
 function isRunReference(reference){
- const match=/^run:([1-9]\d{0,19})$/i.exec(reference);
+ const match=/^run:([1-9]\d{0,19})$/.exec(reference);
  if(!match)return false;
  return BigInt(match[1])<=MAX_UNSIGNED_64;
 }
@@ -128,7 +128,7 @@ function checkEvidenceItem(label,evidence,parentStatus=null,assessedAt=null){
  if(!EVIDENCE_KINDS.includes(evidence.kind))addError(label+' has invalid evidence kind '+String(evidence.kind));
  if(!nonEmpty(evidence.reference))addError(label+' evidence reference must be non-empty.');
  else if(isPlaceholderReference(evidence.reference))addError(label+' evidence reference cannot be a placeholder ('+String(evidence.reference)+').');
- else if(!validEvidenceReference(evidence.reference))addError(label+' evidence reference must be an immutable HTTPS URL, repository-relative path#anchor, or run:<id> reference.');
+ else if(!validEvidenceReference(evidence.reference))addError(label+' evidence reference must be a public HTTPS URL (target immutability not established by syntax alone), repository-relative path#anchor, or canonical lowercase run:<id> reference.');
  if(!validDate(evidence.observed_at))addError(label+' evidence observed_at must be a valid ISO 8601 date/time.');
  else{
   const obsTime=Date.parse(evidence.observed_at);
