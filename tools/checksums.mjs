@@ -299,7 +299,9 @@ if(IS_LINUX) {
     process.exit(1);
   }
 } else {
-  console.error('Checksum operation failed: Race-resistant checksum root traversal is unsupported on this platform; refusing to continue.');
+  console.error(FILESYSTEM
+    ? 'Checksum operation failed: Race-resistant checksum root traversal is unsupported on this platform; refusing to continue.'
+    : 'Checksum Git mode is supported only on Linux; refusing to use PATH-based Git.');
   process.exit(1);
 }
 // Filesystem snapshots must be self-contained. A root .git directory or gitfile
