@@ -1,6 +1,6 @@
 # USS Kernel
 
-**Version:** 1.0.0-rc.1 | **Mode:** FAIL CLOSED & PROVE
+**Version:** 1.0.0 | **Mode:** FAIL CLOSED & PROVE
 
 ## Trust bootstrap
 

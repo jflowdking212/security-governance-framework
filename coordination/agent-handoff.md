@@ -1,11 +1,11 @@
 # Agent Engineering Handover Record
 
 - **Repository:** `https://github.com/jflowdking212/security-governance-framework.git`
-- **Current `main` HEAD (2026-11-25):** `53d45c2fee0fa2664fdc4e4c3372ac8971ed959d` (PR #11 `1bb8a6ef...`, PR #12 `23d1047a...`, PR #13 `53d45c2f...`)
-- **Current Release-Readiness Branch (2026-11-25):** `gemini/v1-release-readiness` (technical closure at `68c373f2e0eb0474c718ceb03cae4a8b5cb53ab3`; documentation reconciliation follows — see Section 27)
+- **Current `main` HEAD (2026-11-25):** `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda` (PR #14 merged `fb18d09581813e8213314cdbc611041bd70ea1bd`, following PR #11 `1bb8a6ef...`, PR #12 `23d1047a...`, PR #13 `53d45c2f...`)
+- **Current Release Preparation Branch (2026-11-25):** `release/v1.0.0` (unsigned `1.0.0` metadata preparation awaiting owner signing ceremony — see Section 28)
 - **Historical Nov 20 Base Commit:** `58afa246b2c0d0601a5f3945d72bc3243e657c01` (on pre-merge `integration/uss-pr3-pr8-hardening`)
-- **Current Milestone:** USS v1.0.0 Final Release Readiness Closure (F-1 through F-7)
-- **Last Update:** 2026-11-25 (Gemini final release-readiness pass; see Section 27)
+- **Current Milestone:** USS v1.0.0 Unsigned Version Preparation & Signing Ceremony Readiness (`release/v1.0.0`)
+- **Last Update:** 2026-11-25 (Post-merge `main` validation, `Protect Main` enforcement, and `release/v1.0.0` prep; see Section 28)
 - **Implementation Engineer:** Gemini
 - **Supervisory Reviewer:** ChatGPT
 - **Independent Reviewer:** Claude
@@ -1563,3 +1563,17 @@ The existing ChatGPT scratch candidate is based on the earlier Gemini SHA `6d33d
   - `CodeQL JavaScript/TypeScript and GitHub Actions analysis`
   - `OSV dependency vulnerability scan / osv-scan`
 - **Disposition summary:** F-1..F-7 code/docs/tests = **IMPLEMENTED & VERIFIED** (`68c373f`); consuming app conformance / shipped Safari LNA / post-doc final hosted CI prior to push = **NOT VERIFIED**; P3 backlog & single-owner 0-approval rule & M20 archival note & manifest filesystem metadata limits = **ACCEPTED RISK**; PR merge, legacy PR closure, ruleset status checks (`U-08`), and workstation SSH signing/tagging (`U-01`) = **OWNER ACTION REQUIRED**.
+
+---
+
+## 28. Post-Merge Main Verification, `Protect Main` Activation & Unsigned `1.0.0` Version Preparation (`release/v1.0.0`)
+
+- **PR #14 Merged & Verified:** PR #14 (`fb18d09581813e8213314cdbc611041bd70ea1bd`) merged into `main` at **`f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda`**.
+  - Hosted post-merge `main` runs: `USS validation` (`45631844618` / `139266840160`, `317/317` passed) & `USS security scans` (`45631845175` / jobs `139266841693`, `139266841566`, `139266841092`, `139266841767`) all succeeded.
+  - Linux VPS explicit full-history Gitleaks (`gitleaks 8.21.2`) on `f584ab95...`: `19` commits scanned (`HEAD`) / `664` commits (`--all`), `0` leaks.
+  - Linux VPS clean clone on `f584ab95...`: `317/317` pass (`0` skipped). Windows on `f584ab95...`: `317` total (`278` pass, `0` fail, `39` platform skips).
+- **`Protect Main` (`ID 27612394`) Enforced (Owner-Authorised, `2026-11-25T14:58:22.193+01:00`):** Backup saved outside workspace; updated ruleset enforces all five GitHub Actions contexts (`integration_id: 15368`, `strict_required_status_checks_policy: true`, `do_not_enforce_on_create: false`) while preserving `deletion`, `non_fast_forward`, `pull_request`, `required_approving_review_count: 0`, `required_review_thread_resolution: true`, and `bypass_actors: []`.
+- **Unsigned `1.0.0` Version Preparation on `release/v1.0.0`:**
+  - Branched `release/v1.0.0` cleanly from `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda`.
+  - Updated `VERSION`, `package.json`, `package-lock.json`, `manifest.json` (`"status": "awaiting-owner-signing"`), `templates/security-evidence.example.json`, regenerated `MODULE-INDEX.md` and `bundles/`, and reconciled `KERNEL.md`, `README.md`, `CHANGELOG.md` (`Unreleased`), `RELEASE-CHECKLIST.md`, `OWNER-ACTIONS.md`, `SECURITY-ROOT.md`, `OPERATING-MODE.md`, `CONSUMING.md`, `assurance/severity-classification.md`, `REVIEW-CORRECTION-LOG.md`, and `coordination/agent-handoff.md`.
+  - Author identity: `Gemini <gemini@jayblisstech.com>` (`--no-gpg-sign`). Zero owner private keys accessed; zero official signatures, `SHA256SUMS.sig`, signed release commits, `v1.0.0` tags, or GitHub Releases created.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0 (Unreleased — Pending Owner Signing Ceremony)
+
+- **Unsigned `1.0.0` release preparation (`release/v1.0.0`):** Synchronized release version metadata to `1.0.0` (`VERSION`, `package.json`, `package-lock.json`, `manifest.json` with `"status": "awaiting-owner-signing"`, `templates/security-evidence.example.json`, regenerated `bundles/*.md`, and release docs). Formal signed `v1.0.0` commit, detached `SHA256SUMS.sig`, annotated `v1.0.0` tag, and GitHub Release remain unreleased pending owner execution (`U-01`).
+- **PR #14 merged into `main` (`f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda`):** Closed Claude's November 25 findings F-1 through F-7 (`SCAN-S6` tracked-binary symlink enforcement and `W-02`/`W-03` scanner parity across all five copies, `F-3` checksum adversarial integration tests, `F-4`/`F-5` evidence validator wording and lowercase `run:` canonicalisation, `F-6` primary-source stack lifecycle verification with `NOT VERIFIED` bounds, and `F-7` Firefox ESR `153` LNA compatibility target), following PR #11 (`1bb8a6ef04006b0030c989ca8029f2a0d4f70407`), PR #12 (`23d1047add2c52eab4a0c84f6760d30a8a8fd17a`, operational activation), and PR #13 (`53d45c2fee0fa2664fdc4e4c3372ac8971ed959d`, Assurance Pulse).
+- **Mandatory branch status checks (`Protect Main` ID `27612394`):** Enforced all five GitHub Actions check-run contexts (`validate`, `Secret scan (commit range on push/PR, full history on schedule)`, `Semgrep static analysis`, `CodeQL JavaScript/TypeScript and GitHub Actions analysis`, `OSV dependency vulnerability scan / osv-scan`, `integration_id: 15368`, `strict_required_status_checks_policy: true`) while preserving `required_approving_review_count: 0`.
+
 ## 1.0.0-rc.1 - Independent Audit Remediation Release Candidate (2026-11-20)
 
 - **Evidence Validator (U-02):** Hardened `tools/validate-evidence.mjs` with a closed allowlist for evidence results (`SUCCESS_RESULTS` vs `FAILURE_RESULTS`), structural rejection of PASS controls backed by failed or non-success evidence, rejection of placeholder references (`n/a`, `none`, `unknown`, `tbd`, `-`), rejection of future assessment and evidence dates, and temporal consistency checks (evidence observation cannot post-date assessment). Added 6 regression tests in `tests/evidence.test.mjs`.

@@ -1,12 +1,12 @@
 # Universal Security Standard (USS)
 
-**Current version:** 1.0.0-rc.1  
-**Operating status:** ACTIVE, owner-authorised provisional baseline on main at commit 1bb8a6ef04006b0030c989ca8029f2a0d4f70407.  
-**Release status:** The operational baseline is merged and CI-validated. The formal signed v1.0.0 release remains pending the owner's signing ceremony. Use the provisional trust procedure in OPERATING-MODE.md until the signed release is published.  
-**Security posture:** FAIL CLOSED & PROVE  
+**Current version:** 1.0.0 (unreleased — awaiting owner cryptographic signing & publication)
+**Operating status:** ACTIVE on `main` at commit `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda` (PR #14 merged); `Protect Main` ruleset (ID `27612394`) enforces pull requests, review-thread resolution, `0` required human approvals, and all five mandatory GitHub Actions status checks.
+**Release status:** Unsigned `1.0.0` release metadata is prepared on branch `release/v1.0.0`. The formal signed `v1.0.0` release commit, `SHA256SUMS.sig`, annotated `v1.0.0` tag, and GitHub Release publication remain pending owner execution. Until the signed release is published, follow the provisional trust procedure in [OPERATING-MODE.md](OPERATING-MODE.md).
+**Security posture:** FAIL CLOSED & PROVE
 **Runtime requirement:** Node.js 20 or later. Core repository tools require zero external dependencies; test suites require `npm ci --ignore-scripts`.
 
-[![USS validation (candidate branch)](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml/badge.svg?branch=fix%2Fuss-final-audit-remediation)](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml)
+[![USS validation](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml/badge.svg?branch=main)](https://github.com/jflowdking212/security-governance-framework/actions/workflows/uss-validation.yml)
 
 USS is a modular, source-traceable security engineering standard for human developers and AI coding agents. It turns the project's canonical application-security, payment/webhook/tax and agent-execution directives into focused modules that can be selected by task. The aim is to make the right security requirements available at the point of work without forcing every agent to load the entire policy library.
 
@@ -205,16 +205,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. See [CONSUMING.
 
 ## Independent review and release status
 
-The v1.0.0-rc.1 candidate is in remediation following Claude's second independent audit on 2026-11-20. These records distinguish the initial review from the current audit and remediation status:
+PR #14 (`fb18d09581813e8213314cdbc611041bd70ea1bd`, closing Claude's November 25 findings F-1 through F-7) has merged into `main` at commit `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda`, and `Protect Main` ruleset `ID 27612394` enforces all five mandatory GitHub Actions check contexts. Branch `release/v1.0.0` holds unsigned `1.0.0` preparation awaiting owner cryptographic signing (`U-01`); USS is not yet formally signed or released. These records preserve the review and release trail:
 
 - [Initial Claude review instructions](REVIEW-PROMPT-FOR-CLAUDE.md)
 - [Initial Claude review report (2026-11-18)](REVIEW-CLAUDE.md)
-- [Second independent audit and current remediation log (2026-11-20)](REVIEW-CORRECTION-LOG.md)
+- [Independent audit and remediation log (2026-11-20 to 2026-11-25)](REVIEW-CORRECTION-LOG.md)
 - [Release checklist](RELEASE-CHECKLIST.md)
 - [Owner actions required before release](OWNER-ACTIONS.md)
 - [Changelog](CHANGELOG.md)
 
-PR #9 remains open against `integration/uss-pr3-pr8-hardening`. The candidate must not be merged into `main` or tagged as an approved release until all required findings are independently verified as resolved or formally dispositioned, and the owner approves the final result.
+The release remains unsigned and unmerged for final `v1.0.0` until the owner executes the workstation signing ceremony on `release/v1.0.0`, merges the signed-manifest PR into `main`, and publishes the signed `v1.0.0` tag and GitHub Release.
 
 ## Security reporting
 

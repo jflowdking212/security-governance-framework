@@ -9,13 +9,13 @@ The signed v1.0.0 release ceremony is still pending. To avoid holding the securi
 This mode is an acknowledged trust trade-off, not a replacement for signed release verification.
 
 1. The owner supplies the exact official repository URL and immutable 40-character commit SHA through a channel independent of the consuming checkout.
-2. The consuming project records that pin in a protected .uss-version file, including:
-   - version=1.0.0-rc.1
+2. The consuming project records that pin in a protected `.uss-version` file, for example using current `main` (`f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda`; initial operational activation began at `1bb8a6ef04006b0030c989ca8029f2a0d4f70407`):
+   - version=1.0.0-provisional (or current commit baseline; `1.0.0` once signed)
    - repository=https://github.com/jflowdking212/security-governance-framework
-   - commit=1bb8a6ef04006b0030c989ca8029f2a0d4f70407
+   - commit=f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda
    - trust_mode=owner-authorised-provisional
    - release_signed=false
-   - hosted validation run 45577716158 and security-scan run 45577716565
+   - hosted validation run 45631844618 and security-scan run 45631845175 (prior `1bb8a6ef` baseline runs: `45577716158` / `45577716565`)
    - owner approval reference/date and project name.
 3. Fetch the exact commit from the official repository and verify the checked-out HEAD equals the recorded SHA. Do not consume main, a branch name or a mutable tag.
 4. Vendor the exact snapshot in the consuming repository and protect .uss-version, vendor/uss/AGENTS.md, vendor/uss/KERNEL.md, vendor/uss/manifest.json, .github/workflows/ and project security configuration with owner-controlled review.
@@ -78,7 +78,7 @@ Compare the displayed digest and fingerprint with the consuming project's protec
 6. **Reference the task key** (see `MODULE-INDEX.md`) in the agent instructions and require the completion report from `KERNEL.md`, including the pinned USS commit. For formal audit/release evidence, vendor `assurance/control-catalog.json` and `tools/validate-evidence.mjs` from the same pinned USS copy; run the validator against the project's completed evidence report.
 
 For a release assessment, bind the evidence file to the exact commit under review: `node vendor/uss/tools/validate-evidence.mjs --file assessment.json --release --expected-commit <40-character-audited-commit-sha>`. `project.commit` must contain the same full 40-character lowercase SHA. Where an approval is recorded, include the assessor's `project.reviewer_identity` and the approver's `approved_by_identity` as stable issuer-scoped identities; display names alone do not prove independent approval.
-7. **Maintainers:** protect `main` (required review and the `USS validation` check), use the repository's USS validation check as a required status check when CI is available, keep ownership routing for security-critical files, require 2FA, sign release tags, and attach the compiled `dist/bundles/` output to the GitHub release so agents without Node can read a single resolved file.
+7. **Maintainers:** protect `main` (active `Protect Main` ruleset ID `27612394` enforces pull requests and all five mandatory USS validation and security-scan check contexts: `validate`, `Secret scan (commit range on push/PR, full history on schedule)`, `Semgrep static analysis`, `CodeQL JavaScript/TypeScript and GitHub Actions analysis`, `OSV dependency vulnerability scan / osv-scan`), keep ownership routing for security-critical files, require 2FA, sign release tags, and attach the compiled `dist/bundles/` output to the GitHub release so agents without Node can read a single resolved file.
 8. **Adopt and protect consumer security workflows (Finding C1):** Projects adopting the consumer security scans workflow template (`templates/ci/consumer-security-scans.yml`) must protect the copied workflow file (e.g. `.github/workflows/consumer-security-scans.yml`) against tampering, action unpinning, scanner override injection, and fail-closed guard removal.
    - **Enforce repository branch protection & CODEOWNERS:** Require pull-request reviews from designated security code owners on all modifications to `.github/workflows/`. Tracked binary files are strictly prohibited from repositories adopting USS security scans.
    - **Automated structural verification:** Execute the reusable consumer workflow validator in project CI or local pre-commit hooks to mechanically assert that fail-closed scanner configuration guards, pinned 40-character action SHAs, immutable container digests, and strict least-privilege permission invariants are maintained:

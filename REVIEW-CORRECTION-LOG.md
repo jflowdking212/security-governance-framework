@@ -1,9 +1,10 @@
 # Claude review correction log
 
 - **Current status date:** 2026-11-25
-- **Current `main` HEAD:** `53d45c2fee0fa2664fdc4e4c3372ac8971ed959d` (PR #11 `1bb8a6ef...`, PR #12 `23d1047a...`, PR #13 `53d45c2f...`)
-- **Current release-readiness branch:** `gemini/v1-release-readiness` (technical code/test closure at `68c373f2e0eb0474c718ceb03cae4a8b5cb53ab3`; documentation reconciliation commits follow — see Section "2026-11-25 Final Release Readiness Reconciliation" below).
-- **Release approval posture:** NOT RELEASE-SIGNED OR APPROVED. Owner PR merge, ruleset status-check update (`U-08`), and workstation SSH signing ceremony (`U-01`) remain pending.
+- **Current `main` HEAD:** `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda` (PR #14 merged `fb18d09581813e8213314cdbc611041bd70ea1bd`, following PR #11 `1bb8a6ef...`, PR #12 `23d1047a...`, PR #13 `53d45c2f...`)
+- **Current release branch:** `release/v1.0.0` (unsigned `1.0.0` version preparation staged; official signatures and `v1.0.0` tag remain pending owner execution)
+- **Active branch protection:** `Protect Main` (`ID 27612394`, updated `2026-11-25T14:58:22.193+01:00`) enforces all five mandatory GitHub Actions check contexts (`validate`, `Secret scan (commit range on push/PR, full history on schedule)`, `Semgrep static analysis`, `CodeQL JavaScript/TypeScript and GitHub Actions analysis`, `OSV dependency vulnerability scan / osv-scan`) with `required_approving_review_count: 0` and `bypass_actors: []`.
+- **Release approval posture:** NOT RELEASE-SIGNED OR PUBLISHED. Owner workstation SSH signing ceremony (`U-01`) and signed-manifest PR via `--merge` remain pending.
 
 ---
 
@@ -225,6 +226,11 @@ At this exact head, all 7 reported GitHub check runs completed successfully:
   - Preserved source Section 19.8 archival text annotated with explicit `OWNER POLICY OVERRIDE` / `SUPERSEDED` clause in M20.
   - Documented `SHA256SUMS` scope exclusions (`chmod` bits, empty directories, ownership/timestamps).
 - **OWNER ACTION REQUIRED:**
-  - Review & merge `gemini/v1-release-readiness` into `main` (and dispose of PRs `#3`, `#6`, `#7`, `#8`, `#9`).
-  - Apply `Protect Main` (`27612394`) `required_status_checks` JSON with the 5 GitHub Actions job contexts (`integration_id: 15368`, preserving `0` approvals).
-  - Execute `U-01` production signing ceremony on owner workstation (`SHA256SUMS`, `dist/bundles/SHA256SUMS`, `.sig` files, `git commit -S`, `git tag -s v1.0.0`, GitHub Release publication).
+  - Close remaining legacy/failing open PRs (`#3`, `#6`, `#7`, `#8`, `#9`).
+  - Execute `U-01` production signing ceremony on owner Linux/WSL2 workstation from `release/v1.0.0`, merge the signed-manifest PR via `--merge` after the five mandatory `Protect Main` checks pass, tag `v1.0.0`, and publish GitHub Release.
+
+### D. Post-PR #14 Merge, `Protect Main` Activation & Unsigned `1.0.0` Preparation (2026-11-25)
+
+- **PR #14 merged to `main`:** `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda` (from `gemini/v1-release-readiness` `fb18d09581813e8213314cdbc611041bd70ea1bd`). Post-merge CI completed cleanly (`USS validation` `45631844618` `317/317` passed; `USS security scans` `45631845175` all 4 jobs passed; explicit full-history Gitleaks `19` HEAD / `664` all commits `0` leaks).
+- **`Protect Main` (`ID 27612394`) updated (`2026-11-25T14:58:22.193+01:00`, owner-authorised):** Added `required_status_checks` (`strict_required_status_checks_policy: true`, `do_not_enforce_on_create: false`, `integration_id: 15368`) for `validate`, `Secret scan (commit range on push/PR, full history on schedule)`, `Semgrep static analysis`, `CodeQL JavaScript/TypeScript and GitHub Actions analysis`, and `OSV dependency vulnerability scan / osv-scan`, preserving `required_approving_review_count: 0` and `bypass_actors: []`.
+- **Unsigned `1.0.0` version preparation (`release/v1.0.0`):** Synchronized `VERSION`, `package.json`, `package-lock.json`, `manifest.json` (`"status": "awaiting-owner-signing"`), `templates/security-evidence.example.json`, regenerated `bundles/*.md`, `KERNEL.md`, `README.md`, `CHANGELOG.md` (`Unreleased`), `RELEASE-CHECKLIST.md`, `OWNER-ACTIONS.md`, `SECURITY-ROOT.md`, `OPERATING-MODE.md`, `CONSUMING.md`, `assurance/severity-classification.md`, `REVIEW-CORRECTION-LOG.md`, and `coordination/agent-handoff.md`. Official release remains unsigned and unreleased until `U-01`.

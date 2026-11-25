@@ -1,12 +1,12 @@
 # USS Operational Mode and Continuous Improvement
 
-**Operating state:** ACTIVE, owner-authorised provisional baseline  
-**Baseline version:** 1.0.0-rc.1  
-**Official repository:** https://github.com/jflowdking212/security-governance-framework  
-**Pinned commit:** 1bb8a6ef04006b0030c989ca8029f2a0d4f70407  
-**Validation run:** https://github.com/jflowdking212/security-governance-framework/actions/runs/45577716158  
-**Security scans:** https://github.com/jflowdking212/security-governance-framework/actions/runs/45577716565  
-**Formal signed release:** Pending owner signing ceremony
+**Operating state:** ACTIVE on `main` (unsigned `1.0.0` preparation staged on `release/v1.0.0`)
+**Version target:** `1.0.0` (unreleased — awaiting owner signing ceremony)
+**Official repository:** https://github.com/jflowdking212/security-governance-framework
+**Current `main` commit:** `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda` (PR #14 merged; initial provisional baseline began at `1bb8a6ef04006b0030c989ca8029f2a0d4f70407`)
+**Post-merge validation run:** https://github.com/jflowdking212/security-governance-framework/actions/runs/45631844618 (historical `1bb8a6ef` run: `45577716158`)
+**Post-merge security scans:** https://github.com/jflowdking212/security-governance-framework/actions/runs/45631845175 (historical `1bb8a6ef` run: `45577716565`)
+**Formal signed release:** Pending owner signing ceremony (`U-01` on `release/v1.0.0`)
 
 ## 1. Operating decision
 

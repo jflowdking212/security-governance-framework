@@ -1,6 +1,6 @@
 # USS release trust root
 
-**Status:** USS is active on main as an owner-authorised provisional operational baseline at commit 1bb8a6ef04006b0030c989ca8029f2a0d4f70407. The owner's public verification key and SSH allowed-signers entry are published. The signed SHA-256 release manifest and signed v1.0.0 release tag remain pending. Provisional use is not cryptographic release verification; see OPERATING-MODE.md.
+**Status:** USS is active on `main` at commit `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda` (PR #14 merged, advancing from the initial provisional baseline commit `1bb8a6ef04006b0030c989ca8029f2a0d4f70407`), with unsigned `1.0.0` version preparation staged on `release/v1.0.0`. The owner's public verification key and SSH allowed-signers entry are published. The signed SHA-256 release manifest and signed `v1.0.0` release tag remain pending owner execution. Provisional use is not cryptographic release verification; see [OPERATING-MODE.md](OPERATING-MODE.md).
 
 This document describes the trust anchor for official Universal Security Standard (USS) releases. It is not, by itself, a cryptographic trust anchor: consumers must compare the fingerprint below with an independently trusted source and verify the signed checksum manifest before relying on repository policy.
 
@@ -136,7 +136,7 @@ The following controls require repository-owner configuration and cannot be esta
 - Protect the default branch against direct and force pushes (enforced by the active `Protect Main` ruleset on `main`).
 - Require pull requests for updates to `main` (enforced by `Protect Main`).
 - Require conversation resolution for pull requests before merge (enforced by `Protect Main`).
-- Require the USS validation workflow and security status checks once hosted CI is confirmed.
+- Require the five mandatory USS validation and security check-run contexts on `main` (`validate`, `Secret scan (commit range on push/PR, full history on schedule)`, `Semgrep static analysis`, `CodeQL JavaScript/TypeScript and GitHub Actions analysis`, `OSV dependency vulnerability scan / osv-scan` — enforced by active `Protect Main` ruleset ID `27612394`).
 - Require CODEOWNERS review for policy sources, modules, resolver/validator tools, release-integrity and workflow files.
 - Require 2FA for maintainers and minimise administrator access.
 - Restrict workflow permissions to least privilege (`contents: read` default).
