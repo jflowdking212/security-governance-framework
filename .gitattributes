@@ -10,3 +10,15 @@
 *.js text eol=lf
 *.json text eol=lf
 *.md text eol=lf
+# Trust-root, signature and policy files must keep exact LF bytes on every platform
+*.pub text eol=lf
+*.sig text eol=lf
+*.csv text eol=lf
+SHA256SUMS text eol=lf
+allowed_signers text eol=lf
+CODEOWNERS text eol=lf
+VERSION text eol=lf
+LICENSE text eol=lf
+.gitignore text eol=lf
+.semgrepignore text eol=lf
+*.example text eol=lf
