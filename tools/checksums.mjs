@@ -39,7 +39,7 @@ function resolveTrustedGit() {
   throw new Error('No trusted Git executable found in /usr/bin, /bin or /usr/local/bin; refusing to use PATH.');
 }
 
-const TRUSTED_GIT=process.platform==='linux'?resolveTrustedGit():null;
+let TRUSTED_GIT;
 
 function sanitizedGitEnvironment() {
   // Build a strict allowlist. Do not inherit loader variables (LD_PRELOAD,
@@ -61,9 +61,16 @@ function sanitizedGitEnvironment() {
 }
 
 function gitAt(cwd,args,{encoding='utf8'}={}) {
-  if(!TRUSTED_GIT) {
+  if(process.platform!=='linux') {
     console.error('Checksum Git mode is supported only on Linux; refusing to use PATH-based Git.');
     process.exit(1);
+  }
+  if(!TRUSTED_GIT) {
+    try {TRUSTED_GIT=resolveTrustedGit();}
+    catch(error) {
+      console.error('Checksum Git mode failed closed: '+error.message);
+      process.exit(1);
+    }
   }
   const hardenedArgs=[
     '-c','core.fsmonitor=false',
