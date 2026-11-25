@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {isTrustedExecutableStat,isTrustedDirectoryStat} from '../tools/trusted-git-policy.mjs';
 
 const TOOL=fileURLToPath(new URL('../tools/checksums.mjs',import.meta.url));
 
@@ -26,6 +27,12 @@ function fixture() {
 }
 function run(cwd,command,...args) {
   return spawnSync(process.execPath,[TOOL,command,...args],{cwd,encoding:'utf8'});
+}
+function runWithEnv(cwd,command,env,...args) {
+  return spawnSync(process.execPath,[TOOL,command,...args],{cwd,encoding:'utf8',env:{...process.env,...env}});
+}
+function runWithPreload(cwd,hook,command,env,...args) {
+  return spawnSync(process.execPath,['--require',hook,TOOL,command,...args],{cwd,encoding:'utf8',env:{...process.env,...env}});
 }
 
 test('checksum tool creates a deterministic manifest and verifies it',t=>{
@@ -118,6 +125,36 @@ test('filesystem mode creates and verifies a separate manifest for generated rel
   const rejected=run(cwd,'verify','--root','dist/bundles','--filesystem');
   assert.notEqual(rejected.status,0);
   assert.match(rejected.stderr,/SHA-256 mismatch: payments\.md/);
+});
+
+test('adversarial: filesystem checksum mode rejects a symlinked root and symlinked root ancestors',t=>{
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-symlink-cwd-'));
+  const external=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-symlink-external-'));
+  t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  t.after(()=>fs.rmSync(external,{recursive:true,force:true}));
+  fs.mkdirSync(path.join(external,'subdir'),{recursive:true});
+  fs.writeFileSync(path.join(external,'README.md'),'external snapshot root\n');
+  fs.writeFileSync(path.join(external,'subdir','README.md'),'external nested snapshot root\n');
+
+  const linkType=process.platform==='win32'?'junction':'dir';
+  try {
+    fs.symlinkSync(external,path.join(cwd,'root-link'),linkType);
+    fs.symlinkSync(external,path.join(cwd,'parent-link'),linkType);
+  } catch(error) {
+    if(error.code==='EPERM'||error.code==='EACCES') {
+      t.skip('Platform does not permit creating directory symlinks or junctions');
+      return;
+    }
+    throw error;
+  }
+
+  const direct=run(cwd,'create','--root','root-link','--filesystem');
+  assert.notEqual(direct.status,0,'Filesystem mode must reject a symlink used as the selected root');
+  assert.match(direct.stderr,/Checksum root path traverses a symbolic link/);
+
+  const ancestor=run(cwd,'create','--root','parent-link/subdir','--filesystem');
+  assert.notEqual(ancestor.status,0,'Filesystem mode must reject a symlink in a parent component of the selected root');
+  assert.match(ancestor.stderr,/Checksum root path traverses a symbolic link/);
 });
 
 test('Git-mode verification is stable across Windows CRLF worktree conversion',t=>{
@@ -355,4 +392,254 @@ test('adversarial: rejects .git metadata at the selected vendored root in Git mo
   const gitfileResult=run(cwd,'verify','--root','vendor/uss');
   assert.notEqual(gitfileResult.status,0,'Verification must reject .git gitfile at selected vendored root');
   assert.match(gitfileResult.stderr,/Unexpected nested \.git directory or gitfile/);
+});
+
+
+test('adversarial: Git-mode checksum verification detects executable-bit changes',t=>{
+  if(process.platform==='win32'){t.skip('Windows worktrees do not reliably expose Git executable mode through stat');return;}
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  assert.equal(run(cwd,'create').status,0);
+  git(cwd,'add','SHA256SUMS');git(cwd,'commit','-m','add manifest');
+  fs.chmodSync(path.join(cwd,'README.md'),0o755);
+  const result=run(cwd,'verify');
+  assert.notEqual(result.status,0,'Verification must reject executable-bit drift');
+  assert.match(result.stderr,/executable mode differs from committed HEAD|SHA-256 mismatch/);
+});
+
+test('adversarial: filesystem checksum binds executable mode to the digest',t=>{
+  if(process.platform==='win32'){t.skip('Windows does not reliably expose POSIX executable mode');return;}
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-mode-fs-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'README.md'),'mode-bound content\\n',{mode:0o644});
+  assert.equal(run(dir,'create','--filesystem').status,0);
+  fs.chmodSync(path.join(dir,'README.md'),0o755);
+  const result=run(dir,'verify','--filesystem');
+  assert.notEqual(result.status,0,'Filesystem verification must reject executable-bit drift');
+  assert.match(result.stderr,/SHA-256 mismatch: README\.md/);
+});
+
+test('adversarial: root .git metadata failure is controlled and has no uncaught stack trace',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-git-controlled-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'README.md'),'main doc\\n');
+  fs.mkdirSync(path.join(dir,'.git'),{recursive:true});
+  fs.writeFileSync(path.join(dir,'.git','config'),'[core]\\n');
+  const result=run(dir,'verify','--filesystem');
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/^Checksum operation failed: Root \.git metadata is not allowed in filesystem mode/);
+  assert.doesNotMatch(result.stderr,/\n\s+at /);
+});
+
+test('adversarial: Linux filesystem mode stays bound to the opened root after its path is atomically redirected',t=>{
+  if(process.platform!=='linux'){t.skip('Linux /proc/self/fd descriptor traversal is required');return;}
+  const parent=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-race-'));
+  const moved=parent+'.moved';
+  const evilParent=fs.mkdtempSync(path.join(os.tmpdir(),'uss-root-evil-'));
+  t.after(()=>{fs.rmSync(parent,{recursive:true,force:true});fs.rmSync(moved,{recursive:true,force:true});fs.rmSync(evilParent,{recursive:true,force:true});});
+  const root=path.join(parent,'root');
+  const evilRoot=path.join(evilParent,'root');
+  fs.mkdirSync(root,{recursive:true});
+  fs.mkdirSync(evilRoot,{recursive:true});
+  fs.writeFileSync(path.join(root,'README.md'),'trusted root bytes\\n');
+  fs.writeFileSync(path.join(evilRoot,'README.md'),'attacker root bytes\\n');
+  const hook=path.join(os.tmpdir(),'uss-root-swap-'+process.pid+'.cjs');
+  t.after(()=>fs.rmSync(hook,{force:true}));
+  fs.writeFileSync(hook,`
+const fs=require('node:fs');
+let swapped=false;
+const original=fs.readdirSync;
+fs.readdirSync=function(target,...args){
+  if(!swapped&&typeof target==='string'&&target.startsWith('/proc/self/fd/')){
+    swapped=true;
+    fs.renameSync(process.env.USS_TEST_PARENT,process.env.USS_TEST_MOVED);
+    fs.symlinkSync(process.env.USS_TEST_EVIL_PARENT,process.env.USS_TEST_PARENT,'dir');
+  }
+  return original.call(this,target,...args);
+};
+`);
+  const result=runWithPreload(process.cwd(),hook,'create',{
+    USS_TEST_PARENT:parent,USS_TEST_MOVED:moved,USS_TEST_EVIL_PARENT:evilParent
+  },'--root',root,'--filesystem');
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(fs.existsSync(path.join(moved,'root','SHA256SUMS')),true,'Manifest must be written into the directory pinned before the path swap');
+  assert.equal(fs.existsSync(path.join(evilRoot,'SHA256SUMS')),false,'Manifest must never be written into the attacker-controlled replacement tree');
+});
+
+test('adversarial: Linux filesystem verification reads the pinned root after an ancestor swap',t=>{
+  if(process.platform!=='linux'){t.skip('Linux /proc/self/fd descriptor traversal is required');return;}
+  const parent=fs.mkdtempSync(path.join(os.tmpdir(),'uss-verify-root-race-'));
+  const moved=parent+'.moved';
+  const evilParent=fs.mkdtempSync(path.join(os.tmpdir(),'uss-verify-evil-'));
+  t.after(()=>{fs.rmSync(parent,{recursive:true,force:true});fs.rmSync(moved,{recursive:true,force:true});fs.rmSync(evilParent,{recursive:true,force:true});});
+  const root=path.join(parent,'root');
+  const evilRoot=path.join(evilParent,'root');
+  fs.mkdirSync(root,{recursive:true});
+  fs.mkdirSync(evilRoot,{recursive:true});
+  fs.writeFileSync(path.join(root,'README.md'),'trusted verify bytes\\n');
+  assert.equal(run(process.cwd(),'create','--root',root,'--filesystem').status,0);
+  fs.writeFileSync(path.join(evilRoot,'README.md'),'attacker bytes\\n');
+  // The replacement tree deliberately has no manifest. Verification must read
+  // the manifest from the already-open original root, not re-resolve this path.
+  const hook=path.join(os.tmpdir(),'uss-verify-root-swap-'+process.pid+'.cjs');
+  t.after(()=>fs.rmSync(hook,{force:true}));
+  fs.writeFileSync(hook,`
+const fs=require('node:fs');
+let swapped=false;
+const original=fs.readdirSync;
+fs.readdirSync=function(target,...args){
+  if(!swapped&&typeof target==='string'&&target.startsWith('/proc/self/fd/')){
+    swapped=true;
+    fs.renameSync(process.env.USS_TEST_PARENT,process.env.USS_TEST_MOVED);
+    fs.symlinkSync(process.env.USS_TEST_EVIL_PARENT,process.env.USS_TEST_PARENT,'dir');
+  }
+  return original.call(this,target,...args);
+};
+`);
+  const result=runWithPreload(process.cwd(),hook,'verify',{
+    USS_TEST_PARENT:parent,USS_TEST_MOVED:moved,USS_TEST_EVIL_PARENT:evilParent
+  },'--root',root,'--filesystem');
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(fs.readFileSync(path.join(moved,'root','SHA256SUMS'),'utf8').includes('README.md'),true);
+});
+
+test('adversarial: Linux filesystem mode fails closed when a leaf is replaced after opening',t=>{
+  if(process.platform!=='linux'){t.skip('Linux /proc/self/fd descriptor traversal is required');return;}
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'uss-leaf-race-'));
+  const evil=fs.mkdtempSync(path.join(os.tmpdir(),'uss-leaf-evil-'));
+  t.after(()=>{fs.rmSync(root,{recursive:true,force:true});fs.rmSync(evil,{recursive:true,force:true});});
+  fs.writeFileSync(path.join(root,'README.md'),'trusted leaf bytes\\n');
+  fs.writeFileSync(path.join(evil,'README.md'),'attacker leaf bytes\\n');
+  const hook=path.join(os.tmpdir(),'uss-leaf-swap-'+process.pid+'.cjs');
+  t.after(()=>fs.rmSync(hook,{force:true}));
+  fs.writeFileSync(hook,`
+const fs=require('node:fs');
+let swapped=false;
+const original=fs.openSync;
+fs.openSync=function(target,...args){
+  const fd=original.call(this,target,...args);
+  if(!swapped&&typeof target==='string'&&target.endsWith('/README.md')){
+    swapped=true;
+    fs.renameSync(process.env.USS_TEST_FILE,process.env.USS_TEST_BACKUP);
+    fs.symlinkSync(process.env.USS_TEST_EVIL_FILE,process.env.USS_TEST_FILE);
+  }
+  return fd;
+};
+`);
+  const file=path.join(root,'README.md');
+  const result=runWithPreload(process.cwd(),hook,'create',{
+    USS_TEST_FILE:file,USS_TEST_BACKUP:file+'.original',USS_TEST_EVIL_FILE:path.join(evil,'README.md')
+  },'--root',root,'--filesystem');
+  assert.notEqual(result.status,0,'A leaf replacement during hashing must not be accepted');
+  assert.match(result.stderr,/ELOOP|symbolic link|File path changed/);
+});
+
+test('adversarial: checksum Git calls ignore inherited GIT environment overrides',t=>{
+  const cwd=fixture();
+  const decoy=fs.mkdtempSync(path.join(os.tmpdir(),'uss-checksums-decoy-'));
+  t.after(()=>{fs.rmSync(cwd,{recursive:true,force:true});fs.rmSync(decoy,{recursive:true,force:true});});
+  git(decoy,'init','-q');
+  const env={
+    GIT_DIR:path.join(decoy,'.git'),
+    git_dir:path.join(decoy,'.git'),
+    Git_Index_File:path.join(decoy,'case-variant.index'),
+    GIT_WORK_TREE:decoy,
+    GIT_INDEX_FILE:path.join(decoy,'empty.index'),
+    GIT_OBJECT_DIRECTORY:path.join(decoy,'.git','objects'),
+    GIT_ALTERNATE_OBJECT_DIRECTORIES:path.join(decoy,'.git','objects'),
+    GIT_COMMON_DIR:path.join(decoy,'.git'),
+    GIT_CEILING_DIRECTORIES:decoy,
+    GIT_NAMESPACE:'attacker',
+    GIT_EXEC_PATH:path.join(decoy,'no-git-execs'),
+    GIT_SSH_COMMAND:'exit 99'
+  };
+  const created=runWithEnv(cwd,'create',env);
+  assert.equal(created.status,0,created.stderr);
+  assert.equal(fs.existsSync(path.join(cwd,'SHA256SUMS')),true);
+  const verified=runWithEnv(cwd,'verify',env);
+  assert.equal(verified.status,0,verified.stderr);
+});
+
+
+
+test('W-04: ignores hostile PATH Git and inherited GIT_* overrides',t=>{
+  if(process.platform!=='linux'){t.skip('Trusted absolute Git resolution is Linux-only; unsupported platforms fail closed');return;}
+  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  const attacker=fs.mkdtempSync(path.join(os.tmpdir(),'uss-fake-git-path-'));
+  t.after(()=>fs.rmSync(attacker,{recursive:true,force:true}));
+  const marker=path.join(attacker,'executed.txt');
+  const fakeGit=path.join(attacker,'git');
+  fs.writeFileSync(fakeGit,'#!/bin/sh\\nprintf executed > '+JSON.stringify(marker)+'\\nexit 97\\n');
+  fs.chmodSync(fakeGit,0o755);
+  const result=runWithEnv(cwd,'create',{
+    PATH:attacker,
+    GIT_DIR:path.join(attacker,'attacker.git'),
+    GIT_WORK_TREE:attacker,
+    GIT_INDEX_FILE:path.join(attacker,'attacker.index'),
+    GIT_OBJECT_DIRECTORY:path.join(attacker,'objects'),
+    GIT_ALTERNATE_OBJECT_DIRECTORIES:path.join(attacker,'alternate'),
+    GIT_CONFIG_COUNT:'1',
+    GIT_CONFIG_KEY_0:'core.fsmonitor',
+    GIT_CONFIG_VALUE_0:fakeGit
+  });
+  assert.equal(result.status,0,result.stderr);
+  assert.match(fs.readFileSync(path.join(cwd,'SHA256SUMS'),'utf8'),/README\\.md/);
+  assert.equal(fs.existsSync(marker),false,'Checksum operation must not execute Git found through hostile PATH');
+});
+
+test('W04-F1: unsupported Git platform fails closed without an uncaught stack trace',t=>{
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const shim=path.join(cwd,'fake-platform.cjs');
+ fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\\n");
+ const result=spawnSync(process.execPath,['--require',shim,TOOL,'create'],{cwd,encoding:'utf8'});
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/Checksum Git mode is supported only on Linux; refusing to use PATH-based Git/);
+ assert.doesNotMatch(result.stderr,/\\n\\s+at /,'must not print an uncaught stack trace');
+});
+
+test('W04-F1: filesystem mode reports unsupported root traversal cleanly on non-Linux',t=>{
+ const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'uss-checksums-platform-'));
+ t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ fs.writeFileSync(path.join(cwd,'README.md'),'filesystem snapshot\\n');
+ const shim=path.join(cwd,'fake-platform.cjs');
+ fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\\n");
+ const result=spawnSync(process.execPath,['--require',shim,TOOL,'create','--filesystem'],{cwd,encoding:'utf8'});
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/Checksum operation failed: Race-resistant checksum root traversal is unsupported on this platform/);
+ assert.doesNotMatch(result.stderr,/\\n\\s+at /,'must not print an uncaught stack trace');
+});
+
+test('W04-F3: manifest replacement does not modify an existing hardlink',t=>{
+ const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+ const manifest=path.join(cwd,'SHA256SUMS');
+ const external=path.join(os.tmpdir(),'uss-checksums-hardlink-'+process.pid+'-'+Date.now());
+ t.after(()=>fs.rmSync(external,{force:true}));
+ const old='previous manifest inode\\n';
+ fs.writeFileSync(manifest,old);
+ fs.linkSync(manifest,external);
+ const result=run(cwd,'create');
+ assert.equal(result.status,0,result.stderr);
+ assert.equal(fs.readFileSync(external,'utf8'),old,'the pre-existing hardlink must retain its original bytes');
+ assert.notEqual(fs.readFileSync(manifest,'utf8'),old,'SHA256SUMS must be replaced with the new manifest');
+ assert.notEqual(fs.statSync(manifest).ino,fs.statSync(external).ino,'new manifest must have a different inode');
+});
+
+test('W04-F2: trusted Git executable policy rejects writable and foreign-owned candidates',()=>{
+ const currentUid=1000;
+ const fakeFile=(mode,uid)=>({mode,uid,isFile:()=>true});
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100755,0),currentUid),true,'root-owned non-writable executable is trusted');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100755,currentUid),currentUid),true,'current-user-owned non-writable executable is trusted');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100775,0),currentUid),false,'group-writable fake Git is rejected');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100757,0),currentUid),false,'world-writable fake Git is rejected');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100755,2000),currentUid),false,'foreign-owned fake Git is rejected');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100644,0),currentUid),false,'non-executable Git candidate is rejected');
+});
+
+test('W04-F2: trusted Git parent-directory policy rejects writable and foreign-owned directories',()=>{
+ const currentUid=1000;
+ const fakeDirectory=(mode,uid)=>({mode,uid,isDirectory:()=>true});
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40755,0),currentUid),true,'root-owned non-writable directory is trusted');
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40755,currentUid),currentUid),true,'current-user-owned non-writable directory is trusted');
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40775,0),currentUid),false,'group-writable parent directory is rejected');
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40777,0),currentUid),false,'world-writable parent directory is rejected');
+ assert.equal(isTrustedDirectoryStat(fakeDirectory(0o40755,2000),currentUid),false,'foreign-owned parent directory is rejected');
 });
