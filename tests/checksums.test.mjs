@@ -513,11 +513,11 @@ test('A2-03: opened root remains anchored when its pathname is replaced',t=>{
 test('W04-F1: unsupported Git platform fails closed without an uncaught stack trace',t=>{
  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
  const shim=path.join(cwd,'fake-platform.cjs');
- fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\\n");
+ fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\n");
  const result=spawnSync(process.execPath,['--require',shim,TOOL,'create'],{cwd,encoding:'utf8'});
  assert.equal(result.status,1);
  assert.match(result.stderr,/Checksum Git mode is supported only on Linux; refusing to use PATH-based Git/);
- assert.doesNotMatch(result.stderr,/\\n\\s+at /,'must not print an uncaught stack trace');
+ assert.doesNotMatch(result.stderr,/\n\s+at /,'must not print an uncaught stack trace');
 });
 
 test('W04-F1: filesystem mode reports unsupported root traversal cleanly on non-Linux',t=>{
@@ -525,11 +525,11 @@ test('W04-F1: filesystem mode reports unsupported root traversal cleanly on non-
  t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
  fs.writeFileSync(path.join(cwd,'README.md'),'filesystem snapshot\\n');
  const shim=path.join(cwd,'fake-platform.cjs');
- fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\\n");
+ fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\n");
  const result=spawnSync(process.execPath,['--require',shim,TOOL,'create','--filesystem'],{cwd,encoding:'utf8'});
  assert.equal(result.status,1);
  assert.match(result.stderr,/Checksum operation failed: Race-resistant checksum root traversal is unsupported on this platform/);
- assert.doesNotMatch(result.stderr,/\\n\\s+at /,'must not print an uncaught stack trace');
+ assert.doesNotMatch(result.stderr,/\n\s+at /,'must not print an uncaught stack trace');
 });
 
 test('W04-F3: manifest replacement does not modify an existing hardlink',t=>{
