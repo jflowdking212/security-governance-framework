@@ -554,7 +554,7 @@ test('W04-F2: trusted Git executable policy rejects writable and foreign-owned c
  const fakeFile=(mode,uid)=>({mode,uid,isFile:()=>true});
  assert.equal(isTrustedExecutableStat(fakeFile(0o100755,0),currentUid),true,'root-owned non-writable executable is trusted');
  assert.equal(isTrustedExecutableStat(fakeFile(0o100755,currentUid),currentUid),true,'current-user-owned non-writable executable is trusted');
- assert.equal(isTrustedExecutableStat(fakeFile(0o102755,0),currentUid),false,'group-writable fake Git is rejected');
+ assert.equal(isTrustedExecutableStat(fakeFile(0o100775,0),currentUid),false,'group-writable fake Git is rejected');
  assert.equal(isTrustedExecutableStat(fakeFile(0o100757,0),currentUid),false,'world-writable fake Git is rejected');
  assert.equal(isTrustedExecutableStat(fakeFile(0o100755,2000),currentUid),false,'foreign-owned fake Git is rejected');
  assert.equal(isTrustedExecutableStat(fakeFile(0o100644,0),currentUid),false,'non-executable Git candidate is rejected');
