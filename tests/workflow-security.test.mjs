@@ -481,7 +481,7 @@ function buildScannerConfigGuard(targetSpec, emptyMessage) {
     '',
     '    return None',
     '',
-    'clean_git_env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}',
+    'clean_git_env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("GIT_", "LD_", "DYLD_")) and k.upper() not in {"BASH_ENV", "ENV", "SHELLOPTS", "PYTHONPATH", "PYTHONHOME"}}',
     '',
     'trusted_git = resolve_trusted_git(clean_git_env)',
     'if not trusted_git:',
@@ -992,7 +992,9 @@ function assertNoProhibitedGitAttributes(root = ROOT) {
     }
   }
   scan(root);
-  const infoAttr = path.join(root, '.git', 'info', 'attributes');
+  const gitDirResult = spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: root, encoding: 'utf8' });
+  const gitDir = gitDirResult.status === 0 ? gitDirResult.stdout.trim() : path.join(root, '.git');
+  const infoAttr = path.join(gitDir, 'info', 'attributes');
   try {
     if (fs.lstatSync(infoAttr).isSymbolicLink()) {
       assert.fail('Symlinked .git/info/attributes is not permitted');
@@ -4492,3 +4494,13 @@ test('A2-07: live POSIX scanner guards reject .semgrepignore multi-token/non-fil
   }
 });
 
+
+
+test('SCAN-LD: scanner and embedded guards do not pass loader or shell startup variables to Git',()=>{
+ const expected='not k.upper().startswith(("GIT_", "LD_", "DYLD_"))';
+ for(const file of ['tools/uss-tracked-binary-scanner.py','.github/workflows/security-scans.yml','templates/ci/consumer-security-scans.yml','tools/validate-consumer-workflow.mjs']){
+  const source=fs.readFileSync(path.join(ROOT,file),'utf8');
+  assert.ok(source.includes(expected),file+' must filter GIT/LD/DYLD variables from Git child environments');
+  assert.ok(source.includes('BASH_ENV')&&source.includes('PYTHONPATH'),file+' must filter shell/Python startup variables from Git child environments');
+ }
+});

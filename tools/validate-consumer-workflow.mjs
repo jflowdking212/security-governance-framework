@@ -606,7 +606,7 @@ export function buildExpectedConsumerGuard() {
     '',
     '    return None',
     '',
-    'clean_git_env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}',
+    'clean_git_env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("GIT_", "LD_", "DYLD_")) and k.upper() not in {"BASH_ENV", "ENV", "SHELLOPTS", "PYTHONPATH", "PYTHONHOME"}}',
     '',
     'trusted_git = resolve_trusted_git(clean_git_env)',
     'if not trusted_git:',
