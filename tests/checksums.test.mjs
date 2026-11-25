@@ -582,14 +582,14 @@ test('W-04: ignores hostile PATH Git and inherited GIT_* overrides',t=>{
     GIT_CONFIG_VALUE_0:fakeGit
   });
   assert.equal(result.status,0,result.stderr);
-  assert.match(fs.readFileSync(path.join(cwd,'SHA256SUMS'),'utf8'),/README\\.md/);
+  assert.match(fs.readFileSync(path.join(cwd,'SHA256SUMS'),'utf8'),/README\.md/);
   assert.equal(fs.existsSync(marker),false,'Checksum operation must not execute Git found through hostile PATH');
 });
 
 test('W04-F1: unsupported Git platform fails closed without an uncaught stack trace',t=>{
  const cwd=fixture();t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
  const shim=path.join(cwd,'fake-platform.cjs');
- fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\\n");
+ fs.writeFileSync(shim, "Object.defineProperty(process,'platform',{value:'darwin'});" + String.fromCharCode(10));
  const result=spawnSync(process.execPath,['--require',shim,TOOL,'create'],{cwd,encoding:'utf8'});
  assert.equal(result.status,1);
  assert.match(result.stderr,/Checksum Git mode is supported only on Linux; refusing to use PATH-based Git/);
@@ -601,7 +601,7 @@ test('W04-F1: filesystem mode reports unsupported root traversal cleanly on non-
  t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
  fs.writeFileSync(path.join(cwd,'README.md'),'filesystem snapshot\\n');
  const shim=path.join(cwd,'fake-platform.cjs');
- fs.writeFileSync(shim,"Object.defineProperty(process,'platform',{value:'darwin'});\\n");
+ fs.writeFileSync(shim, "Object.defineProperty(process,'platform',{value:'darwin'});" + String.fromCharCode(10));
  const result=spawnSync(process.execPath,['--require',shim,TOOL,'create','--filesystem'],{cwd,encoding:'utf8'});
  assert.equal(result.status,1);
  assert.match(result.stderr,/Checksum operation failed: Race-resistant checksum root traversal is unsupported on this platform/);
