@@ -1371,7 +1371,12 @@ Exact code/test SHA `c289a81aace996b967c468eaff34159a07b85c26`:
 - W-A/B/C gitattributes and scanner-header mutation tests passed.
 - Generated module/index/bundle drift gate passed.
 
-Hosted security scan run `45545256855` for the same SHA: in progress when this entry was written. Re-fetch before claiming completion.
+Hosted security scan run `45545256855` for the same SHA: **SUCCESS across all four jobs**.
+  - Gitleaks 8.24.3: one pushed commit scanned, 587 bytes, no leaks found.
+  - Semgrep: 479 rules, 32 targets, approximately 100% parsed lines, zero findings.
+  - CodeQL 2.27.5: 23/23 JavaScript files and 2/2 GitHub Actions files scanned; job succeeded.
+  - OSV: package-lock.json scanned (1 package), no issues found; SARIF artifact ID `14991680838`.
+  - This push-triggered Gitleaks run scans the commit range for the push, not full history. The required clean squash and full-history/history-guard checks remain mandatory.
 
 ### Independent branch verification
 
