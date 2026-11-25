@@ -1448,3 +1448,75 @@ The existing ChatGPT scratch candidate is based on the earlier Gemini SHA `6d33d
 3. Preserve and re-run the integrated A2-03, W-04, W-A/B/C and A2-06 tests alongside the new SCAN-S6/W-02/W-03 suite once trust bootstrap is satisfied.
 4. Have Claude independently audit the resulting exact integrated SHA, not the stale pre-addendum candidate.
 5. Keep clean squash, owner signing, merge and release decisions behind the existing owner approval gate.
+
+
+---
+
+## 26. ChatGPT integration closure pass: A2-06, Gemini SCAN-S6/W-02/W-03, Go/M21, SCAN-LD and F-9
+
+**Date:** 2026-11-25  
+**Working branch:** `chatgpt/uss-integrated-scratch-candidate`  
+**Final verified working SHA:** `b7ae243844285575bb961d0ff210732986497f40`  
+**Starting supervisory head:** `fa54bcc483a24ccb9c8edcc7ced7bff349282371`  
+**Main reference:** `a616ade2963bc69dd2140a65016d0756c13399d8` (unchanged).
+
+### Implemented in this pass
+
+1. **A2-06 identity and production-release binding**
+   - Reject whitespace/control characters in issuer-scoped identity subjects.
+   - Require canonical positive decimal GitHub subjects without leading zeroes.
+   - Treat `assessment_type: production-release` as release mode even without `--release`, and require `--expected-commit`.
+   - Added regression coverage for leading-zero GitHub IDs, spaces/tabs, reviewer identity whitespace, expected-commit missing/mismatch/match.
+   - An initial regression test had an incorrectly escaped tab and failed once; the test was corrected. Subsequent hosted validation passed.
+
+2. **Gemini SCAN-S6 and W-02/W-03**
+   - Ported Gemini's exact six-file delta from `6d33dfa4cc855b39a03016ae1661a4e7cf48e877` to `6d31a650fc6409d49887a67abfae60942371dd7a` into the scratch candidate.
+   - Integrated index-mode-aware tracked-file scanning: stage-zero index records, accepted regular/executable/symlink modes, valid tracked symlink preservation, and failure when a worktree symlink replaces an indexed regular file.
+   - Integrated corresponding workflow/template scanner copies, generated consumer guard, validator parity checks, and W-02/W-03 adversarial validator/tests.
+   - Draft PR #10 was used only to assess the six-file delta, then closed after the patch was ported directly. It did not target main and was not merged.
+
+3. **A2-11 / Go**
+   - Corrected the false Go support range from 1.25-1.27 to 1.26-1.27 as of 2026-11-25, based on the official Go release policy/history checked in the independent audit.
+   - Added a documentation regression test. Other stack profile version claims remain subject to the final independent review; do not mark every A2-11 item closed solely from this Go correction.
+
+4. **A2-12 / M21**
+   - Updated the canonical M21 generator source and generated module with a dated Chrome, Edge, Firefox and Safari/WebKit implementation matrix.
+   - Distinguished Chromium release notes from Edge's documented scope, Firefox's Desktop/policy status, and WebKit engineering changes that do not prove a shipped Safari release.
+   - Added a documentation regression test and official vendor references. Generator drift was checked by hosted validation.
+
+5. **SCAN-LD and F-9**
+   - Filtered GIT_*, LD_*, DYLD_*, BASH_ENV, ENV, SHELLOPTS, PYTHONPATH and PYTHONHOME from Git child environments in the standalone scanner and embedded/generated guard copies.
+   - Added a regression assertion for the environment policy.
+   - Changed the workflow-security test helper to resolve the actual Git directory using `git rev-parse --absolute-git-dir`, rather than assuming `.git` is a directory. This addresses linked worktree/submodule layout failures.
+
+### Exact hosted verification on working SHA `b7ae243844285575bb961d0ff210732986497f40`
+
+- USS validation run `45577340067`: **SUCCESS**.
+- Test suite: **295 passed, 0 failed, 0 skipped**.
+- Repository validator: 22 modules, 52 source references, dependency graph, archive equality, embedded directive equivalence, release policy and task indexes passed.
+- All three generators completed with no generated drift.
+- Security scan run `45577340187`: **SUCCESS**, all four jobs:
+  - Gitleaks: one pushed commit scanned, no leaks found. This is a commit-range push scan, **not** the required full-history scan.
+  - Semgrep: 479 rules, 32 targets, approximately 100% parsed lines, zero findings.
+  - CodeQL: 23/23 JavaScript files and 2/2 GitHub Actions files scanned; job succeeded.
+  - OSV: one package scanned, no issues found.
+
+### Verification boundaries and remaining release gates
+
+- Claude has not yet independently audited the exact new working SHA `b7ae243844285575bb961d0ff210732986497f40`; the earlier Claude audit was on `ac4bee5` and must not be represented as approval of this new tree.
+- The push-triggered Gitleaks result is not a full-history scan.
+- A2-11 Go is corrected; remaining stack profile claims and the full eight-profile content set require final independent review.
+- A2-05 owner ruleset/required status checks are not configured/verified here.
+- U-01 signing and independently verified signed release artefacts have not been completed.
+- No instantiated production-release evidence file is approved for the final squash SHA.
+- Release notes/rollback package and owner authorization remain outstanding.
+- No changes to `main`, no merge, tag, signature, release or deployment occurred.
+
+### Next sequence
+
+1. Build one clean squash candidate from the exact verified tree, with `main` as its sole parent; keep `main` unchanged.
+2. Run hosted validation and all security scans on that exact squash SHA.
+3. Have Claude independently audit that exact squash SHA, including the residual A2-11 profile scope, scanner parity, SCAN-LD, F-9, A2-03/W-04, and the evidence validator.
+4. Close any remaining P1/P2 findings. Then request the owner's A2-05, U-01, release-evidence and merge/deploy decisions separately.
+
+**Disposition:** The working candidate has passed hosted validation and all four hosted security jobs. It is ready for clean-squash construction and final independent audit, but is **not yet release-approved or production-deployed**.
