@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {renderSourceMarkdown} from './render-source-markdown.mjs';
+import {findProhibitedGitattributes} from './gitattributes-policy.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(ROOT);
 const m=JSON.parse(await fs.readFile('manifest.json','utf8')),errors=[];
@@ -34,7 +35,7 @@ const global=await fs.readFile(m.sources.global.archive,'utf8'),anti=await fs.re
 const marker='# EMBEDDED CANONICAL GLOBAL DIRECTIVE — v4',pos=anti.indexOf(marker);
 if(pos<0)errors.push('Anti-Gravity embedded canonical marker missing');else{const norm=x=>x.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean).join('\n');if(norm(anti.slice(pos+marker.length))!==norm(global))errors.push('Embedded global directive does not match standalone canonical source')}
 if(m.rules.p0_release!=='BLOCK'||m.rules.p1_release!=='BLOCK'||m.rules.agent_may_waive_p0_p1!==false||m.rules.unknown_is_pass!==false)errors.push('Release policy invariant failed');
-for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md','REVIEW-CLAUDE.md','RELEASE-CHECKLIST.md','CHANGELOG.md','VERSION','SECURITY.md','SECURITY-ROOT.md','CONSUMING.md','LICENSE','CONTRIBUTING.md','.gitignore','.github/PULL_REQUEST_TEMPLATE.md','.github/CODEOWNERS','.security/README.md','tools/checksums.mjs','tests/checksums.test.mjs','tools/uss-tracked-binary-scanner.py','templates/uss-version.example'])if(!await exists(p))errors.push('Missing required project file '+p);
+for(const p of [m.kernel,m.agent_entrypoint,m.module_index,'source/traceability-matrix.csv','README.md','MODULE-INDEX.md','REVIEW-PROMPT-FOR-CLAUDE.md','REVIEW-CLAUDE.md','RELEASE-CHECKLIST.md','CHANGELOG.md','VERSION','SECURITY.md','SECURITY-ROOT.md','CONSUMING.md','LICENSE','CONTRIBUTING.md','.gitignore','.github/PULL_REQUEST_TEMPLATE.md','.github/CODEOWNERS','.security/README.md','tools/checksums.mjs','tests/checksums.test.mjs','tools/uss-tracked-binary-scanner.py','templates/uss-version.example','.gitattributes','tools/gitattributes-policy.mjs'])if(!await exists(p))errors.push('Missing required project file '+p);
 if(await exists('tools/uss-tracked-binary-scanner.py')){
  const scannerRaw=await fs.readFile('tools/uss-tracked-binary-scanner.py','utf8');
  const scannerLines=scannerRaw.split(/\r?\n/);
@@ -57,6 +58,8 @@ if(await exists('tools/uss-tracked-binary-scanner.py')){
   }
  }
 }
+const gitattributes=await fs.readFile('.gitattributes','utf8');
+for(const issue of findProhibitedGitattributes(gitattributes))errors.push('.gitattributes contains prohibited attribute '+issue.attribute+' on line '+issue.line);
 const readme=await fs.readFile('README.md','utf8');
 const readmeLinks=[...readme.matchAll(/\]\(([^)]+)\)/g)].map(x=>x[1]).filter(x=>!/^https?:|^mailto:|^#/.test(x)).map(x=>decodeURIComponent(x.split('#')[0])).filter(Boolean);
 for(const link of new Set(readmeLinks))if(!await exists(link))errors.push('README links to missing local path '+link);
