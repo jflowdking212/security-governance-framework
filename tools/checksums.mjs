@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -39,7 +39,7 @@ function resolveTrustedGit() {
   throw new Error('No trusted Git executable found in /usr/bin, /bin or /usr/local/bin; refusing to use PATH.');
 }
 
-const TRUSTED_GIT=resolveTrustedGit();
+const TRUSTED_GIT=process.platform==='linux'?resolveTrustedGit():null;
 
 function sanitizedGitEnvironment() {
   // Build a strict allowlist. Do not inherit loader variables (LD_PRELOAD,
@@ -61,6 +61,10 @@ function sanitizedGitEnvironment() {
 }
 
 function gitAt(cwd,args,{encoding='utf8'}={}) {
+  if(!TRUSTED_GIT) {
+    console.error('Checksum Git mode is supported only on Linux; refusing to use PATH-based Git.');
+    process.exit(1);
+  }
   const hardenedArgs=[
     '-c','core.fsmonitor=false',
     '-c','core.hooksPath=/dev/null',
@@ -336,12 +340,24 @@ function createManifest() {
   // Validate unexpected untracked content after tracked-path checks so a
   // tracked path replaced by a symlinked parent is reported at that boundary.
   if(GIT_ROOT&&!FILESYSTEM)assertNoUnexpectedUntracked();
-  const manifestFd=fs.openSync('/proc/self/fd/'+ROOT_HANDLE.fd+'/'+MANIFEST,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_NOFOLLOW|(fs.constants.O_NONBLOCK||0)|(fs.constants.O_CLOEXEC||0),0o644);
+  const manifestTemp='.'+MANIFEST+'.tmp-'+process.pid+'-'+randomBytes(12).toString('hex');
+  const manifestPath='/proc/self/fd/'+ROOT_HANDLE.fd+'/'+MANIFEST;
+  const tempPath='/proc/self/fd/'+ROOT_HANDLE.fd+'/'+manifestTemp;
+  let manifestFd;
   try {
-    if(!fs.fstatSync(manifestFd).isFile())throw new Error('Checksum manifest target is not a regular file.');
-    fs.ftruncateSync(manifestFd,0);
+    // Write a new inode and atomically replace the directory entry. Opening
+    // SHA256SUMS in place would mutate every hardlink to the old inode.
+    manifestFd=fs.openSync(tempPath,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW|(fs.constants.O_CLOEXEC||0),0o644);
     fs.writeFileSync(manifestFd,lines.join('\n')+'\n',{encoding:'utf8'});
-  } finally {fs.closeSync(manifestFd);}
+    fs.fsyncSync(manifestFd);
+    fs.closeSync(manifestFd);
+    manifestFd=undefined;
+    fs.renameSync(tempPath,manifestPath);
+    fs.fsyncSync(ROOT_HANDLE.fd);
+  } finally {
+    if(manifestFd!==undefined)try{fs.closeSync(manifestFd);}catch{}
+    try{fs.unlinkSync(tempPath);}catch(error){if(error.code!=='ENOENT')throw error;}
+  }
   console.log('Created '+MANIFEST+' for '+files.length+' files (excluding '+MANIFEST+' and '+SIGNATURE+').');
 }
 
