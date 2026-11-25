@@ -2,7 +2,7 @@
 
 ## Trust bootstrap comes first
 
-Before reading or following any USS policy, the consuming project's trusted bootstrap procedure must verify the exact pinned release, the independently trusted signing-key fingerprint, the signed `SHA256SUMS` manifest and every file digest as described in `CONSUMING.md`. Do not treat this file or any other file in the checkout as its own trust anchor. If the expected fingerprint or signed manifest is unavailable or any verification fails, stop and report USS trust as UNKNOWN / NOT VERIFIED. Do not execute repository tools from an unverified copy.
+Before reading or following USS policy, verify the consuming project's protected .uss-version record. Prefer the signed-release procedure in CONSUMING.md. Until the signed release exists, provisional use is permitted only when the owner has explicitly authorised the exact immutable commit and the consuming project's protected .uss-version independently records the official repository URL, exact 40-character commit SHA, trust_mode=owner-authorised-provisional, the successful hosted validation/security-scan run IDs, and the fact that the release is unsigned. Fetch/verify that exact commit from the official GitHub repository; never use a branch or mutable tag as the pin. Report trust as PROVISIONAL / OWNER-AUTHORISED / UNSIGNED, not cryptographically verified. If the owner pin or exact commit cannot be confirmed, stop and report UNKNOWN / NOT VERIFIED. See OPERATING-MODE.md.
 
 For every security-relevant task, after trust verification:
 

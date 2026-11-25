@@ -1,7 +1,8 @@
 # Universal Security Standard (USS)
 
 **Current version:** 1.0.0-rc.1  
-**Release status:** Release candidate v1.0.0-rc.1. Claude's second independent audit on 2026-11-20 identified additional P2/P3 findings that require remediation. PR #9 remains open against the integration branch and has not been merged into main. Final owner approval and the signed v1.0.0 release remain pending.  
+**Operating status:** ACTIVE, owner-authorised provisional baseline on main at commit 1bb8a6ef04006b0030c989ca8029f2a0d4f70407.  
+**Release status:** The operational baseline is merged and CI-validated. The formal signed v1.0.0 release remains pending the owner's signing ceremony. Use the provisional trust procedure in OPERATING-MODE.md until the signed release is published.  
 **Security posture:** FAIL CLOSED & PROVE  
 **Runtime requirement:** Node.js 20 or later. Core repository tools require zero external dependencies; test suites require `npm ci --ignore-scripts`.
 
@@ -9,7 +10,7 @@
 
 USS is a modular, source-traceable security engineering standard for human developers and AI coding agents. It turns the project's canonical application-security, payment/webhook/tax and agent-execution directives into focused modules that can be selected by task. The aim is to make the right security requirements available at the point of work without forcing every agent to load the entire policy library.
 
-> **Important:** This repository currently contains release candidate `v1.0.0-rc.1`, not a final `v1.0.0` release. Claude's second independent audit found additional P2/P3 issues, including workflow-guard and filesystem-checksum bypasses. PR #9 remains open against `integration/uss-pr3-pr8-hardening`; the candidate has not been merged into `main`. Passing configured CI does not resolve these findings or constitute release approval. Remediation and a further independent review are required before the owner signing ceremony.
+> **Operational use:** USS is now the active initial security baseline for authorised Jay Bliss Tech projects. It is not a certification or a claim that every consuming application is secure. Existing application controls must be assessed in each repository; unknown controls remain UNKNOWN, and P0/P1 findings remain release blockers. The formal signed release is still pending.
 
 ## What USS provides
 
@@ -30,9 +31,9 @@ USS is a policy and verification framework. It does not automatically secure an 
 
 ## Verify integrity before use
 
-USS is security policy and must be treated as a security-critical dependency. Before reading or executing a vendored copy, follow the trust-bootstrap sequence in [CONSUMING.md](CONSUMING.md): compare the pinned version and commit, obtain the signing-key fingerprint independently, verify the signed `SHA256SUMS` manifest, and verify every file digest. If any check fails, stop and treat the copy as untrusted.
+USS is security policy and must be treated as a security-critical dependency. Use the signed-release trust bootstrap when the signed release is available. Until then, owner-authorised projects may use the exact pinned commit only under the provisional trust procedure in OPERATING-MODE.md and CONSUMING.md. Provisional use must be explicitly recorded; it is not cryptographic release verification.
 
-The current owner signing-key fingerprint and verification procedure are documented in [SECURITY-ROOT.md](SECURITY-ROOT.md). The test commit proves GitHub recognises the owner's key; it is not a signed v1.0.0 release. The signed release manifest and tag remain outstanding.
+The current owner signing-key fingerprint and verification procedure are documented in [SECURITY-ROOT.md](SECURITY-ROOT.md). The signed release manifest and tag remain outstanding; do not describe the provisional baseline as a signed release.
 
 ## Start here
 
@@ -41,7 +42,7 @@ For an AI agent or developer entering a repository that uses USS:
 1. Read [AGENTS.md](AGENTS.md).
 2. Read [KERNEL.md](KERNEL.md).
 3. Find the task in [MODULE-INDEX.md](MODULE-INDEX.md) or `manifest.json`.
-4. Follow [CONSUMING.md](CONSUMING.md) to pin and vendor the exact reviewed USS commit.
+4. Follow [OPERATING-MODE.md](OPERATING-MODE.md) and [CONSUMING.md](CONSUMING.md) to pin the exact owner-authorised commit in provisional mode or the signed release when available.
 5. Resolve the task and its transitive dependencies.
 6. Read the returned modules before changing security-relevant code.
 7. Read relevant implementation supplements from [supplements/README.md](supplements/README.md) when the application uses the technology or boundary they cover.
