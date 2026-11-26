@@ -1,7 +1,7 @@
 {
   "standard": "Universal Security Standard",
   "version": "1.0.0",
-  "status": "awaiting-owner-signing",
+  "status": "release-ready",
   "description": "Modular, source-traceable security engineering policy for AI agents and human engineering teams.",
   "kernel": "KERNEL.md",
   "agent_entrypoint": "AGENTS.md",

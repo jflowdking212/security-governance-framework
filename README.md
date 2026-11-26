@@ -1,8 +1,8 @@
 # Universal Security Standard (USS)
 
-**Current version:** 1.0.0 (unreleased — awaiting owner cryptographic signing & publication)
+**Current version:** 1.0.0 (approved for owner signing — not yet signed or published)
 **Operating status:** ACTIVE on `main` at commit `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda` (PR #14 merged); `Protect Main` ruleset (ID `27612394`) enforces pull requests, review-thread resolution, `0` required human approvals, and all five mandatory GitHub Actions status checks.
-**Release status:** Unsigned `1.0.0` release metadata is prepared on branch `release/v1.0.0`. The formal signed `v1.0.0` release commit, `SHA256SUMS.sig`, annotated `v1.0.0` tag, and GitHub Release publication remain pending owner execution. Until the signed release is published, follow the provisional trust procedure in [OPERATING-MODE.md](OPERATING-MODE.md).
+**Release status:** `release/v1.0.0` is prepared and approved for owner signing (`manifest.json` `"status": "release-ready"`). The formal signed `v1.0.0` release commit, `SHA256SUMS.sig`, annotated `v1.0.0` tag, and GitHub Release publication remain unexecuted until the owner completes the signing ceremony. Until the signed release is published, follow the provisional trust procedure in [OPERATING-MODE.md](OPERATING-MODE.md).
 **Security posture:** FAIL CLOSED & PROVE
 **Runtime requirement:** Node.js 20 or later. Core repository tools require zero external dependencies; test suites require `npm ci --ignore-scripts`.
 
@@ -205,7 +205,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. See [CONSUMING.
 
 ## Independent review and release status
 
-PR #14 (`fb18d09581813e8213314cdbc611041bd70ea1bd`, closing Claude's November 25 findings F-1 through F-7) has merged into `main` at commit `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda`, and `Protect Main` ruleset `ID 27612394` enforces all five mandatory GitHub Actions check contexts. Branch `release/v1.0.0` holds unsigned `1.0.0` preparation awaiting owner cryptographic signing (`U-01`); USS is not yet formally signed or released. These records preserve the review and release trail:
+PR #14 (`fb18d09581813e8213314cdbc611041bd70ea1bd`, closing Claude's November 25 findings F-1 through F-7) has merged into `main` at commit `f584ab95b6e06ca8c326cdf4d94f761b8ed5fdda`, and `Protect Main` ruleset `ID 27612394` enforces all five mandatory GitHub Actions check contexts. Branch `release/v1.0.0` is prepared and approved for owner signing (`manifest.json` `"status": "release-ready"`, `U-01`), though not yet formally signed or published. These records preserve the review and release trail:
 
 - [Initial Claude review instructions](REVIEW-PROMPT-FOR-CLAUDE.md)
 - [Initial Claude review report (2026-11-18)](REVIEW-CLAUDE.md)
@@ -214,7 +214,7 @@ PR #14 (`fb18d09581813e8213314cdbc611041bd70ea1bd`, closing Claude's November 25
 - [Owner actions required before release](OWNER-ACTIONS.md)
 - [Changelog](CHANGELOG.md)
 
-The release remains unsigned and unmerged for final `v1.0.0` until the owner executes the workstation signing ceremony on `release/v1.0.0`, merges the signed-manifest PR into `main`, and publishes the signed `v1.0.0` tag and GitHub Release.
+The release remains unsigned and unpublished until the owner executes the workstation signing ceremony on `release/v1.0.0`, merges the signed-manifest PR into `main`, verifies the merged artifacts, and publishes the signed `v1.0.0` tag and GitHub Release.
 
 ## Security reporting
 
